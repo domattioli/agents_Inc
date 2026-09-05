@@ -176,7 +176,11 @@
         },
         "parameters": {
           "type": "object",
-          "additionalProperties": true
+          "maxProperties": 32,
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256
+          }
         },
         "tags": {
           "type": "array",

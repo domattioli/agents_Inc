@@ -58,6 +58,8 @@ class Registry:
         routing = read_json("routing.json")
 
         hasher = hashlib.sha256()
+        hasher.update((base / "governance.json").read_bytes())
+        hasher.update((base / "protocols.json").read_bytes())
         hasher.update((base / "routing.json").read_bytes())
         snapshot_hash = hasher.hexdigest()
 
@@ -80,7 +82,9 @@ class Registry:
                 raise RegistryError(f"Invalid clearance level: {clearance}")
 
             date_str = a_data.get("created_date", "")
-            if len(date_str) >= 10:
+            if date_str == "":
+                raise RegistryError("Agent created_date must be non-empty ISO YYYY-MM-DD or null")
+            if date_str is not None and len(date_str) >= 10:
                 if date_str[4] != '-' or date_str[7] != '-':
                     raise RegistryError(f"Invalid date format: {date_str}")
                 try:
@@ -134,8 +138,14 @@ class Registry:
                 return r
         return None
 
-    def agent(self, id: str) -> Optional[Agent]:
-        return self.agents.get(id)
+    def agent(self, id: str, include_disabled: bool = False) -> Optional[Agent]:
+        a = self.agents.get(id)
+        if a is None:
+            return None
+        return a if include_disabled or a.enabled else None
 
-    def capability(self, id: str) -> Optional[Capability]:
-        return self.capabilities.get(id)
+    def capability(self, id: str, include_disabled: bool = False) -> Optional[Capability]:
+        c = self.capabilities.get(id)
+        if c is None:
+            return None
+        return c if include_disabled or c.enabled else None
