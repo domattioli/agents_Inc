@@ -19,9 +19,9 @@
 
 **Purpose**: Core ledger data model and I/O — blocking prerequisite for all user stories.
 
-- [ ] T001 Create ledger module skeleton in `workerbees/ledger.py` with Node + Finding dataclasses; Edge implied by parent_id + edge_type on child (per data-model)
-- [ ] T002 [P] Implement idempotent JSONL append in `workerbees/ledger.py`: `record_dispatch()` and `record_return()` functions with error swallowing per FR-008
-- [ ] T003 Implement ledger load with deduplication in `workerbees/ledger.py`: `load(workspace)` returns Ledger + warnings, handles corrupt/missing files gracefully
+- [x] T001 Create ledger module skeleton in `workerbees/ledger.py` with Node + Finding dataclasses; Edge implied by parent_id + edge_type on child (per data-model)
+- [x] T002 [P] Implement idempotent JSONL append in `workerbees/ledger.py`: `record_dispatch()` and `record_return()` functions with error swallowing per FR-008
+- [x] T003 Implement ledger load with deduplication in `workerbees/ledger.py`: `load(workspace)` returns Ledger + warnings, handles corrupt/missing files gracefully
 
 **Checkpoint**: Ledger module ready; foundation complete before user story work begins.
 
@@ -35,14 +35,14 @@
 
 ### Tests for User Story 1 (TDD: Write tests FIRST, ensure they FAIL)
 
-- [ ] T004 [P] [US1] Test node creation with all required fields in `tests/test_ledger.py`: model, tier, task, provider, status, timestamp
-- [ ] T005 [P] [US1] Test idempotent append by node id in `tests/test_ledger.py`: same node written twice collapses to one on load
-- [ ] T006 [US1] Test brief with worker + reviewer produces 2 nodes + 1 `reviews` edge in `tests/test_pipeline.py` (fixture: fake runner returning WorkerResult)
+- [x] T004 [P] [US1] Test node creation with all required fields in `tests/test_ledger.py`: model, tier, task, provider, status, timestamp
+- [x] T005 [P] [US1] Test idempotent append by node id in `tests/test_ledger.py`: same node written twice collapses to one on load
+- [x] T006 [US1] Test brief with worker + reviewer produces 2 nodes + 1 `reviews` edge in `tests/test_pipeline.py` (fixture: fake runner returning WorkerResult)
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Implement Node + Finding dataclasses in `workerbees/ledger.py` with validation (edge_type enum, tier enum, status eventually consistent); Edge implied by parent_id + edge_type on child (per data-model)
-- [ ] T008 [US1] Implement basic Ledger class in `workerbees/ledger.py`: nodes dict keyed by id, dedup on load (last-write-wins by timestamp)
+- [x] T007 [P] [US1] Implement Node + Finding dataclasses in `workerbees/ledger.py` with validation (edge_type enum, tier enum, status eventually consistent); Edge implied by parent_id + edge_type on child (per data-model)
+- [x] T008 [US1] Implement basic Ledger class in `workerbees/ledger.py`: nodes dict keyed by id, dedup on load (last-write-wins by timestamp)
 
 **Checkpoint**: User Story 1 complete — ledger records all nodes; tests pass independently.
 
@@ -56,14 +56,14 @@
 
 ### Tests for User Story 2 (TDD: Write tests FIRST)
 
-- [ ] T009 [P] [US2] Test lint rule "depth" in `tests/test_ledger.py`: node whose parent has a parent triggers finding with node id
-- [ ] T010 [P] [US2] Test lint rule "same_vendor_review" in `tests/test_ledger.py`: reviewer with same provider as reviewed node triggers finding with both ids
-- [ ] T011 [P] [US2] Test lint rule "frontier_without_gate" in `tests/test_ledger.py`: frontier-tier node with null gate_reason triggers finding with node id
+- [x] T009 [P] [US2] Test lint rule "depth" in `tests/test_ledger.py`: node whose parent has a parent triggers finding with node id
+- [x] T010 [P] [US2] Test lint rule "same_vendor_review" in `tests/test_ledger.py`: reviewer with same provider as reviewed node triggers finding with both ids
+- [x] T011 [P] [US2] Test lint rule "frontier_without_gate" in `tests/test_ledger.py`: frontier-tier node with null gate_reason triggers finding with node id
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Implement Finding dataclass in `workerbees/ledger.py`: rule, node_ids, message
-- [ ] T013 [US2] Implement `lint(ledger)` function in `workerbees/ledger.py`: checks depth, same_vendor_review, frontier_without_gate; returns list of Findings
+- [x] T012 [US2] Implement Finding dataclass in `workerbees/ledger.py`: rule, node_ids, message
+- [x] T013 [US2] Implement `lint(ledger)` function in `workerbees/ledger.py`: checks depth, same_vendor_review, frontier_without_gate; returns list of Findings
 
 **Checkpoint**: User Story 2 complete — linter detects all 3 rule violations; tests pass independently.
 
@@ -77,13 +77,13 @@
 
 ### Tests for User Story 3 (TDD: Write tests FIRST)
 
-- [ ] T014 [P] [US3] Test JSON export and round-trip in `tests/test_ledger.py`: `to_json()` and `from_json()` preserve all fields for 2+ node ledger
+- [x] T014 [P] [US3] Test JSON export and round-trip in `tests/test_ledger.py`: `to_json()` and `from_json()` preserve all fields for 2+ node ledger
 
 ### Implementation for User Story 3
 
-- [ ] T015 [US3] Implement `to_json(ledger)` and `from_json(s)` in `workerbees/ledger.py`: {"nodes": [...]}, round-trips exactly
-- [ ] T016 [US3] Implement `to_mermaid(ledger)` in `workerbees/ledger.py`: graph TD with node lines and edge lines, one per node/edge, labeled by edge_type
-- [ ] T017 [P] [US3] Implement `rollup(ledger)` in `workerbees/ledger.py`: per-root subtree sum of subscription_calls and seconds
+- [x] T015 [US3] Implement `to_json(ledger)` and `from_json(s)` in `workerbees/ledger.py`: {"nodes": [...]}, round-trips exactly
+- [x] T016 [US3] Implement `to_mermaid(ledger)` in `workerbees/ledger.py`: graph TD with node lines and edge lines, one per node/edge, labeled by edge_type
+- [x] T017 [P] [US3] Implement `rollup(ledger)` in `workerbees/ledger.py`: per-root subtree sum of subscription_calls and seconds
 
 **Checkpoint**: User Story 3 complete — operator can export and analyze; all three user stories independently testable and functional.
 
@@ -93,13 +93,13 @@
 
 **Purpose**: Wire ledger recording into pipeline and doctor; handle fault injection and edge cases.
 
-- [ ] T018 [US1] Add ledger hooks to `workerbees/pipeline.py`: wrap worker call with `record_dispatch()` before and `record_return()` after, one run_id per brief(), parent_id=None, edge_type=None for root
-- [ ] T018b Add optional `gate_reason: str | None = None` param to `pipeline.brief()`; pass to `record_dispatch()`; required non-empty when `worker_tier == 'frontier'` (lint rule `frontier_without_gate`)
-- [ ] T019 [US1] Add ledger hooks to `workerbees/pipeline.py`: wrap reviewer call with same, parent_id=worker_node_id, edge_type="reviews"
-- [ ] T020 [US1] Add ledger hooks to `workerbees/doctor.py`: wrap `probe_cli()` call from `doctor.run()` with `record_dispatch()`/`record_return()`, edge_type="probes", parent_id=None, one run_id per run()
-- [ ] T021 [P] Extend `tests/test_pipeline.py`: assert ledger file exists post-brief with 2 nodes + 1 edge (fault injection: mock ledger write failure, verify brief status unchanged per SC-004)
-- [ ] T022 [P] Extend `tests/test_doctor.py`: assert ledger file contains N probe nodes with edge_type="probes" after doctor.run()
-- [ ] T023 [P] Test sequential brief() calls in same workspace in `tests/test_pipeline.py`: two distinct brief() calls produce two distinct run_ids, nodes not interleaved, each brief's nodes grouped by run_id
+- [x] T018 [US1] Add ledger hooks to `workerbees/pipeline.py`: wrap worker call with `record_dispatch()` before and `record_return()` after, one run_id per brief(), parent_id=None, edge_type=None for root
+- [x] T018b Add optional `gate_reason: str | None = None` param to `pipeline.brief()`; pass to `record_dispatch()`; required non-empty when `worker_tier == 'frontier'` (lint rule `frontier_without_gate`)
+- [x] T019 [US1] Add ledger hooks to `workerbees/pipeline.py`: wrap reviewer call with same, parent_id=worker_node_id, edge_type="reviews"
+- [x] T020 [US1] Add ledger hooks to `workerbees/doctor.py`: wrap `probe_cli()` call from `doctor.run()` with `record_dispatch()`/`record_return()`, edge_type="probes", parent_id=None, one run_id per run()
+- [x] T021 [P] Extend `tests/test_pipeline.py`: assert ledger file exists post-brief with 2 nodes + 1 edge (fault injection: mock ledger write failure, verify brief status unchanged per SC-004)
+- [x] T022 [P] Extend `tests/test_doctor.py`: assert ledger file contains N probe nodes with edge_type="probes" after doctor.run()
+- [x] T023 [P] Test sequential brief() calls in same workspace in `tests/test_pipeline.py`: two distinct brief() calls produce two distinct run_ids, nodes not interleaved, each brief's nodes grouped by run_id
 
 **Checkpoint**: Integration wired; edge cases covered; fault injection validates FR-008 (ledger failure never fails brief); sequential briefs produce distinct run_ids.
 
@@ -109,10 +109,10 @@
 
 **Purpose**: Documentation, final validation, and edge case robustness.
 
-- [ ] T024 Update docstrings in `workerbees/ledger.py` for all public functions (record_dispatch, record_return, load, lint, to_json, from_json, to_mermaid, rollup) with FR/SC references
-- [ ] T025 [P] Add edge case test in `tests/test_ledger.py`: ledger file missing/corrupt → load() returns empty Ledger + warning, never raises
-- [ ] T026 Add Node/Edge/Run/Finding/Ledger row definitions to project `CONTEXT.md` (if exists) or `.specify/memory/context.md` to make types discoverable for future sessions
-- [ ] T027 Run all tests in `tests/test_ledger.py`, `tests/test_pipeline.py`, `tests/test_doctor.py` and verify spec acceptance scenarios 1.1–3.2 pass; document MVP validation in `docs/DECISIONS.md`
+- [x] T024 Update docstrings in `workerbees/ledger.py` for all public functions (record_dispatch, record_return, load, lint, to_json, from_json, to_mermaid, rollup) with FR/SC references
+- [x] T025 [P] Add edge case test in `tests/test_ledger.py`: ledger file missing/corrupt → load() returns empty Ledger + warning, never raises
+- [x] T026 Add Node/Edge/Run/Finding/Ledger row definitions to project `CONTEXT.md` (if exists) or `.specify/memory/context.md` to make types discoverable for future sessions
+- [x] T027 Run all tests in `tests/test_ledger.py`, `tests/test_pipeline.py`, `tests/test_doctor.py` and verify spec acceptance scenarios 1.1–3.2 pass; document MVP validation in `docs/DECISIONS.md`
   - assert len(ledger nodes) == number of runner invocations (worker + reviewer + corrections) in a test with a counting fake runner (SC-001)
 
 **Checkpoint**: All 27 tasks complete; ledger ready for deployment.

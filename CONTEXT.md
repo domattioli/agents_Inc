@@ -22,3 +22,8 @@ Canonical terms for agents_for_dummies. Glossary only; no implementation detail.
 | **Tier** | cheap / mid / frontier. Task routes by rules to a tier, promoted on failed checks, never on worker confidence. |
 | **Mode** | lawyer / scientist / engineer. Changes required fields and forbidden actions, never data policy. |
 | **Acceptance user** | Tim (lawyer, documents to cited brief) and Dom (engineer/scientist tasks). Both day 1. |
+| **Node** | One delegated job recorded in the dispatch graph ledger; identity = id; carries model, tier, task, provider, parent_id, edge_type, status, seconds, subscription_calls, gate_reason, timestamp. |
+| **Edge** | Directed relationship in dispatch graph, implied by child node's parent_id + edge_type (not separately stored); types: reviews, corrects, probes, depends-on. |
+| **Run** | Groups of nodes from one brief or one doctor preflight (identified by run_id); groups all worker, reviewer, and correction nodes for one top-level invocation. |
+| **Finding** | Lint result from dispatch graph ledger; carries rule (depth, same_vendor_review, frontier_without_gate), node_ids, and human-readable message. |
+| **Ledger** | Append-only JSONL file (`<workspace>/.workerbees/ledger.jsonl`) recording every delegated job as a node; idempotent by node id on read (dedup merges dispatch + return records). |
