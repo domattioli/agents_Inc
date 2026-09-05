@@ -134,6 +134,22 @@ Name forbidden paths explicitly in every dispatch — do not assume the delegate
 
 Operator pastes a live key into chat → say so, recommend rotation, keep using the file.
 
+## Legacy wrappers for optional providers
+
+`workerbees/adapters/` ships claude + codex only. Gemini / Mistral / OpenRouter reach the fleet through the older `codex-bridge` shell wrappers, not through an adapter module:
+
+| provider | wrapper | key file (or env var) |
+|---|---|---|
+| Gemini | `skills/codex-bridge/scripts/gask.sh` | `~/.codex-bridge/gemini-key` (`GEMINI_API_KEY`) |
+| Mistral | `skills/codex-bridge/scripts/mask.sh` | `~/.config/devstral/api_key` |
+| OpenRouter | `skills/codex-bridge/scripts/oask.sh` | `~/.codex-bridge/openrouter-key` (`OPEN_ROUTER_API_KEY`) |
+
+Keys live in those per-provider files. There is no `~/.config/workerbees/.env` — absence of it does not mean absence of keys.
+
+Usage: `bash skills/codex-bridge/scripts/gask.sh --tier digest "prompt"`. `--file PATH` attaches context. `oask.sh` refuses non-`:free` models (spend guard).
+
+D7 applies: confidential input to an optional provider is denied until that workspace holds explicit authorization (`.workerbees/authorization.json`). Non-confidential extract/summarize work only.
+
 ## Where to go next
 
 - extend it → `EXTENDING.md`

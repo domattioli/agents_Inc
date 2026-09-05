@@ -7,5 +7,6 @@
     "frontier": {"claude": "fable",  "codex": "gpt-6-astra"}
   },
   "task_tier": {"extract": "cheap", "summarize": "cheap", "draft": "cheap", "review": "mid", "adjudicate": "frontier"},
-  "optional_allowed_tasks": ["extract", "summarize"]
+  "optional_allowed_tasks": ["extract", "summarize"],
+  "optional_provider_wrappers": {"gemini":"skills/codex-bridge/scripts/gask.sh","mistral":"skills/codex-bridge/scripts/mask.sh","openrouter":"skills/codex-bridge/scripts/oask.sh"}
 }
