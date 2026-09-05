@@ -1,0 +1,122 @@
+{
+  "version": "2026-09-05.1",
+  "policy_version": "2026-09-05.1",
+  "trust_hierarchy": [
+    "public",
+    "internal",
+    "confidential",
+    "restricted"
+  ],
+  "capabilities": [
+    "extract.markdown",
+    "draft.brief",
+    "review.claims",
+    "probe.health",
+    "deploy",
+    "delete",
+    "send",
+    "grant",
+    "tools",
+    "web"
+  ],
+  "agents": [
+    {
+      "id": "agent-supervisor-01",
+      "name": "Orchestrator Supervisor",
+      "type": "supervisor",
+      "capabilities": [
+        "extract.markdown",
+        "draft.brief"
+      ],
+      "enabled": true,
+      "created_date": "2026-01-15",
+      "clearance": "confidential"
+    },
+    {
+      "id": "agent-worker-01",
+      "name": "Markdown Extraction Worker",
+      "type": "worker",
+      "capabilities": [
+        "extract.markdown"
+      ],
+      "enabled": true,
+      "created_date": "2026-01-15",
+      "clearance": "internal"
+    },
+    {
+      "id": "agent-reviewer-01",
+      "name": "Claims Reviewer",
+      "type": "reviewer",
+      "capabilities": [
+        "review.claims"
+      ],
+      "enabled": true,
+      "created_date": "2026-01-15",
+      "clearance": "confidential"
+    },
+    {
+      "id": "agent-doctor-01",
+      "name": "System Health Probe",
+      "type": "doctor-probe",
+      "capabilities": [
+        "probe.health"
+      ],
+      "enabled": true,
+      "created_date": "2026-01-15",
+      "clearance": "restricted"
+    },
+    {
+      "id": "agent-deployer-01",
+      "name": "Disabled Deployment Agent",
+      "type": "worker",
+      "capabilities": [
+        "deploy",
+        "delete"
+      ],
+      "enabled": false,
+      "created_date": "2026-02-01",
+      "clearance": "restricted"
+    },
+    {
+      "id": "agent-connector-01",
+      "name": "Disabled Web Integrator",
+      "type": "worker",
+      "capabilities": [
+        "send",
+        "grant",
+        "tools",
+        "web"
+      ],
+      "enabled": false,
+      "created_date": "2026-02-01",
+      "clearance": "internal"
+    }
+  ],
+  "relationships": [
+    {
+      "source_agent_id": "agent-supervisor-01",
+      "target_agent_id": "agent-worker-01",
+      "relationship_type": "delegates_to",
+      "relationship_params": [
+        "extract",
+        "draft"
+      ]
+    },
+    {
+      "source_agent_id": "agent-supervisor-01",
+      "target_agent_id": "agent-reviewer-01",
+      "relationship_type": "requests",
+      "relationship_params": [
+        "reviews"
+      ]
+    },
+    {
+      "source_agent_id": "agent-supervisor-01",
+      "target_agent_id": "agent-doctor-01",
+      "relationship_type": "probes",
+      "relationship_params": [
+        "health"
+      ]
+    }
+  ]
+}
