@@ -1,6 +1,6 @@
 """Workspace-local control and audit state machine for SQLite decisions/budgets."""
 from __future__ import annotations
-import sqlite3, json
+import sqlite3, json, os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -26,6 +26,17 @@ class Control:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _is_readonly_error(self, e: sqlite3.Error) -> bool:
+        """Check if error is readonly/unable-to-open."""
+        return isinstance(e, (sqlite3.OperationalError, sqlite3.DatabaseError)) and (
+            "readonly" in str(e).lower() or "unable to open" in str(e).lower()
+            or "permission denied" in str(e).lower() or "is not a directory" in str(e).lower()
+        )
+
+    def _parse_iso(self, s: str) -> datetime:
+        """Parse ISO 8601 string, handling trailing Z."""
+        return datetime.fromisoformat(s.replace('Z', '+00:00'))
+
     def _ensure_tables(self) -> None:
         try:
             with self._conn() as c:
@@ -46,17 +57,23 @@ class Control:
                 c.execute("INSERT INTO decisions (decision_id,run_id,node_id,envelope_hash,allowed,reason_code,policy_version,checked_rules,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                          (decision.decision_id, run_id, node_id, envelope_hash, int(decision.allowed), decision.reason_code, decision.policy_version, json.dumps(rules), datetime.utcnow().isoformat() + "Z"))
             return True
-        except sqlite3.Error:
-            return False
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return False
+            raise ControlError(f"Failed to record decision: {e}")
 
     def reserve(self, run_id: str, node_id: str, calls: int=1, seconds: float=0.0) -> bool:
+        if calls < 0 or seconds < 0:
+            return False
         try:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
                 c.execute("INSERT INTO reservations (run_id,node_id,calls,seconds,created_at) VALUES (?,?,?,?,?)", (run_id, node_id, calls, seconds, datetime.utcnow().isoformat() + "Z"))
             return True
-        except sqlite3.Error:
-            return False
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return False
+            raise ControlError(f"Failed to reserve: {e}")
 
     def release(self, run_id: str, node_id: str) -> bool:
         try:
@@ -86,8 +103,10 @@ class Control:
                 return ReplayResult(state="duplicate", artifact_ref=row["artifact_ref"], reason="Same message ID and hash")
             else:
                 return ReplayResult(state="conflict", artifact_ref=row["artifact_ref"], reason="Same message ID but different envelope hash")
-        except sqlite3.Error:
-            return ReplayResult(state="new", reason="Database error")
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return ReplayResult(state="new", reason="Database error")
+            raise ControlError(f"Failed to check replay: {e}")
 
     def store_artifact(self, message_id: str, envelope_hash: str, artifact_ref: str) -> bool:
         try:
@@ -143,10 +162,12 @@ class Control:
             approval_id = str(uuid.uuid4())
             with self._conn() as c:
                 c.execute("INSERT INTO approvals (approval_id,run_id,requester,action,resource,artifact_hash,risk,rule_ids,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                         (approval_id, run_id, requester, action, resource, artifact_hash, risk, json.dumps(rule_ids), expires_at))
+                         (approval_id, run_id, requester, action[:256], resource[:256], artifact_hash, risk[:256], json.dumps(rule_ids), expires_at))
             return approval_id
-        except sqlite3.Error:
-            return None
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return None
+            raise ControlError(f"Failed to request approval: {e}")
 
     def decide_approval(self, approval_id: str, approver: str, decision: str, now: str) -> bool:
         try:
@@ -157,14 +178,18 @@ class Control:
                     return False
                 if row["decision"] is not None:
                     return False
-                if row["requester"] == approver:
+                if row["requester"].strip().casefold() == approver.strip().casefold():
                     return False
-                if now > row["expires_at"]:
+                now_dt = self._parse_iso(now)
+                expires_dt = self._parse_iso(row["expires_at"])
+                if now_dt > expires_dt:
                     return False
-                c.execute("UPDATE approvals SET approver=?, decision=?, decided_at=? WHERE approval_id=?", (approver, decision, now, approval_id))
+                c.execute("UPDATE approvals SET approver=?, decision=?, decided_at=? WHERE approval_id=?", (approver[:256], decision, now, approval_id))
             return True
-        except sqlite3.Error:
-            return False
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return False
+            raise ControlError(f"Failed to decide approval: {e}")
 
     def approval_status(self, approval_id: str) -> str:
         try:
@@ -174,20 +199,28 @@ class Control:
                 return "unknown"
             if row["decision"]:
                 return row["decision"]
-            expires = datetime.fromisoformat(row["expires_at"].replace('Z', '+00:00'))
+            expires = self._parse_iso(row["expires_at"])
             now = datetime.utcnow().astimezone()
             if expires < now:
                 return "expired"
             return "pending"
-        except sqlite3.Error:
-            return "error"
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return "error"
+            raise ControlError(f"Failed to check approval status: {e}")
 
-    def approval_binds(self, approval_id: str, action: str, resource: str, artifact_hash: str) -> bool:
+    def approval_binds(self, approval_id: str, action: str, resource: str, artifact_hash: str, now: str) -> bool:
         try:
             with self._conn() as c:
-                row = c.execute("SELECT action, resource, artifact_hash, decision FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+                row = c.execute("SELECT action, resource, artifact_hash, decision, expires_at FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
             if not row or row["decision"] != "approved":
                 return False
+            now_dt = self._parse_iso(now)
+            expires_dt = self._parse_iso(row["expires_at"])
+            if now_dt > expires_dt:
+                return False
             return row["action"] == action and row["resource"] == resource and row["artifact_hash"] == artifact_hash
-        except sqlite3.Error:
-            return False
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return False
+            raise ControlError(f"Failed to check approval binding: {e}")
