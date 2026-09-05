@@ -38,88 +38,109 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
     def deny(code: str, reason: str) -> Decision:
         return Decision(False, decision_id, code, reason, policy_version, checked_rules)
 
-    # Auth: sender identity
-    checked_rules.append("authenticated_sender")
-    auth_sender = context.get("authenticated_sender")
-    if not auth_sender:
-        return deny("UNAUTHENTICATED_SENDER", "No authenticated sender")
-    checked_rules.append("sender_mismatch")
-    if auth_sender != envelope.sender:
-        return deny("SENDER_MISMATCH", f"Auth sender '{auth_sender}' != envelope '{envelope.sender}'")
+    try:
+        # Auth: sender identity
+        checked_rules.append("authenticated_sender")
+        auth_sender = context.get("authenticated_sender")
+        if not auth_sender:
+            return deny("UNAUTHENTICATED_SENDER", "No authenticated sender")
+        checked_rules.append("sender_mismatch")
+        if auth_sender != envelope.sender:
+            return deny("SENDER_MISMATCH", f"Auth sender '{auth_sender}' != envelope '{envelope.sender}'")
 
-    # Parties: known sender & recipient
-    checked_rules.append("known_sender")
-    sender_agent = registry.agent(envelope.sender, include_disabled=True)
-    if not sender_agent:
-        return deny("UNKNOWN_SENDER", f"Sender '{envelope.sender}' not in registry")
-    checked_rules.append("known_recipient")
-    recipient_agent = registry.agent(envelope.recipient, include_disabled=True)
-    if not recipient_agent:
-        return deny("UNKNOWN_RECIPIENT", f"Recipient '{envelope.recipient}' not in registry")
-    checked_rules.append("recipient_enabled")
-    if not recipient_agent.enabled:
-        return deny("RECIPIENT_DISABLED", f"Recipient '{envelope.recipient}' disabled")
+        # Parties: known sender & recipient
+        checked_rules.append("known_sender")
+        sender_agent = registry.agent(envelope.sender, include_disabled=True)
+        if not sender_agent:
+            return deny("UNKNOWN_SENDER", f"Sender '{envelope.sender}' not in registry")
+        checked_rules.append("known_recipient")
+        recipient_agent = registry.agent(envelope.recipient, include_disabled=True)
+        if not recipient_agent:
+            return deny("UNKNOWN_RECIPIENT", f"Recipient '{envelope.recipient}' not in registry")
+        checked_rules.append("recipient_enabled")
+        if not recipient_agent.enabled:
+            return deny("RECIPIENT_DISABLED", f"Recipient '{envelope.recipient}' disabled")
 
-    # Operation & schema validation (before edge check for proper error reporting)
-    checked_rules.append("operation_allowed")
-    if envelope.operation not in {"request", "response", "error", "cancellation", "approval"}:
-        return deny("OPERATION_NOT_ALLOWED", f"Operation '{envelope.operation}' not allowed")
-    checked_rules.append("schema_allowed")
-    if envelope.schema not in {"request_v1", "response_v1", "error_v1", "cancellation_v1", "approval_v1"}:
-        return deny("SCHEMA_NOT_ALLOWED", f"Schema '{envelope.schema}' not allowed")
+        # Edge: authorized relationship (D1: check BEFORE operation/schema)
+        checked_rules.append("edge_exists")
+        rel_type = "delegates_to" if envelope.operation == "request" else "requests"
+        edge = registry.edge(envelope.sender, envelope.recipient, rel_type)
+        if not edge:
+            return deny("NO_EDGE", f"No '{rel_type}' from {envelope.sender} to {envelope.recipient}")
 
-    # Edge: authorized relationship
-    checked_rules.append("edge_exists")
-    rel_type = "delegates_to" if envelope.operation == "request" else "requests"
-    if not registry.edge(envelope.sender, envelope.recipient, rel_type):
-        return deny("NO_EDGE", f"No '{rel_type}' from {envelope.sender} to {envelope.recipient}")
+        # Operation & schema validation
+        checked_rules.append("operation_allowed")
+        if envelope.operation not in {"request", "response", "error", "cancellation", "approval"}:
+            return deny("OPERATION_NOT_ALLOWED", f"Operation '{envelope.operation}' not allowed")
+        checked_rules.append("schema_allowed")
+        if envelope.schema not in {"request_v1", "response_v1", "error_v1", "cancellation_v1", "approval_v1"}:
+            return deny("SCHEMA_NOT_ALLOWED", f"Schema '{envelope.schema}' not allowed")
 
-    # Classification: clearance check
-    checked_rules.append("classification_clearance")
-    rcv_level = CLEARANCE_LEVELS.get(recipient_agent.clearance, 0)
-    env_level = CLEARANCE_LEVELS.get(envelope.data_classification, 0)
-    if env_level > rcv_level:
-        return deny("CLASSIFICATION_EXCEEDED",
-                   f"Classification '{envelope.data_classification}' exceeds recipient clearance '{recipient_agent.clearance}'")
+        # D3: Fail closed on unknown/None clearance
+        checked_rules.append("classification_clearance")
+        if sender_agent.clearance not in CLEARANCE_LEVELS or recipient_agent.clearance not in CLEARANCE_LEVELS:
+            return deny("UNKNOWN_CLASSIFICATION", "Unknown sender or recipient clearance level")
+        if envelope.data_classification not in CLEARANCE_LEVELS:
+            return deny("UNKNOWN_CLASSIFICATION", f"Unknown classification '{envelope.data_classification}'")
 
-    # Lineage: depth check
-    checked_rules.append("delegation_depth")
-    if context.get("depth", 0) > 1:
-        return deny("DELEGATION_DEPTH_EXCEEDED", f"Depth {context.get('depth')} exceeds max 1")
+        # D2: Check BOTH sender and recipient clearance >= data_classification
+        sender_level = CLEARANCE_LEVELS.get(sender_agent.clearance, -1)
+        rcv_level = CLEARANCE_LEVELS.get(recipient_agent.clearance, -1)
+        env_level = CLEARANCE_LEVELS.get(envelope.data_classification, -1)
+        if sender_level < env_level:
+            return deny("CLASSIFICATION_EXCEEDED", f"Sender clearance '{sender_agent.clearance}' insufficient for '{envelope.data_classification}'")
+        if rcv_level < env_level:
+            return deny("CLASSIFICATION_EXCEEDED", f"Recipient clearance '{recipient_agent.clearance}' insufficient for '{envelope.data_classification}'")
 
-    # Expiry & cancellation
-    checked_rules.append("not_expired")
-    if envelope.expires_at:
-        try:
-            now = datetime.fromisoformat(context.get("now", datetime.utcnow().isoformat() + "Z").replace("Z", "+00:00"))
-            expires = datetime.fromisoformat(envelope.expires_at.replace("Z", "+00:00"))
-            if now > expires:
-                return deny("EXPIRED", "Envelope expired")
-        except (ValueError, AttributeError):
-            pass
-    checked_rules.append("not_cancelled")
-    if context.get("cancelled", False):
-        return deny("CANCELLED", "Request cancelled")
+        # D4: Delegation depth limit
+        checked_rules.append("delegation_depth")
+        edge_depth = edge.max_delegation_depth if edge.max_delegation_depth is not None else 1
+        sender_depth = sender_agent.max_delegation_depth if sender_agent.max_delegation_depth is not None else 1
+        depth_limit = min(edge_depth, sender_depth, 1)
+        if context.get("depth", 0) > depth_limit:
+            return deny("DELEGATION_DEPTH_EXCEEDED", f"Depth {context.get('depth')} exceeds limit {depth_limit}")
 
-    # Approval
-    checked_rules.append("approval_required")
-    if envelope.security.get("approval_required") and not envelope.security.get("approved"):
-        return deny("APPROVAL_REQUIRED", "Approval required")
+        # Expiry & cancellation
+        checked_rules.append("not_expired")
+        if envelope.expires_at:
+            try:
+                now = datetime.fromisoformat(context.get("now", datetime.utcnow().isoformat() + "Z").replace("Z", "+00:00"))
+                expires = datetime.fromisoformat(envelope.expires_at.replace("Z", "+00:00"))
+                if now > expires:
+                    return deny("EXPIRED", "Envelope expired")
+            except (ValueError, AttributeError):
+                pass
+        checked_rules.append("not_cancelled")
+        if context.get("cancelled", False):
+            return deny("CANCELLED", "Request cancelled")
 
-    # Budget: cost zero, usage within limits
-    checked_rules.append("cost_zero")
-    max_cost = envelope.budget.get("max_cost")
-    if max_cost is not None and float(max_cost) > 0:
-        return deny("COST_NOT_ZERO", f"max_cost must be 0, got {max_cost}")
+        # D5: Approval required if registry edge OR capability OR envelope security says so
+        checked_rules.append("approval_required")
+        needs_approval = edge.requires_approval or envelope.security.get("approval_required", False)
+        if needs_approval and not envelope.security.get("approved", False):
+            return deny("APPROVAL_REQUIRED", "Approval required by policy")
 
-    checked_rules.append("budget_within_limits")
-    budget_used = context.get("budget_used", {})
-    calls, seconds = budget_used.get("calls", 0), budget_used.get("seconds", 0.0)
-    max_calls, max_seconds = envelope.budget.get("max_calls"), envelope.budget.get("max_seconds")
-    if max_calls and calls > max_calls:
-        return deny("BUDGET_EXCEEDED", f"Calls {calls} > {max_calls}")
-    if max_seconds and seconds > max_seconds:
-        return deny("BUDGET_EXCEEDED", f"Seconds {seconds} > {max_seconds}")
+        # Budget: cost zero, usage within limits
+        checked_rules.append("cost_zero")
+        max_cost = envelope.budget.get("max_cost")
+        if max_cost is not None and float(max_cost) > 0:
+            return deny("COST_NOT_ZERO", f"max_cost must be 0, got {max_cost}")
 
-    # All rules passed
-    return Decision(True, decision_id, "ALLOWED", "All policy rules satisfied", policy_version, checked_rules)
+        # D6: Budget check with projected usage
+        checked_rules.append("budget_within_limits")
+        budget_used = context.get("budget_used", {})
+        calls, seconds = budget_used.get("calls", 0), budget_used.get("seconds", 0.0)
+        max_calls = envelope.budget.get("max_calls") or context.get("budget_limits", {}).get("max_calls")
+        max_seconds = envelope.budget.get("max_seconds") or context.get("budget_limits", {}).get("max_seconds")
+        projected_calls = calls + 1
+        projected_seconds = seconds + (envelope.budget.get("max_seconds") or 0)
+        if max_calls and projected_calls > max_calls:
+            return deny("BUDGET_EXCEEDED", f"Projected calls {projected_calls} > {max_calls}")
+        if max_seconds and projected_seconds > max_seconds:
+            return deny("BUDGET_EXCEEDED", f"Projected seconds {projected_seconds} > {max_seconds}")
+
+        # All rules passed
+        return Decision(True, decision_id, "ALLOWED", "All policy rules satisfied", policy_version, checked_rules)
+    except Exception as e:
+        # D7: Wrap entire rule chain in try/except
+        return deny("POLICY_ERROR", str(e)[:200])

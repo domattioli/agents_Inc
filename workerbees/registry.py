@@ -18,6 +18,7 @@ class Agent:
     enabled: bool
     created_date: str
     clearance: str
+    max_delegation_depth: Optional[int] = None
 
 @dataclass(frozen=True)
 class Capability:
@@ -30,6 +31,8 @@ class Relationship:
     source_id: str
     target_id: str
     type: str
+    max_delegation_depth: Optional[int] = None
+    requires_approval: bool = False
 
 @dataclass(frozen=True)
 class Registry:
@@ -106,7 +109,8 @@ class Registry:
                 capabilities=agent_caps,
                 enabled=bool(a_data.get("enabled", True)),
                 created_date=date_str,
-                clearance=clearance
+                clearance=clearance,
+                max_delegation_depth=a_data.get("max_delegation_depth")
             )
 
         relationships: List[Relationship] = []
@@ -121,7 +125,13 @@ class Registry:
             if dst not in agents:
                 raise RegistryError(f"Relationship refs missing target: {dst}")
 
-            relationships.append(Relationship(source_id=src, target_id=dst, type=rel_type))
+            relationships.append(Relationship(
+                source_id=src,
+                target_id=dst,
+                type=rel_type,
+                max_delegation_depth=r_data.get("max_delegation_depth"),
+                requires_approval=bool(r_data.get("requires_approval", False))
+            ))
 
         return cls(
             version=gov.get("version", "1.0"),
