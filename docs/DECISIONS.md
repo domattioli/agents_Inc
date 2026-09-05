@@ -35,3 +35,4 @@ CEO (Dom) rulings from grill session with fable (CTO) + astra (CSO). Each supers
 ## Probes (2026-09-05)
 - `--bare` OAuth claim VERIFIED on claude 2.1.261: `claude --bare -p` returns "Not logged in"; `claude -p` succeeds. Adapter must exclude `--bare`; isolate via `--setting-sources`, `--tools`, `--strict-mcp-config` (to be tested).
 - Tool isolation probe (haiku, `-p --disallowedTools <all> --setting-sources "" --strict-mcp-config`): shell request answered `NO_EXEC`. `--tools ""` alone did NOT suppress tool list. Adapter uses explicit `--disallowedTools` list. One positive probe only; negative-probe matrix still needed in Phase 1.
+- Verifier weakness found by fixture test (2026-09-05): whitespace-normalized substring match accepts negation-prefix forgeries (`signed 16-bit` ⊂ `unsigned 16-bit`). Phase 1 fixture adjusted; Phase 3 verifier must add word-boundary matching. Tracked as a seeded-fault class for the release gate.
