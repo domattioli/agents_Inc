@@ -53,38 +53,27 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
     except (json.JSONDecodeError, AttributeError):
         return ReviewResult("unparsed", raw=res.output[-500:])
 
-    # Validate verdicts structure for "ok" status
-    issues_list = []
-
+    # Validate verdicts structure: malformed → "invalid", well-formed with issues → "issues"
     # Check all ok values are actual booleans (not strings or other types)
     for v in verdicts:
         ok_val = v.get("ok")
         if not isinstance(ok_val, bool):
-            issues_list.append(f"reviewer_incomplete: ok value is not boolean (got {type(ok_val).__name__})")
-            break
+            return ReviewResult("invalid", raw=res.output[-500:])
 
     # Check claim ids are ints and cover range(len(claims))
-    if not issues_list:
-        claim_ids = []
-        for v in verdicts:
-            cid = v.get("claim")
-            if not isinstance(cid, int):
-                issues_list.append(f"reviewer_incomplete: claim id is not int (got {type(cid).__name__})")
-                break
-            claim_ids.append(cid)
+    claim_ids = []
+    for v in verdicts:
+        cid = v.get("claim")
+        if not isinstance(cid, int):
+            return ReviewResult("invalid", raw=res.output[-500:])
+        claim_ids.append(cid)
 
-        if not issues_list:
-            # Check uniqueness
-            if len(claim_ids) != len(set(claim_ids)):
-                issues_list.append("reviewer_incomplete: claim ids are not unique")
-            # Check they cover range(len(claims))
-            elif sorted(claim_ids) != list(range(len(claims))):
-                issues_list.append(f"reviewer_incomplete: claim ids {sorted(claim_ids)} do not cover range(0, {len(claims)})")
-
-    # If structural issues found, return issues with synthetic omissions
-    if issues_list:
-        omissions_with_issues = omissions + issues_list
-        return ReviewResult("issues", verdicts, omissions_with_issues, res.output)
+    # Check uniqueness
+    if len(claim_ids) != len(set(claim_ids)):
+        return ReviewResult("invalid", raw=res.output[-500:])
+    # Check they cover range(len(claims))
+    if sorted(claim_ids) != list(range(len(claims))):
+        return ReviewResult("invalid", raw=res.output[-500:])
 
     # Structure is valid; check if content is ok
     ok = all(v.get("ok") is True for v in verdicts) and not omissions

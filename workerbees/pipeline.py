@@ -100,6 +100,8 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         receipt["reviewer"] = {"status": rv.status, "verdicts": rv.verdicts, "omissions": rv.omissions}
         if rv.status == "ok":
             status, receipt["content_review"], receipt["human_decision_needed"] = "verified", "pass", False
+        elif rv.status == "invalid":
+            status, receipt["content_review"] = "returned", "invalid"
         elif rv.status == "paused":
             status = "paused"
         elif rv.status == "issues":
