@@ -32,8 +32,10 @@ def _strip_fence(s: str) -> str:
     return s.strip()
 
 def review(source_text: str, source_id: str, claims: list[dict], draft: str, worker_provider: str,
-           available: set[str], workspace_authorized: bool, runner=run_worker, role: str = "document") -> ReviewResult:
-    route = pick_model("review", "mid", available, workspace_authorized, exclude_provider=worker_provider)
+           available: set[str], workspace_authorized: bool, runner=run_worker, role: str = "document",
+           route=None) -> ReviewResult:
+    if route is None:
+        route = pick_model("review", "mid", available, workspace_authorized, exclude_provider=worker_provider)
     if route is None:
         return ReviewResult("no_other_vendor")
     numbered = "\n\n".join(f"[p{i}] {p}" for i, p in enumerate(paragraphs(source_text), 1))
