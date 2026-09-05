@@ -8,7 +8,7 @@ from .router import Route, pick_model
 from .policy import PolicyError, check_dispatch, is_authorized
 from .adapters import claude, codex
 from .adapters.base import run_worker, WorkerResult
-from .verifier import Report, verify, passed, paragraphs
+from .verifier import Report, verify, passed, paragraphs, check_draft
 from .keys import available_providers
 from . import doctor
 
@@ -84,16 +84,15 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         receipt["content_review"] = "draft_missing"
     # Check draft citations against anchored paragraphs
     if status == "needs-review":
-        cited = set(re.findall(r"\(p(\d+)\)", draft))
         anchored = {a.split('#p')[1] for a in (c.get('anchor','') for c in claims) if '#p' in a}
-        if not cited:
+        dc = check_draft(draft, anchored)
+        if dc["bad_citations"]:
             status = "returned"
             receipt["content_review"] = "uncited_draft"
-            receipt["uncited"] = []
-        elif cited - anchored:
-            status = "returned"
-            receipt["content_review"] = "uncited_draft"
-            receipt["uncited"] = sorted(cited - anchored)
+            receipt["uncited"] = dc["bad_citations"]
+        if dc["uncited_sentences"]:
+            status = "needs-review"
+            receipt["uncited_sentences"] = dc["uncited_sentences"]
     if status == "needs-review" and review_enabled:
         from .reviewer import review
         rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode)
@@ -108,6 +107,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             receipt["content_review"] = "issues"
         else:
             status, receipt["content_review"] = "returned", rv.status
+        # Cap status at needs-review if there are uncited sentences
+        if status == "verified" and receipt.get("uncited_sentences"):
+            status = "needs-review"
     elif status == "needs-review" and not review_enabled:
         status, receipt["content_review"] = "returned", "disabled"
     return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)

@@ -26,3 +26,12 @@ class DoctorTest(unittest.TestCase):
         cache = json.loads((self.ws / ".workerbees" / "doctor.json").read_text())
         self.assertEqual(cache["results"]["codex"]["status"], "WB_AUTH_REQUIRED")
         self.assertEqual(doctor.available(self.ws, env_path=self.ws / "no.env"), {"claude"})
+    def test_quota_paused_listed(self):
+        def r(cmd, stdin_text, timeout=300, cwd=None):
+            if cmd[0] == "claude": return WorkerResult("paused", "", "usage limit", 1)
+            else: return WorkerResult("returned", "PONG", "", 0)
+        result = doctor.run(self.ws, runner=r)
+        self.assertIn("paused", result)
+        self.assertEqual(result["paused"], ["claude"])
+        paused = doctor.quota_paused(self.ws)
+        self.assertEqual(paused, ["claude"])
