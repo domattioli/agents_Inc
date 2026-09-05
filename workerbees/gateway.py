@@ -71,7 +71,10 @@ class Gateway:
         if self.mode in ("shadow", "enforce"):
             try:
                 replay_result = self.control.check_replay(envelope.message_id, envelope_hash)
-                if replay_result.state == "duplicate":
+                if replay_result.state == "error":
+                    if self.mode == "enforce":
+                        return GatewayResult(status="blocked", decision=Decision(False, node_id, "AUDIT_UNAVAILABLE", "Control layer unavailable", "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
+                elif replay_result.state == "duplicate":
                     return GatewayResult(status="duplicate", decision=Decision(True, node_id, "DUPLICATE", "Same message ID and hash", "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
                 elif replay_result.state == "conflict":
                     decision = Decision(False, node_id, "REPLAY_CONFLICT", f"Message ID exists with different hash: {replay_result.reason}", "1.0", ["replay_check"])
@@ -93,7 +96,7 @@ class Gateway:
             decision = Decision(True, node_id, "ALLOWED", "Off mode", "1.0", [])
 
         if decision and not decision.decision_id:
-            decision.decision_id = str(uuid.uuid4())
+            decision.decision_id = uuid.uuid4().hex
 
         # Step 5: Record decision
         decision_recorded = False
@@ -117,15 +120,15 @@ class Gateway:
             if prov is not None and prov != route.provider:
                 decision = Decision(False, node_id, "ROUTE_PROVIDER_MISMATCH", f"Provider mismatch: registry {prov} vs route {route.provider}", "1.0", decision.checked_rules if decision else [])
                 if self.mode == "enforce" and not decision_recorded:
-                    self.control.record_decision(decision, run_id, node_id, envelope_hash)
-                return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded or (self.mode == "enforce"))
+                    decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash)
+                return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
 
         # Step 8: Provider validation
         if route.provider not in ("claude", "codex"):
             decision = Decision(False, node_id, "PROVIDER_NOT_EXECUTABLE", f"Provider {route.provider} not executable", "1.0", decision.checked_rules if decision else [])
             if self.mode == "enforce" and not decision_recorded:
-                self.control.record_decision(decision, run_id, node_id, envelope_hash)
-            return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded or (self.mode == "enforce"))
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash)
+            return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
 
         # Step 9: Check cancellation before reserve
         if self.mode in ("shadow", "enforce"):

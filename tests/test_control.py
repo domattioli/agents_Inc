@@ -146,6 +146,18 @@ class TestControlReplay(unittest.TestCase):
         self.assertEqual(result.state, "new")
         self.assertIsNone(result.artifact_ref)
 
+    def test_replay_readonly_returns_error(self):
+        """Test that readonly DB returns error state, not new."""
+        # Make DB directory read-only
+        db_dir = self.control.db_path.parent
+        db_dir.chmod(0o444)
+
+        try:
+            result = self.control.check_replay("msg-001", "hash-abc123")
+            self.assertEqual(result.state, "error")
+        finally:
+            db_dir.chmod(0o755)
+
     def test_replay_duplicate_message(self):
         """Test detecting a duplicate (same ID and hash)."""
         # Store first
@@ -189,6 +201,18 @@ class TestControlCancellation(unittest.TestCase):
 
         # Now it's cancelled
         self.assertTrue(self.control.is_cancelled("run-001"))
+
+    def test_is_cancelled_on_readonly_returns_true(self):
+        """Test that is_cancelled returns True on readonly DB (fail closed)."""
+        # Make DB directory read-only
+        db_dir = self.control.db_path.parent
+        db_dir.chmod(0o444)
+
+        try:
+            result = self.control.is_cancelled("run-001")
+            self.assertTrue(result)  # Fail closed: treat as cancelled
+        finally:
+            db_dir.chmod(0o755)
 
 
 class TestControlLease(unittest.TestCase):
