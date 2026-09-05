@@ -46,3 +46,8 @@ CEO (Dom) rulings from grill session with fable (CTO) + astra (CSO). Each supers
 - CONFLICT (Phase 2): `available_providers()` assumes both logins present; Phase 2 doctor must probe each CLI and block on missing Required provider.
 - RISK (Phase 2): routing always prefers Claude; Tim with only Codex working stalls. Router should skip providers whose probe failed.
 - NEXT (astra, accepted as Phase 2 order): acceptance gate hardening + other-vendor Reviewer → execution boundary (isolation, login preflight, quota, hidden-key UX) → measured Tim+Dom pilot vs all-frontier.
+
+## Phase 2 probes (2026-09-05)
+- Isolation, claude worker (`-p --disallowedTools <all> --setting-sources "" --strict-mcp-config`): host-file read CLEAN, cwd listing CLEAN, web fetch CLEAN.
+- Isolation, codex worker: with `-s read-only -C <empty> shell_environment_policy.inherit="none" tools.web_search=false` → host-file read LEAK, web fetch LEAK. Fixed by `-c features.shell_tool=false` + `-c web_search="disabled"` (string; `tools.web_search=false` is ignored, `web_search=false` errors). After fix: 3/3 CLEAN. `-s read-only` alone is NOT isolation.
+- Reviewer, real run, tim: worker haiku 5/5 quotes → reviewer gpt-5.6-luna returned `issues`: claim 1 qualified by Clause 8; 2 omissions. Status needs-review (correct: draft did not name the clause conflict). `verified` not yet observed on a real run; that is the gate working, not a bug.

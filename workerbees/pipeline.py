@@ -45,7 +45,7 @@ def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
-          available: set[str] | None = None, runner=run_worker) -> BriefResult:
+          available: set[str] | None = None, review_enabled: bool = True, runner=run_worker) -> BriefResult:
     source = source_path.read_text()
     avail = available if available is not None else available_providers()
     route = pick_model("extract", "cheap", avail, is_authorized(workspace))
@@ -93,6 +93,16 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             status = "returned"
             receipt["content_review"] = "uncited_draft"
             receipt["uncited"] = sorted(cited - anchored)
+    if status == "needs-review" and review_enabled:
+        from .reviewer import review
+        rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode)
+        receipt["reviewer"] = {"status": rv.status, "verdicts": rv.verdicts, "omissions": rv.omissions}
+        if rv.status == "ok":
+            status, receipt["content_review"], receipt["human_decision_needed"] = "verified", "pass", False
+        elif rv.status == "paused":
+            status = "paused"
+        else:
+            receipt["content_review"] = rv.status if rv.status != "issues" else "issues"
     return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
 
 if __name__ == "__main__":
