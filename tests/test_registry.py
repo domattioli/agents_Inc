@@ -146,5 +146,60 @@ class TestRegistry(unittest.TestCase):
             Registry.load(str(self.base))
         self.assertIn("Invalid clearance", str(ctx.exception))
 
+    def test_disabled_agent_returns_none_by_default(self):
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"].append({
+            "id": "agent-disabled",
+            "name": "Disabled Agent",
+            "type": "worker",
+            "capabilities": [],
+            "enabled": False,
+            "created_date": "2026-01-15",
+            "clearance": "public"
+        })
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        result = reg.agent("agent-disabled")
+        self.assertIsNone(result)
+
+        result_with_disabled = reg.agent("agent-disabled", include_disabled=True)
+        self.assertIsNotNone(result_with_disabled)
+        self.assertEqual(result_with_disabled.id, "agent-disabled")
+
+    def test_disabled_capability_returns_none_by_default(self):
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["capabilities"].append("disabled.capability")
+        gov["agents"][0]["capabilities"].append("disabled.capability")
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        disabled_cap = Capability(id="disabled.capability", name="Disabled Cap", enabled=False)
+        caps_dict = dict(reg.capabilities)
+        caps_dict["disabled.capability"] = disabled_cap
+        reg = Registry(
+            version=reg.version,
+            policy_version=reg.policy_version,
+            snapshot_hash=reg.snapshot_hash,
+            agents=reg.agents,
+            capabilities=caps_dict,
+            relationships=reg.relationships
+        )
+
+        result = reg.capability("disabled.capability")
+        self.assertIsNone(result)
+
+        result_with_disabled = reg.capability("disabled.capability", include_disabled=True)
+        self.assertIsNotNone(result_with_disabled)
+
+    def test_empty_created_date_raises_error(self):
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"][0]["created_date"] = ""
+        (self.base / "governance.json").write_text(json.dumps(gov))
+
+        with self.assertRaises(RegistryError) as ctx:
+            Registry.load(str(self.base))
+        self.assertIn("must be non-empty ISO YYYY-MM-DD", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()
