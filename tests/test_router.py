@@ -21,5 +21,10 @@ class RouterTest(unittest.TestCase):
     def test_unknown_tier_none(self):
         self.assertIsNone(pick_model("extract", "platinum", {"claude"}, workspace_authorized=False))
 
+    def test_prefer_provider(self):
+        r = pick_model("extract", "cheap", {"claude", "codex"}, workspace_authorized=False, prefer_provider="codex")
+        self.assertEqual(r.provider, "codex")
+        self.assertEqual(r.model, "gpt-5.4-mini")
+
 if __name__ == "__main__":
     unittest.main()
