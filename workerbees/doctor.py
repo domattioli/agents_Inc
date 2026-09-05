@@ -67,7 +67,7 @@ def run(workspace: Path, providers=("claude", "codex"), runner=run_worker) -> di
     (d / "doctor.json").write_text(json.dumps(out, indent=2))
     return out
 
-def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600, runner=run_worker) -> set[str]:
+def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600, runner=run_worker, extra_env_paths: list | None = None) -> set[str]:
     f = workspace / ".workerbees" / "doctor.json"
     cache = None
     if f.exists():
@@ -80,7 +80,7 @@ def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600,
     if cache is None:
         cache = run(workspace, runner=runner)
     ok_required = {p for p, r in cache["results"].items() if r["status"] == "ok"}
-    return (available_providers(env_path) - REQUIRED) | ok_required
+    return (available_providers(env_path, extra_env_paths=extra_env_paths) - REQUIRED) | ok_required
 
 def quota_paused(workspace: Path) -> list[str]:
     f = workspace / ".workerbees" / "doctor.json"

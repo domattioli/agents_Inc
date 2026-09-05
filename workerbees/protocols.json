@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkerBeesEnvelopeV1",
+  "description": "Standard envelope v1 protocol definition for WorkerBees inter-agent communication, featuring bounded types, strict constraints, and specialized message structures.",
+  "type": "object",
+  "required": [
+    "version",
+    "timestamp",
+    "sender_id",
+    "recipient_id",
+    "message_id",
+    "correlation_id",
+    "priority",
+    "message_kind",
+    "content",
+    "metadata"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "v1",
+      "description": "Protocol version identifier."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 64,
+      "description": "ISO 8601 UTC timestamp of message dispatch."
+    },
+    "sender_id": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-zA-Z0-9_.-]+$",
+      "description": "Unique identifier of the sending agent or node."
+    },
+    "recipient_id": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-zA-Z0-9_.-]+$",
+      "description": "Unique identifier of the receiving agent or node."
+    },
+    "message_id": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Unique UUID for this specific message instance."
+    },
+    "correlation_id": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "UUID linking related request/response or workflow threads."
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high"],
+      "description": "Execution priority level for message handling."
+    },
+    "message_kind": {
+      "type": "string",
+      "enum": ["request", "response", "error", "cancellation", "approval"],
+      "description": "The semantic category of the payload."
+    },
+    "content": {
+      "type": "object",
+      "description": "Payload conforming to schema rules dictated by message_kind.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ErrorContent"
+        },
+        {
+          "$ref": "#/$defs/CancellationContent"
+        },
+        {
+          "$ref": "#/$defs/ApprovalContent"
+        },
+        {
+          "$ref": "#/$defs/StandardContent"
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Contextual metadata object (bounded size via property limits).",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ErrorContent": {
+      "type": "object",
+      "required": ["error_code", "error_message", "retryable"],
+      "properties": {
+        "error_code": {
+          "type": "string",
+          "maxLength": 50,
+          "enum": [
+            "ERR_UNAUTHORIZED",
+            "ERR_TIMEOUT",
+            "ERR_VALIDATION_FAILED",
+            "ERR_RESOURCE_EXHAUSTED",
+            "ERR_INTERNAL"
+          ]
+        },
+        "error_message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CancellationContent": {
+      "type": "object",
+      "required": ["target_message_id", "reason"],
+      "properties": {
+        "target_message_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "grace_period_seconds": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApprovalContent": {
+      "type": "object",
+      "required": ["action_requested", "status", "approver_id"],
+      "properties": {
+        "action_requested": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "approver_id": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "conditions": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 150
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "StandardContent": {
+      "type": "object",
+      "description": "Generic payload for standard request/response messaging.",
+      "properties": {
+        "action": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 50
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
