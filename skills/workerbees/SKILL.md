@@ -9,3 +9,4 @@ description: Delegate document analysis to cheap tool-free Workers with determin
 4. Quota exhausted → paused. No paid fallback exists. Tell the user.
 5. Keys: run `python3 -m workerbees.keys <provider>` in the user's terminal. You never see keys.
 Modes: lawyer (default), scientist, engineer.
+Optional providers (gemini/mistral/openrouter) run via legacy wrappers `skills/codex-bridge/scripts/{g,m,o}ask.sh`, keys in per-provider files, D7 still applies — see docs/HOW-IT-WORKS.md.
