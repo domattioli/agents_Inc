@@ -42,6 +42,18 @@ Small composable interfaces; provider-agnostic; declarative versioned config; de
 Smallest complete vertical slice first: registry → graph edge → policy decision → typed message → dispatcher → one supervisor → one worker → one denied request → one successful request → audit/tracing for both. Then expand only where it fits.
 
 ## Operator constraints for THIS repo (added by CTO)
-- caveman ultra for every agent prompt.
-- Code written by free/cheapest models (gemini flash via gask.sh where non-confidential; else gpt-5.4-mini / haiku). Review by gpt-5.6-luna, sonnet fallback. No frontier at build time except astra for planning.
-- Build starts after spec 002 (dispatch graph ledger) lands: the ledger is the provenance/audit substrate this plane consumes.
+- Prompt policy
+  - **Agent prompts**
+    - Use caveman ultra for every agent prompt.
+- Build policy
+  - **Writing**
+    - Free or cheapest models write code: gemini flash via gask.sh for non-confidential work, otherwise gpt-5.4-mini or haiku.
+  - **Review**
+    - gpt-5.6-luna reviews code, with sonnet as fallback.
+  - **Frontier**
+    - Use no frontier model at build time except astra for planning.
+- Dependency
+  - **Start condition**
+    - Start the build after spec 002, the dispatch graph ledger, lands.
+  - **Ledger role**
+    - The ledger is the provenance and audit substrate consumed by this plane.
