@@ -263,6 +263,36 @@ class TestControlErrorHandling(unittest.TestCase):
             # Restore permissions for cleanup
             db_dir.chmod(0o755)
 
+    def test_record_decision_with_sqlite_error_raises(self):
+        """Test that non-readonly sqlite errors raise ControlError."""
+        from workerbees.control import ControlError
+
+        # Corrupt the database file by truncating it
+        with open(self.control.db_path, "w") as f:
+            f.write("invalid sqlite content")
+
+        decision = Decision(
+            allowed=True,
+            decision_id="dec-bad",
+            reason_code="TEST",
+            reason="test",
+            policy_version="v1.0"
+        )
+
+        # Should raise ControlError, not return False
+        with self.assertRaises(ControlError):
+            self.control.record_decision(decision, "run-bad", "node-bad", "hash-bad")
+
+    def test_reserve_negative_calls_returns_false(self):
+        """Test that reserve with negative calls returns False."""
+        result = self.control.reserve("run-001", "node-001", calls=-1, seconds=5.0)
+        self.assertFalse(result)
+
+    def test_reserve_negative_seconds_returns_false(self):
+        """Test that reserve with negative seconds returns False."""
+        result = self.control.reserve("run-001", "node-001", calls=5, seconds=-1.0)
+        self.assertFalse(result)
+
 
 class TestApprovals(unittest.TestCase):
     """Test governance approvals API."""
@@ -284,6 +314,16 @@ class TestApprovals(unittest.TestCase):
         result = self.control.decide_approval(approval_id, "alice", "approved", "2026-09-05T00:00:00Z")
         self.assertFalse(result)
 
+    def test_self_approval_case_insensitive(self):
+        """Test that self-approval rejects case-insensitive with whitespace."""
+        approval_id = self.control.request_approval(
+            "run-001", "Alice", "delete", "file.txt", "hash123", "high", ["rule1"], "2099-01-01T00:00:00Z"
+        )
+        self.assertIsNotNone(approval_id)
+        # " alice " should match "Alice" after strip+casefold
+        result = self.control.decide_approval(approval_id, " alice ", "approved", "2026-09-05T00:00:00Z")
+        self.assertFalse(result)
+
     def test_expired_approval_rejected(self):
         """Test that expired approvals cannot be decided."""
         approval_id = self.control.request_approval(
@@ -293,6 +333,15 @@ class TestApprovals(unittest.TestCase):
         result = self.control.decide_approval(approval_id, "bob", "approved", "2026-09-05T00:00:00Z")
         self.assertFalse(result)
 
+    def test_iso_parsing_with_z_suffix(self):
+        """Test that ISO timestamps with Z suffix parse correctly."""
+        approval_id = self.control.request_approval(
+            "run-001", "alice", "delete", "file.txt", "hash123", "high", ["rule1"], "2099-01-01T00:00:00Z"
+        )
+        # Both formats should work
+        result = self.control.decide_approval(approval_id, "bob", "approved", "2026-01-01T12:00:00Z")
+        self.assertTrue(result)
+
     def test_approved_binds_exact_action(self):
         """Test that approved binding requires exact action match."""
         approval_id = self.control.request_approval(
@@ -300,11 +349,21 @@ class TestApprovals(unittest.TestCase):
         )
         self.control.decide_approval(approval_id, "bob", "approved", "2026-09-05T00:00:00Z")
 
-        # Exact match binds
-        self.assertTrue(self.control.approval_binds(approval_id, "delete", "file.txt", "hash123"))
+        # Exact match binds (now param required)
+        self.assertTrue(self.control.approval_binds(approval_id, "delete", "file.txt", "hash123", "2026-09-05T00:00:00Z"))
 
         # Different action does not bind
-        self.assertFalse(self.control.approval_binds(approval_id, "read", "file.txt", "hash123"))
+        self.assertFalse(self.control.approval_binds(approval_id, "read", "file.txt", "hash123", "2026-09-05T00:00:00Z"))
+
+    def test_approval_binds_expired_approval(self):
+        """Test that expired approval does not bind."""
+        approval_id = self.control.request_approval(
+            "run-001", "alice", "delete", "file.txt", "hash123", "high", ["rule1"], "2026-09-05T00:00:00Z"
+        )
+        self.control.decide_approval(approval_id, "bob", "approved", "2026-09-04T12:00:00Z")
+
+        # Should not bind after expiry
+        self.assertFalse(self.control.approval_binds(approval_id, "delete", "file.txt", "hash123", "2026-09-06T00:00:00Z"))
 
     def test_changed_artifact_hash_binds_false(self):
         """Test that changed artifact_hash causes binding to fail."""
@@ -314,7 +373,28 @@ class TestApprovals(unittest.TestCase):
         self.control.decide_approval(approval_id, "bob", "approved", "2026-09-05T00:00:00Z")
 
         # Different artifact_hash does not bind
-        self.assertFalse(self.control.approval_binds(approval_id, "delete", "file.txt", "hash456"))
+        self.assertFalse(self.control.approval_binds(approval_id, "delete", "file.txt", "hash456", "2026-09-05T00:00:00Z"))
+
+    def test_field_capping_at_256_chars(self):
+        """Test that TEXT fields are capped at 256 chars on insert."""
+        long_action = "a" * 300
+        long_resource = "b" * 300
+        long_risk = "c" * 300
+        approval_id = self.control.request_approval(
+            "run-001", "alice", long_action, long_resource, "hash123", long_risk, ["rule1"], "2099-01-01T00:00:00Z"
+        )
+        self.assertIsNotNone(approval_id)
+
+        # Verify fields are truncated in DB
+        conn = sqlite3.connect(str(self.control.db_path))
+        cur = conn.cursor()
+        cur.execute("SELECT action, resource, risk FROM approvals WHERE approval_id = ?", (approval_id,))
+        row = cur.fetchone()
+        conn.close()
+
+        self.assertEqual(len(row[0]), 256)  # action truncated to 256
+        self.assertEqual(len(row[1]), 256)  # resource truncated to 256
+        self.assertEqual(len(row[2]), 256)  # risk truncated to 256
 
     def test_double_decide_rejected(self):
         """Test that approvals cannot be decided twice."""
