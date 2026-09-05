@@ -27,11 +27,18 @@ def verify(source_text: str, source_id: str, claims: list[dict]) -> Report:
         if not m or m["src"] != source_id or not (1 <= int(m["n"]) <= len(paras)):
             rep.failures.append({"claim": i, "reason": "bad_anchor", "anchor": c.get("anchor")})
             continue
-        if _norm(c.get("quote", "")) and _norm(c["quote"]) in _norm(paras[int(m["n"]) - 1]):
-            rep.matched += 1
+        quote_norm = _norm(c.get("quote", ""))
+        if quote_norm:
+            # Match with word boundaries: \b won't work in regex after _norm strips punctuation,
+            # so use negative lookahead/lookbehind with \w
+            pattern = r"(?<!\w)" + re.escape(quote_norm) + r"(?!\w)"
+            if re.search(pattern, _norm(paras[int(m["n"]) - 1])):
+                rep.matched += 1
+            else:
+                rep.failures.append({"claim": i, "reason": "quote_not_in_anchor", "anchor": c["anchor"]})
         else:
             rep.failures.append({"claim": i, "reason": "quote_not_in_anchor", "anchor": c["anchor"]})
     return rep
 
 def passed(report: Report) -> bool:
-    return report.checked == report.matched
+    return report.checked > 0 and report.checked == report.matched

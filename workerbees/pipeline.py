@@ -1,7 +1,7 @@
 """Markdown source -> cheap Worker extract+draft -> deterministic Verifier -> receipt.
 Phase 1 ships no Reviewer, so the best reachable status is needs-review (D5 quality floor)."""
 from __future__ import annotations
-import json
+import json, re
 from dataclasses import dataclass, field
 from pathlib import Path
 from .router import Route, pick_model
@@ -81,6 +81,18 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     if status == "needs-review" and not draft.strip():
         status = "returned"
         receipt["content_review"] = "draft_missing"
+    # Check draft citations against anchored paragraphs
+    if status == "needs-review":
+        cited = set(re.findall(r"\(p(\d+)\)", draft))
+        anchored = {a.split('#p')[1] for a in (c.get('anchor','') for c in claims) if '#p' in a}
+        if not cited:
+            status = "returned"
+            receipt["content_review"] = "uncited_draft"
+            receipt["uncited"] = []
+        elif cited - anchored:
+            status = "returned"
+            receipt["content_review"] = "uncited_draft"
+            receipt["uncited"] = sorted(cited - anchored)
     return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
 
 if __name__ == "__main__":

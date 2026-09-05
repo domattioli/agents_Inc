@@ -39,3 +39,10 @@ CEO (Dom) rulings from grill session with fable (CTO) + astra (CSO). Each supers
 - Phase 1 real-CLI probe (claude haiku, tool-free, 2026-09-05): `tim needs-review checked 5 matched 5 fails []`; `dom needs-review checked 5 matched 5 fails []`. Two defects found and fixed en route: `--disallowedTools` variadic swallowed positional prompt (prompt now on stdin, `--` terminator); worker fenced JSON + miscounted paragraphs (fence strip + `[pN]` numbering in prompt). Open: haiku returned empty `draft` on both runs. Codex probe blocked by quota until 13:07 (D9 pause observed live).
 - Codex model IDs (2026-09-05): ChatGPT-account Codex rejects `gpt-5-mini`, `gpt-5`, `gpt-5-codex`, `o4-mini` ("not supported when using Codex with a ChatGPT account"). Supported (PONG): `gpt-5.4-mini` (cheap), `gpt-5.6-luna` (mid), `gpt-6-astra` (frontier). routing.json updated.
 - Phase 1 end-to-end, both required providers, tim fixture: `tim/haiku needs-review 5/5`, `tim/codex gpt-5.4-mini needs-review 5/5`. Both drafts cite (pN) and surface the Clause 3 vs Clause 8 conflict unprompted. Draft-missing now downgrades to `returned`.
+
+## Astra drift check on Phase 1 @ bd33f7e (2026-09-05)
+- CONFLICT (fixed same day): zero claims passed the Verifier trivially → false accept vs D5; draft citations unchecked. Fix: `passed` requires ≥1 claim; word-boundary quote match; every `(pN)` in draft must map to a claim anchor.
+- CONFLICT (Phase 2): Codex `-s read-only` still permits shell reads; Worker glossary says no tools → needs a stricter Codex isolation config + negative probes on both adapters.
+- CONFLICT (Phase 2): `available_providers()` assumes both logins present; Phase 2 doctor must probe each CLI and block on missing Required provider.
+- RISK (Phase 2): routing always prefers Claude; Tim with only Codex working stalls. Router should skip providers whose probe failed.
+- NEXT (astra, accepted as Phase 2 order): acceptance gate hardening + other-vendor Reviewer → execution boundary (isolation, login preflight, quota, hidden-key UX) → measured Tim+Dom pilot vs all-frontier.
