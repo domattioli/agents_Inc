@@ -12,16 +12,27 @@ class WorkerResult:
     output: str
     stderr: str
     exit_code: int
+    truncated: bool = False
 
-def run_worker(cmd: list[str], stdin_text: str, timeout: int = 300, cwd: str | None = None) -> WorkerResult:
+def run_worker(cmd: list[str], stdin_text: str, timeout: int = 300, cwd: str | None = None, max_output_bytes: int = 1_000_000) -> WorkerResult:
     try:
         p = subprocess.run(cmd, input=stdin_text, text=True, capture_output=True, timeout=timeout, cwd=cwd, check=False)
     except FileNotFoundError as e:
         return WorkerResult("failed", "", f"WB_CLI_NOT_FOUND: {e}", 127)
     except subprocess.TimeoutExpired:
         return WorkerResult("failed", "", "timeout", 124)
+
+    stdout, stderr = p.stdout, p.stderr
+    truncated = False
+    if len(stdout.encode("utf-8", errors="ignore")) > max_output_bytes:
+        stdout = stdout.encode("utf-8", errors="ignore")[:max_output_bytes].decode("utf-8", errors="ignore")
+        truncated = True
+    if len(stderr.encode("utf-8", errors="ignore")) > max_output_bytes:
+        stderr = stderr.encode("utf-8", errors="ignore")[:max_output_bytes].decode("utf-8", errors="ignore")
+        truncated = True
+
     if p.returncode == 0:
-        return WorkerResult("returned", p.stdout, p.stderr, 0)
-    if _QUOTA.search(p.stderr or p.stdout or ""):
-        return WorkerResult("paused", p.stdout, p.stderr, p.returncode)
-    return WorkerResult("failed", p.stdout, p.stderr, p.returncode)
+        return WorkerResult("returned", stdout, stderr, 0, truncated)
+    if _QUOTA.search(stderr or stdout or ""):
+        return WorkerResult("paused", stdout, stderr, p.returncode, truncated)
+    return WorkerResult("failed", stdout, stderr, p.returncode, truncated)

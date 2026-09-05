@@ -19,6 +19,8 @@ class Agent:
     created_date: str
     clearance: str
     max_delegation_depth: Optional[int] = None
+    runtime: Optional[str] = None
+    endpoint: Optional[str] = None
 
 @dataclass(frozen=True)
 class Capability:
@@ -110,7 +112,9 @@ class Registry:
                 enabled=bool(a_data.get("enabled", True)),
                 created_date=date_str,
                 clearance=clearance,
-                max_delegation_depth=a_data.get("max_delegation_depth")
+                max_delegation_depth=a_data.get("max_delegation_depth"),
+                runtime=a_data.get("runtime"),
+                endpoint=a_data.get("endpoint")
             )
 
         relationships: List[Relationship] = []
@@ -159,3 +163,17 @@ class Registry:
         if c is None:
             return None
         return c if include_disabled or c.enabled else None
+
+    def provider_for(self, agent_id: str) -> Optional[str]:
+        """Return the provider for an agent, looking up runtime or endpoint field."""
+        a = self.agents.get(agent_id)
+        if not a:
+            return None
+        known_providers = {"claude", "codex", "gemini", "mistral", "openrouter"}
+        for field_name in ('runtime', 'endpoint'):
+            val = getattr(a, field_name, None)
+            if isinstance(val, str) and val.strip():
+                provider = val.strip().lower()
+                if provider in known_providers:
+                    return provider
+        return None
