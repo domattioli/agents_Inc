@@ -1,23 +1,39 @@
 # HOW IT WORKS
 
-Caveman ultra. Reader = operator or agent. Newcomer → read `START-HERE.md` first.
+- Reader
+  - **Audience**
+    - This is for an operator or agent.
+  - **Prerequisite**
+    - Newcomers should read `START-HERE.md` first.
 
-## One sentence
+## System
 
-Cheap models do work. Expensive model supervises. This repo = plumbing + discipline to make that safe.
+- Delegation system
+  - **Work**
+    - Cheap models do the work.
+  - **Supervision**
+    - An expensive model supervises.
+  - **Purpose**
+    - The repo combines plumbing with discipline for safe delegation.
 
-## Two halves. Do not confuse them.
+## Two halves
 
 | half | file | owns | question it answers |
 |---|---|---|---|
 | mechanism | `skills/codex-bridge/` | transport, routing, retries, job state, cost logging | HOW do I send work out |
 | judgment | `skills/workerbee/` | tier choice, trust, verification, honesty | SHOULD I, and do I believe the answer |
 
-Mechanism has no opinions. Judgment has no code. Keep it that way → each stays replaceable.
+- Boundary
+  - **Mechanism**
+    - It has no opinions.
+  - **Judgment**
+    - It has no code.
+  - **Reason**
+    - Each half stays replaceable.
 
 ## Parts
 
-```
+```text
 you (orchestrator)
   │
   ├─ route.sh pick <class>      → which backend for this task class
@@ -34,105 +50,155 @@ you (orchestrator)
   └─ dashboard.py / usage_report.sh → what it cost
 ```
 
-`bridge.py` = separate thing. HTTP server, persistent codex thread, for remote clients. Not needed for local delegation. Ignore unless serving a phone.
+- Remote bridge
+  - **File**
+    - `bridge.py` is a separate HTTP server with a persistent codex thread for remote clients.
+  - **Local use**
+    - Local delegation does not need it.
+  - **Exception**
+    - Use it when serving a phone.
 
-## Flow. One job.
+## One-job flow
 
-1. classify task → task class (digest / triage / code review / write code / …)
-2. `route.sh pick <class>` → backend. Skips backends in cooldown.
-3. `agent.sh submit --backend <b> --wait "<prompt>"` → job id
-4. job runs. transient fail → auto retry. quota fail → cooldown, no retry.
-5. `agent.sh result <id>` → output + `result.json`
-5a. poll it the whole time → `poll.sh`. state only, never content. see `## Polling`
-6. YOU verify. See `## Trust` below.
-7. usage logged → cost visible later
+- Dispatch
+  - **Steps**
+    - `route.sh pick <class>` classifies the task and skips backends in cooldown.
+    - `agent.sh submit --backend <b> --wait "<prompt>"` queues the job and returns its id.
+    - The job retries transient failures automatically and places quota failures in cooldown without retrying.
+    - `agent.sh result <id>` returns output and `result.json`.
+    - `poll.sh` polls the job for the entire run.
+    - You verify the result.
+    - Usage is logged for later cost reporting.
 
 ## Polling
 
-Every dispatch outliving one tool call gets polled. Default, not optional.
+- Job observation
+  - **Rule**
+    - Poll every dispatch that outlives one tool call.
+  - **Poll command**
 
-```
+```bash
 scripts/poll.sh --pid-match <pat> --log <stderr> --out <stdout>
-scripts/watch.sh <stderr>        # human-facing live stream, other pane
 ```
 
-poll = state to the supervisor. watch = content to a human. Never swap them → piping a log into supervisor context burns the tokens delegation was meant to save.
+  - **Watch command**
 
-States: RUNNING / QUIET / RESUMED / DONE / DIED / TIMEOUT. Emits on CHANGE only.
+```bash
+scripts/watch.sh <stderr>
+```
 
-**exit 0 = returned, NOT verified.** Two different states. Conflating them → a crashed job reads as success. `DIED` = process gone + output empty; that is the state the poller exists for.
+  - **Boundary**
+    - Poll reports state to the supervisor. Watch streams content to a human in another pane.
+    - Never pipe a log into supervisor context because it spends the tokens delegation was meant to save.
+  - **States**
+    - `RUNNING`, `QUIET`, `RESUMED`, `DONE`, `DIED`, and `TIMEOUT` are emitted only on change.
+  - **Exit status**
+    - Exit 0 means returned, not verified.
+  - **DIED**
+    - `DIED` means the process is gone and output is empty.
 
 ## Money
 
-Three billing pools. Never merge them in your head.
+- Billing pools
+  - **Subscriptions**
+    - Anthropic covers opus, sonnet, haiku, and fable through session and weekly limits.
+    - ChatGPT covers astra, sol, terra, and luna through rolling ~5h and weekly windows.
+  - **API**
+    - Gemini free tier, Mistral, and OpenRouter use requests per day or dollars per token.
+  - **Budget mode**
+    - It shifts work from pool 1 to pools 2 and 3.
+    - Token cost falls while verification effort rises.
+  - **Measurement**
+    - The same dashboard recorded 15,221 Gemini tokens versus 79,077 Haiku tokens, while the external output required more checking because its input was not visible.
+  - **Price rule**
+    - Unknown price is not zero.
+  - **Evidence**
+    - Coercing null to 0 inflated a savings figure 29x, from $1.15 to $33.06.
+    - Free models use `0.0`. Unknown prices stay absent, and plan-based access has no per-token price.
 
-| pool | models | shape |
-|---|---|---|
-| Anthropic plan | opus / sonnet / haiku / fable | session + weekly limits |
-| ChatGPT plan | astra / sol / terra / luna | rolling ~5h + weekly windows |
-| per-token API | gemini free tier, mistral, openrouter | requests/day or $ per token |
+## Trust
 
-Budget mode = shift work off pool 1 onto pools 2 and 3.
+- Independent verification
+  - **Failure**
+    - A delegate can report GREEN while printing intended measurements instead of actual measurements.
+  - **Observed data**
+    - One session claimed columns `0 12 44 91 124`. The actual values were `0 12 49 122 214 329 446`.
+  - **Verifier**
+    - You write it outside the delegate’s workspace and tell the delegate not to edit it.
+  - **Evidence**
+    - A report needs harness output and an exit code. A claim without output is RED.
+  - **Harness gate**
+    - Self-test the harness with known-good and known-bad inputs before using it.
+  - **Granularity**
+    - Check that the harness measures the same granularity as the claim.
+  - **Recheck**
+    - Re-run the delegate’s own check yourself.
+  - **Reference**
+    - Full discipline is in `../skills/workerbee/SKILL.md`.
 
-Not free. Real trade: token bill ↓, verification effort ↑. Measured — same dashboard cost 15,221 Gemini tokens vs 79,077 Haiku tokens, but external output needed more checking because you cannot see what it read. Use budget mode when the bill binds. Not when correctness binds.
+## Sandbox constraints
 
-**Unknown price ≠ zero.** Coercing null→0 once inflated a savings figure 29x ($1.15 → $33.06). Free models priced `0.0` explicitly. Unknown left absent, excluded from sums, headline marked partial (`~$1.15+?`). Plan-based access has no per-token price → leave absent. Writing `0.0` there is a lie in the other direction.
-
-## Trust. The part that actually matters.
-
-Delegate reports GREEN. Believing it is the expensive mistake.
-
-Real, one session, three times: delegate printed the numbers it INTENDED, not the ones it MEASURED. Claimed columns `0 12 44 91 124`. Actual `0 12 49 122 214 329 446`. Nothing aligned.
-
-Rules:
-- YOU write the verifier. Outside delegate's workspace. Dispatch says DO NOT EDIT IT.
-- Report must carry harness output + exit code. Claim without output = RED.
-- Self-test the harness both ways first. Prove GREEN on known-good, RED on known-bad. Unfalsifiable harness worse than none.
-- Passing harness still not proof. Check its granularity matches the claim's. One passed while measuring 4 boundaries on rows holding 7 items.
-- Re-run the delegate's own check yourself. Cheap. Catches most of it.
-
-Full discipline → `../skills/workerbee/SKILL.md`.
-
-## Sandbox gotchas. Bite every time.
-
-- `workspace-write` → NO network. HTTP buddies die `Could not resolve host`. Fix: `-c 'sandbox_workspace_write.network_access=true'`
-- same sandbox blocks `.git/index.lock` → delegates CANNOT commit. Expect `Operation not permitted`. Have them report `BLOCKED-SANDBOX`; you land the commit.
-- outside a git repo → `--skip-git-repo-check` required
-- review-only scope → `--sandbox read-only`. Cheaper than trusting "do not edit". Sandbox guarantees it; the model does not.
+- Execution
+  - **Network**
+    - `workspace-write` blocks network access. HTTP buddies fail with `Could not resolve host`.
+  - **Workaround**
+    - Use `-c 'sandbox_workspace_write.network_access=true'`.
+  - **Git**
+    - The same sandbox blocks `.git/index.lock`, so delegates cannot commit. Expect `Operation not permitted` and have them report `BLOCKED-SANDBOX`.
+  - **Repository**
+    - Outside a git repo, use `--skip-git-repo-check`.
+  - **Review**
+    - Use `--sandbox read-only` for review-only work.
 
 ## Irreversible actions
 
-Number the gates. Withholding = SUCCESS outcome. Firing on a red gate = only unforgivable failure. Ambiguous gate → RED.
+- Gates
+  - **Counting**
+    - Number the gates.
+  - **Withholding**
+    - Withholding an action after a red gate is the successful outcome.
+  - **Ambiguity**
+    - An ambiguous gate is RED.
+  - **Location**
+    - Guards belong on the remote side because a launcher guard cannot protect a remote session.
+  - **Duplicate dispatch**
+    - Check whether an uncertain dispatch landed before firing it again.
 
-Guards live on the REMOTE side. Launching session dies long before a remote job does. A guard in the launcher protects nothing.
+## Stateless providers
 
-If unsure whether a dispatch landed → CHECK before re-firing. Double dispatch = double cost.
+- One-shot behavior
+  - **Context**
+    - Gemini, Mistral, and OpenRouter receive only the prompt, with no tools or repository.
+  - **Evidence**
+    - Paste source, real rows, and actual output instead of describing a function.
+  - **Verification**
+    - Buddy output is never evidence. Verify it against the real system with a citation.
+- Provider failures
+  - **Failover**
+    - Fail over across provider families.
+  - **Signals**
 
-## Stateless buddies
-
-Gemini / Mistral / OpenRouter one-shots see ONLY your prompt. No tools. No repo.
-
-Describe a function to them → they invent a plausible one that does not exist. Paste verbatim source, real rows, actual output.
-
-Buddy output never = evidence. Verify against the real system, with a citation.
-
-Providers fail constantly. Verbatim:
-```
+```text
 ask_openrouter: API error: Upstream error from Nvidia: Service temporarily overloaded
 ask_gemini: API error: This model is currently experiencing high demand.
 ask_mistral: API error: Not enough capacity available for this request, please retry later.
 ```
-Fail over across family. Never stall on one dead provider.
 
-Gemini `503` = capacity → retry correct. Gemini `429` = quota → retry burns remaining allowance faster. Different failures. Different responses.
+  - **Gemini**
+    - `503` means capacity and merits a retry.
+    - `429` means quota and a retry burns remaining allowance faster.
 
 ## Secrets
 
-Keys come from a `.env` file. Never on a command line. Never echoed to a log. Never pasted into a model prompt.
-
-Name forbidden paths explicitly in every dispatch — do not assume the delegate infers them.
-
-Operator pastes a live key into chat → say so, recommend rotation, keep using the file.
+- Key handling
+  - **Source**
+    - Keys come from a `.env` file.
+  - **Prohibition**
+    - Never put keys on a command line, echo them to a log, or paste them into a model prompt.
+  - **Dispatch**
+    - Name forbidden paths explicitly in every dispatch.
+  - **Exposure**
+    - If an operator pastes a live key into chat, recommend rotation and continue using the file.
 
 ## Legacy wrappers for optional providers
 
@@ -144,16 +210,25 @@ Operator pastes a live key into chat → say so, recommend rotation, keep using 
 | Mistral | `skills/codex-bridge/scripts/mask.sh` | `~/.config/devstral/api_key` |
 | OpenRouter | `skills/codex-bridge/scripts/oask.sh` | `~/.codex-bridge/openrouter-key` (`OPEN_ROUTER_API_KEY`) |
 
-Keys live in those per-provider files. There is no `~/.config/workerbees/.env` — absence of it does not mean absence of keys.
+- Optional-provider access
+  - **Key location**
+    - Keys live in those per-provider files. There is no `~/.config/workerbees/.env`, and its absence does not mean keys are absent.
+  - **Usage**
 
-Usage: `bash skills/codex-bridge/scripts/gask.sh --tier digest "prompt"`. `--file PATH` attaches context. `oask.sh` refuses non-`:free` models (spend guard).
+```bash
+bash skills/codex-bridge/scripts/gask.sh --tier digest "prompt"
+```
 
-D7 applies: confidential input to an optional provider is denied until that workspace holds explicit authorization (`.workerbees/authorization.json`). Non-confidential extract/summarize work only.
+    - `--file PATH` attaches context.
+    - `oask.sh` refuses non-`:free` models through its spend guard.
+  - **Authorization**
+    - D7 denies confidential input to an optional provider until `.workerbees/authorization.json` authorizes that workspace.
+    - Non-confidential extract and summarize work is allowed.
 
-## Where to go next
+## Next docs
 
-- extend it → `EXTENDING.md`
-- new human → `START-HERE.md`
-- full supervision discipline → `../skills/workerbee/SKILL.md`
-- routing table → `../skills/codex-bridge/reference/routing-policy.md`
-- budget mode detail → `../skills/codex-bridge/reference/budget-mode.md`
+- `EXTENDING.md` covers extensions.
+- `START-HERE.md` serves new humans.
+- `../skills/workerbee/SKILL.md` contains the supervision discipline.
+- `../skills/codex-bridge/reference/routing-policy.md` contains routing.
+- `../skills/codex-bridge/reference/budget-mode.md` contains budget mode.

@@ -1,4 +1,4 @@
-# Bench — measured pilot (D5/D10)
+# Bench: measured pilot (D5/D10)
 
 | fixture | provider/tier | model | status | quotes | reviewer | review | seconds | accepted | verifier_pass |
 |---|---|---|---|---|---|---|---|---|---|
@@ -11,15 +11,26 @@
 | dom | claude/frontier | fable | returned | 5/5 | disabled | disabled | 10.6 | False | True |
 | dom | codex/frontier | gpt-6-astra | returned | 5/5 | disabled | disabled | 15.8 | False | True |
 
-Frontier baseline runs without a Reviewer, so it cannot reach accepted; compare on verifier_pass and seconds.
+- Frontier baseline
+  - **Reviewer**
+    - Frontier baseline runs without a Reviewer, so it cannot reach accepted.
+  - **Comparison**
+    - Compare frontier runs on verifier_pass and seconds.
 
 ## Per configuration
-- claude/cheap: accepted 2/2; verifier_pass 2/2; mean seconds 24.0; incremental dollars: 0 (subscription only, D9); subscription calls: 4
-- codex/cheap: accepted 2/2; verifier_pass 2/2; mean seconds 28.6; incremental dollars: 0 (subscription only, D9); subscription calls: 4
-- claude/frontier: accepted 0/2; verifier_pass 2/2; mean seconds 10.6; incremental dollars: 0 (subscription only, D9); subscription calls: 2
-- codex/frontier: accepted 0/2; verifier_pass 2/2; mean seconds 15.0; incremental dollars: 0 (subscription only, D9); subscription calls: 2
 
-No savings percentage is reported until both workflows are measured at N≥5 (D10).
+- Results
+  - **claude/cheap**
+    - accepted 2/2. verifier_pass 2/2. Mean seconds 24.0. Incremental dollars: 0 (subscription only, D9). Subscription calls: 4
+  - **codex/cheap**
+    - accepted 2/2. verifier_pass 2/2. Mean seconds 28.6. Incremental dollars: 0 (subscription only, D9). Subscription calls: 4
+  - **claude/frontier**
+    - accepted 0/2. verifier_pass 2/2. Mean seconds 10.6. Incremental dollars: 0 (subscription only, D9). Subscription calls: 2
+  - **codex/frontier**
+    - accepted 0/2. verifier_pass 2/2. Mean seconds 15.0. Incremental dollars: 0 (subscription only, D9). Subscription calls: 2
+- Savings
+  - **Reporting rule**
+    - Report no savings percentage until both workflows reach N≥5 (D10).
 
 ```json
 [

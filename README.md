@@ -2,28 +2,51 @@
 
 agents, all the way down
 
-Delegation to cheap AI models, with the discipline to know whether to believe what comes back. Aimed at people who do not code.
+## Project
 
-**Status: pre-MVP.** The plan is in [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md); most of what it describes is not built yet. What exists today is the delegation mechanism, the supervision discipline, and the docs.
+- Delegation system
+  - **Purpose**
+    - It sends narrow jobs to cheap AI models and checks the returned work.
+  - **Audience**
+    - It is aimed at people who do not code.
+  - **Status**
+    - **Pre-MVP.** The plan is in [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md), and most of it is not built yet.
+    - The delegation mechanism, supervision discipline, and documentation exist today.
 
-## Docs
+## Documentation
 
 | file | reader |
 |---|---|
 | [`docs/START-HERE.md`](docs/START-HERE.md) | new human, plain language |
 | [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) | operator/agent, caveman ultra |
 | [`docs/EXTENDING.md`](docs/EXTENDING.md) | adding a vendor, model, task class, or domain |
-| [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) | the build plan — cut line, architecture, phases |
+| [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) | the build plan: cut line, architecture, phases |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | picking this up in a fresh session |
 | [`skills/workerbee/SKILL.md`](skills/workerbee/SKILL.md) | full supervision discipline |
 
-Two halves, deliberately separate: `skills/codex-bridge/` is mechanism (transport, routing, retries, cost logging), `skills/workerbee/` is judgment (tier choice, trust, verification). No code in the second, no opinions in the first.
+## Two halves
 
-## The one rule
+- System design
+  - **Mechanism**
+    - `skills/codex-bridge/` owns transport, routing, retries, and cost logging.
+  - **Judgment**
+    - `skills/workerbee/` owns tier choice, trust, and verification.
+  - **Boundary**
+    - The mechanism contains no judgment, and the judgment layer contains no code.
 
-An AI model will tell you it succeeded when it did not — not by lying, but by reporting what it meant to produce rather than what it produced. So **the thing that checks the work must not be the thing that did the work.** When a delegate says its gate passed, re-run the check yourself.
+## Verification rule
 
-Everything else here is downstream of that.
+- Independent checking
+  - **Failure mode**
+    - An AI model can report what it meant to produce instead of what it produced.
+  - **Rule**
+    - The thing that checks the work must not be the thing that did the work.
+  - **Practice**
+    - Re-run the check yourself when a delegate says its gate passed.
+  - **Reason**
+    - The check separates useful delegation from dangerous delegation.
+  - **Scope**
+    - Every other design choice follows this rule.
 
 ## Quick start
 
@@ -38,11 +61,21 @@ skills/codex-bridge/scripts/watch.sh <logfile>
 skills/codex-bridge/scripts/poll.sh --once --pid-match <pat> --log <log> --out <out>
 ```
 
-Keys live in a file, never on a command line and never in a prompt to a model.
+- Key handling
+  - **Location**
+    - Keys live in a file.
+  - **Prohibition**
+    - Keys never belong on a command line or in a model prompt.
 
-## The HTTP bridge
+## HTTP bridge
 
-`bridge.py` exposes the local `codex` CLI over authenticated HTTP, for driving it from another device. It is peripheral to the MVP and the plan defers it — a fresh CLI job per task avoids the daemon lifecycle and session-contamination problems. Kept because it works.
+- `bridge.py`
+  - **Function**
+    - It exposes the local `codex` CLI over authenticated HTTP for another device.
+  - **MVP status**
+    - It is peripheral to the MVP because a fresh CLI job per task avoids daemon lifecycle and session-contamination problems.
+  - **Availability**
+    - It remains because it works.
 
 <details>
 <summary>Bridge API reference</summary>
@@ -54,27 +87,27 @@ export CODEX_BRIDGE_TOKEN=$(openssl rand -hex 32)
 python3 bridge.py --port 8787
 ```
 
-`--workdir DIR` sets the working directory for codex execution (default: cwd). It need not be a git repository — the bridge always passes `--skip-git-repo-check`.
+`--workdir DIR` sets the working directory for codex execution (default: cwd). It need not be a git repository. The bridge always passes `--skip-git-repo-check`.
 
 ### Persistent sessions
 
-The bridge maintains one codex thread across requests, so context carries between prompts. Each prompt reuses the current thread (tracked by `thread_id`); send `"reset": true` to start a new session.
+The bridge maintains one codex thread across requests, so context carries between prompts. Each prompt reuses the current thread, tracked by `thread_id`. Send `"reset": true` to start a new session.
 
 ### Endpoints
 
-`GET /health` — no auth.
+`GET /health`: no auth.
 ```bash
 curl http://127.0.0.1:8787/health          # {"status":"ok"}
 ```
 
-`GET /session` — current thread id. `null` means the next prompt starts fresh.
+`GET /session`: current thread id. `null` means the next prompt starts fresh.
 ```bash
 curl -H "X-Auth-Token: $CODEX_BRIDGE_TOKEN" http://127.0.0.1:8787/session
 ```
 
-`POST /reset` — clear the session.
+`POST /reset`: clear the session.
 
-`POST /prompt` — execute a prompt via `codex exec`.
+`POST /prompt`: execute a prompt via `codex exec`.
 ```bash
 curl -X POST http://127.0.0.1:8787/prompt \
   -H "X-Auth-Token: $CODEX_BRIDGE_TOKEN" \
@@ -93,19 +126,23 @@ Success returns `response`, `thread_id`, and `usage` when available.
 | 400 | Invalid JSON, missing/non-string `prompt`, non-boolean `reset`, bad `Content-Length` |
 | 413 | Body exceeds 1 MiB |
 | 500 | codex CLI not on PATH, or unhandled exception |
-| 502 | codex exited non-zero; includes stderr tail. A failed `resume` retries once as fresh |
+| 502 | codex exited non-zero. Includes stderr tail. A failed `resume` retries once as fresh |
 | 504 | codex exceeded `--timeout` |
 
 ### Exposing it
 
-ngrok (`ngrok http 8787`; free URLs rotate every 2h), cloudflared (`cloudflared tunnel --url http://localhost:8787`), or Tailscale. Prefer `tailscale serve 8787` (tailnet-only) over `tailscale funnel 8787` (public).
+Use ngrok (`ngrok http 8787`), whose free URLs rotate every 2h, cloudflared (`cloudflared tunnel --url http://localhost:8787`), or Tailscale. Prefer `tailscale serve 8787` (tailnet-only) over `tailscale funnel 8787` (public).
 
 ### Security
 
-The token is the only gate, and it grants shell access through codex — protect it like a private key. Generate with `openssl rand -hex 32`, rotate regularly, keep it out of shell history, and bind to `127.0.0.1` (the default).
+The token is the only gate, and it grants shell access through codex. Protect it like a private key. Generate with `openssl rand -hex 32`, rotate regularly, keep it out of shell history, and bind to `127.0.0.1` (the default).
 
 </details>
 
 ## Requirements
 
-Python 3.9+, and the `codex` CLI installed and logged in on PATH.
+- Runtime
+  - **Python**
+    - Python 3.9+ is required.
+  - **CLI**
+    - The `codex` CLI must be installed and logged in on PATH.
