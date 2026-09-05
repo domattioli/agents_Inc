@@ -111,10 +111,28 @@ class PipelineTest(unittest.TestCase):
             n["i"] += 1
             if n["i"] == 1:
                 return WorkerResult("returned", json.dumps(good), "", 0)
-            return WorkerResult("returned", json.dumps({"verdicts":[{"claim":2,"ok":False,"issue":"Clause 8 overrides Clause 3"}],"omissions":[]}), "", 0)
+            return WorkerResult("returned", json.dumps({"verdicts":[
+                {"claim":0,"ok":True,"issue":""},
+                {"claim":1,"ok":True,"issue":""},
+                {"claim":2,"ok":False,"issue":"Clause 8 overrides Clause 3"},
+                {"claim":3,"ok":True,"issue":""},
+                {"claim":4,"ok":True,"issue":""}
+            ],"omissions":[]}), "", 0)
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
         self.assertEqual(r.status, "needs-review")
         self.assertIn("Clause 8", json.dumps(r.receipt))
+
+    def test_invalid_reviewer_is_returned(self):
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        n = {"i": 0}
+        def runner(cmd, stdin_text, timeout=300):
+            n["i"] += 1
+            if n["i"] == 1:
+                return WorkerResult("returned", json.dumps(good), "", 0)
+            return WorkerResult("returned", json.dumps({"verdicts":[{"claim":2,"ok":False,"issue":"Clause 8"}],"omissions":[]}), "", 0)
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        self.assertEqual(r.status, "returned")
+        self.assertEqual(r.receipt["content_review"], "invalid")
 
     def test_single_vendor_is_returned(self):
         good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
