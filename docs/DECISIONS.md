@@ -83,3 +83,14 @@ Dispatch graph ledger records all delegated jobs (worker, reviewer, correction, 
 - Ledger follow-ups from astra: compute_depth lacks cycle detection (add pre-validation before lint on imported data); repeat review attaches to original worker not corrected artifact (add artifact hash linkage); ledger.py 358 lines > 300 target.
 - Reviewer route bypass: reviewer.review(route=...) accepts a supplied route without re-checking vendor difference → governance slice must enforce.
 - Feature flag proposed: WORKERBEES_GOVERNANCE=off|shadow|enforce.
+- D2 amendment (CEO 2026-09-05): operator's API keys live in `~/Projects/.env`. Canonical key store for optional providers = that file; `~/.config/workerbees/.env` is the non-coder path only. Agents never read or print either; presence checks by variable NAME only.
+- CEO "go" on governance slice (astra tasks 1–3 first). Also: sonnet builds a transcript/log corpus miner for company/repo naming ("[...] Inc.", graphs/swarms/bees), output = stopword-stripped compact text for cheap semantic mining later.
+
+## D14 — Documentation audience rule (CEO 2026-09-05, binding)
+
+**Human-intended docs** (README.md, docs/START-HERE.md, docs/HOW-IT-WORKS.md, docs/EXTENDING.md, docs/HANDOFF.md, docs/DECISIONS.md, docs/BENCH.md, docs/governance/CEO-BRIEF.md): **nested-notes structure + caveman lite wording + write-like-scientist pass**. Extremely precise and concise. Scannable outline + readable prose.
+
+**Machine-intended docs** (skills/*/SKILL.md bodies read by models, agent prompts, PLAN-MVP, routing.json comments, governance/ASSESSMENT.md, specs/*, workerbees/*.json): **caveman ultra, always**. Max compression. Prose only, no structure overhead.
+
+Enforcement: human docs go through nested-notes + caveman lite + write-like-scientist pass before any commit. Machine docs = caveman ultra; no override. This rule propagates into every agent prompt via CLAUDE.md § Documentation audience rule.
+- Naming corpus (sonnet-built tools/name_corpus.py, 2026-09-05): 248 sources, 200 MB raw → 438k tokens (98.5% reduction), 13.4k unique. Theme counts: node 733, verify 689, gate 526, edge 278, ledger 181, delegate 181, graph 115, worker 85, mesh 44, swarm 3; hive/bee/colony/queen/drone/forage = 0. Signal: the vocabulary is graph + verification, not apiary. Output in session scratchpad `naming/`; rerun anytime. Issue #1 filed for delegation-pattern mining on the same corpus.
