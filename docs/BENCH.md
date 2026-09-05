@@ -1,21 +1,23 @@
 # Bench — measured pilot (D5/D10)
 
-| fixture | provider/tier | model | status | quotes | reviewer | review | seconds | accepted |
-|---|---|---|---|---|---|---|---|---|
-| tim | claude/cheap | haiku | needs-review | 5/5 | issues | issues | 20.4 | True |
-| tim | codex/cheap | gpt-5.4-mini | needs-review | 5/5 | issues | issues | 27.6 | True |
-| tim | claude/frontier | fable | returned | 5/5 | disabled | disabled | 10.7 | False |
-| tim | codex/frontier | gpt-6-astra | returned | 5/5 | disabled | disabled | 14.2 | False |
-| dom | claude/cheap | haiku | needs-review | 5/5 | issues | issues | 27.6 | True |
-| dom | codex/cheap | gpt-5.4-mini | needs-review | 5/5 | issues | issues | 29.5 | True |
-| dom | claude/frontier | fable | returned | 5/5 | disabled | disabled | 10.6 | False |
-| dom | codex/frontier | gpt-6-astra | returned | 5/5 | disabled | disabled | 15.8 | False |
+| fixture | provider/tier | model | status | quotes | reviewer | review | seconds | accepted | verifier_pass |
+|---|---|---|---|---|---|---|---|---|---|
+| tim | claude/cheap | haiku | needs-review | 5/5 | issues | issues | 20.4 | True | True |
+| tim | codex/cheap | gpt-5.4-mini | needs-review | 5/5 | issues | issues | 27.6 | True | True |
+| tim | claude/frontier | fable | returned | 5/5 | disabled | disabled | 10.7 | False | True |
+| tim | codex/frontier | gpt-6-astra | returned | 5/5 | disabled | disabled | 14.2 | False | True |
+| dom | claude/cheap | haiku | needs-review | 5/5 | issues | issues | 27.6 | True | True |
+| dom | codex/cheap | gpt-5.4-mini | needs-review | 5/5 | issues | issues | 29.5 | True | True |
+| dom | claude/frontier | fable | returned | 5/5 | disabled | disabled | 10.6 | False | True |
+| dom | codex/frontier | gpt-6-astra | returned | 5/5 | disabled | disabled | 15.8 | False | True |
+
+Frontier baseline runs without a Reviewer, so it cannot reach accepted; compare on verifier_pass and seconds.
 
 ## Per configuration
-- claude/cheap: accepted 2/2; mean seconds 24.0; incremental dollars: 0 (subscription only, D9); subscription calls: 4
-- codex/cheap: accepted 2/2; mean seconds 28.6; incremental dollars: 0 (subscription only, D9); subscription calls: 4
-- claude/frontier: accepted 0/2 (frontier baseline accepted = verifier pass only, no Reviewer by definition); mean seconds 10.6; incremental dollars: 0 (subscription only, D9); subscription calls: 2
-- codex/frontier: accepted 0/2 (frontier baseline accepted = verifier pass only, no Reviewer by definition); mean seconds 15.0; incremental dollars: 0 (subscription only, D9); subscription calls: 2
+- claude/cheap: accepted 2/2; verifier_pass 2/2; mean seconds 24.0; incremental dollars: 0 (subscription only, D9); subscription calls: 4
+- codex/cheap: accepted 2/2; verifier_pass 2/2; mean seconds 28.6; incremental dollars: 0 (subscription only, D9); subscription calls: 4
+- claude/frontier: accepted 0/2; verifier_pass 2/2; mean seconds 10.6; incremental dollars: 0 (subscription only, D9); subscription calls: 2
+- codex/frontier: accepted 0/2; verifier_pass 2/2; mean seconds 15.0; incremental dollars: 0 (subscription only, D9); subscription calls: 2
 
 No savings percentage is reported until both workflows are measured at N≥5 (D10).
 
