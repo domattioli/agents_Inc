@@ -7,7 +7,7 @@ set -euo pipefail
 # Check jq dependency
 command -v jq >/dev/null || { echo "error: jq required (brew install jq)" >&2; exit 1; }
 
-BASE="/Users/domattioli/Projects/claude-codex"
+BASE="/Users/domattioli/Projects/workerbees"
 STATE_DIR="$HOME/.codex-bridge"
 TOKEN_FILE="$STATE_DIR/token"
 STATE_FILE="$STATE_DIR/state.json"

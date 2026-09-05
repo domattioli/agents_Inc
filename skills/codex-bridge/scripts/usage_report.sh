@@ -37,7 +37,7 @@ def load_prices(path=None):
         candidates = [
             './skills/codex-bridge/reference/prices.json',
             os.path.join(os.getcwd(), 'skills/codex-bridge/reference/prices.json'),
-            os.path.expanduser('~/.claude/../../Projects/claude-codex/skills/codex-bridge/reference/prices.json'),
+            os.path.expanduser('~/.claude/../../Projects/workerbees/skills/codex-bridge/reference/prices.json'),
         ]
 
         for candidate in candidates:
