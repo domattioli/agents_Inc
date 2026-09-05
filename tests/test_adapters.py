@@ -44,3 +44,25 @@ class AdapterTest(unittest.TestCase):
         d = tempfile.mkdtemp()
         r = run_worker(["pwd"], "", cwd=d)
         self.assertTrue(r.output.strip().endswith(d.split("/")[-1]))
+
+    def test_run_worker_truncates_output_over_limit(self):
+        """Output exceeding max_output_bytes is truncated."""
+        r = run_worker(["python3", "-c", "print('x' * 2000000)"], "", max_output_bytes=100_000)
+        self.assertTrue(r.truncated)
+        self.assertLessEqual(len(r.output.encode("utf-8")), 100_000)
+
+    def test_run_worker_truncates_stderr_over_limit(self):
+        """Stderr exceeding max_output_bytes is truncated."""
+        r = run_worker(["python3", "-c", "import sys; sys.stderr.write('y' * 2000000)"], "", max_output_bytes=100_000)
+        self.assertTrue(r.truncated)
+        self.assertLessEqual(len(r.stderr.encode("utf-8")), 100_000)
+
+    def test_run_worker_truncated_flag_false_when_under_limit(self):
+        """truncated=False when output under limit."""
+        r = run_worker(["echo", "small"], "", max_output_bytes=100_000)
+        self.assertFalse(r.truncated)
+
+    def test_run_worker_default_max_output_bytes(self):
+        """Default max_output_bytes is 1M."""
+        r = run_worker(["echo", "test"], "")
+        self.assertIsNotNone(r.output)

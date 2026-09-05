@@ -201,5 +201,57 @@ class TestRegistry(unittest.TestCase):
             Registry.load(str(self.base))
         self.assertIn("must be non-empty ISO YYYY-MM-DD", str(ctx.exception))
 
+    def test_provider_for_returns_runtime(self):
+        """provider_for returns agent.runtime if present."""
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"][0]["runtime"] = "claude"
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        result = reg.provider_for("agent-1")
+        self.assertEqual(result, "claude")
+
+    def test_provider_for_returns_endpoint(self):
+        """provider_for returns agent.endpoint if runtime not present."""
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"][0]["endpoint"] = "codex"
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        result = reg.provider_for("agent-1")
+        self.assertEqual(result, "codex")
+
+    def test_provider_for_returns_none_if_agent_not_found(self):
+        """provider_for returns None if agent_id not found."""
+        reg = Registry.load(str(self.base))
+        result = reg.provider_for("nonexistent-agent")
+        self.assertIsNone(result)
+
+    def test_provider_for_returns_none_if_no_runtime_or_endpoint(self):
+        """provider_for returns None if agent has no runtime/endpoint."""
+        reg = Registry.load(str(self.base))
+        result = reg.provider_for("agent-1")
+        self.assertIsNone(result)
+
+    def test_provider_for_case_insensitive(self):
+        """provider_for normalizes provider name to lowercase."""
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"][0]["runtime"] = "CLAUDE"
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        result = reg.provider_for("agent-1")
+        self.assertEqual(result, "claude")
+
+    def test_provider_for_filters_unknown_providers(self):
+        """provider_for returns None if runtime/endpoint is unknown provider."""
+        gov = json.loads((self.base / "governance.json").read_text())
+        gov["agents"][0]["runtime"] = "unknown_provider"
+        (self.base / "governance.json").write_text(json.dumps(gov))
+        reg = Registry.load(str(self.base))
+
+        result = reg.provider_for("agent-1")
+        self.assertIsNone(result)
+
 if __name__ == "__main__":
     unittest.main()
