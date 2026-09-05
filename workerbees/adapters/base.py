@@ -13,9 +13,9 @@ class WorkerResult:
     stderr: str
     exit_code: int
 
-def run_worker(cmd: list[str], stdin_text: str, timeout: int = 300) -> WorkerResult:
+def run_worker(cmd: list[str], stdin_text: str, timeout: int = 300, cwd: str | None = None) -> WorkerResult:
     try:
-        p = subprocess.run(cmd, input=stdin_text, text=True, capture_output=True, timeout=timeout, check=False)
+        p = subprocess.run(cmd, input=stdin_text, text=True, capture_output=True, timeout=timeout, cwd=cwd, check=False)
     except FileNotFoundError as e:
         return WorkerResult("failed", "", f"WB_CLI_NOT_FOUND: {e}", 127)
     except subprocess.TimeoutExpired:
