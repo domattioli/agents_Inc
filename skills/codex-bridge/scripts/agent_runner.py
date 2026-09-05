@@ -40,7 +40,7 @@ CANONICAL = {
     "codex": "codex",
     "ask": "codex",
 }
-TERMINAL = {"succeeded", "failed"}
+TERMINAL = {"returned", "verified", "needs-review", "failed", "interrupted", "cancelled"}
 
 
 def now() -> str:
@@ -246,7 +246,7 @@ def run_worker(job_id: str) -> int:
         os.chmod(result_path, 0o600)
         os.chmod(stderr_path, 0o600)
         if code == 0:
-            job.update(status="succeeded", finished_at=now(), exit_code=0, error=None)
+            job.update(status="returned", finished_at=now(), exit_code=0, error=None, verified_at=None)
             save_job(job)
             write_artifact(job)
             report_route(job["backend"], "ok")
@@ -271,7 +271,7 @@ def run_worker(job_id: str) -> int:
 def brief(job: dict[str, Any]) -> dict[str, Any]:
     return {key: job.get(key) for key in (
         "id", "parent_id", "status", "backend", "task_class", "agent", "attempt", "retries",
-        "created_at", "started_at", "finished_at", "exit_code", "error",
+        "created_at", "started_at", "finished_at", "verified_at", "exit_code", "error",
     )}
 
 
@@ -285,12 +285,27 @@ def print_job(job: dict[str, Any], as_json: bool) -> None:
             print(f"{key}: {value}")
 
 
+def mark_verified(job_id: str, verdict: str) -> None:
+    """Mark a returned job as verified or needs-review.
+
+    Only allowed when status is 'returned'. Updates status and sets verified_at timestamp.
+    """
+    if verdict not in {"verified", "needs-review"}:
+        die(f"invalid verdict: {verdict} (must be 'verified' or 'needs-review')", 2)
+    job = read_job(job_id)
+    if job.get("status") != "returned":
+        die(f"cannot mark job {job_id}: status is '{job.get('status')}' (must be 'returned')", 1)
+    job.update(status=verdict, verified_at=now())
+    save_job(job)
+    write_artifact(job)
+
+
 def wait_for(job_id: str, as_json: bool = False, interval: float = 0.1) -> int:
     while True:
         job = read_job(job_id)
         if job.get("status") in TERMINAL:
             print_job(job, as_json)
-            return 0 if job["status"] == "succeeded" else int(job.get("exit_code") or 1)
+            return 0 if job["status"] in {"returned", "verified", "needs-review"} else int(job.get("exit_code") or 1)
         time.sleep(interval)
 
 
@@ -335,6 +350,7 @@ def submit(args: argparse.Namespace, parent_id: str | None = None, followup: boo
         "created_at": now(),
         "started_at": None,
         "finished_at": None,
+        "verified_at": None,
         "exit_code": None,
         "error": None,
     }
@@ -380,6 +396,9 @@ def command_parser() -> argparse.ArgumentParser:
     wait = commands.add_parser("wait", help="wait for a job")
     wait.add_argument("job_id")
     wait.add_argument("--json", action="store_true")
+    verify = commands.add_parser("verify", help="mark a returned job as verified or needs-review")
+    verify.add_argument("job_id")
+    verify.add_argument("--verdict", choices=("verified", "needs-review"), required=True)
     commands.add_parser("list", help="list jobs") .add_argument("--json", action="store_true")
     commands.add_parser("_run", help=argparse.SUPPRESS).add_argument("job_id")
     return parser
@@ -404,6 +423,9 @@ def main() -> int:
         return 0
     if args.command == "wait":
         return wait_for(args.job_id, args.json)
+    if args.command == "verify":
+        mark_verified(args.job_id, args.verdict)
+        return 0
     if args.command == "result":
         read_job(args.job_id)
         if args.json:

@@ -76,7 +76,7 @@ adapters, Markdown source to cited brief, deterministic quote checks. It is
 independently useful on its own — a sourced-Markdown analysis tool — so it
 ships as a labeled pilot, not as v1.
 
-Before writing code, close these three gaps in the plan:
+Three gaps below were CLOSED 2026-09-05 (see `docs/DECISIONS.md`): gap 1 -> tier routing by probe+benchmark (CTO-owned); gap 2 -> `--bare` verified, excluded; gap 3 -> `agent_runner.py` now emits `returned`, `verify` subcommand promotes. Also read `CONTEXT.md` (glossary) + `docs/adr/`. Original gap text kept for context:
 
 1. **Which model does which task.** The plan assigns roles by vendor
    (`Claude driver -> Codex worker, Claude supervisor review`, delegation depth

@@ -34,7 +34,7 @@ agent() {
 }
 
 id=$(agent submit --backend gemini --wait "one" | sed -n 's/^id: //p')
-if [[ -n "$id" ]] && [[ "$(agent result "$id")" == "gemini:one" ]] && [[ "$(agent status "$id" --json)" == *'"status": "succeeded"'* ]]; then
+if [[ -n "$id" ]] && [[ "$(agent result "$id")" == "gemini:one" ]] && [[ "$(agent status "$id" --json)" == *'"status": "returned"'* ]]; then
   pass "submits, stores, and reports a Gemini job"
 else
   fail "Gemini job lifecycle or result is wrong"
