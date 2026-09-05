@@ -65,3 +65,8 @@ CEO (Dom) rulings from grill session with fable (CTO) + astra (CSO). Each supers
 - Idea: every fan-out emits a graph (node = job w/ model, tier, task, parent; edges = depends-on / reviews / corrects) to make hierarchy and tokenomics deterministic and auditable.
 - CTO position: adopt as a ledger emitted by the runner (agent_runner already stores parent_id in SQLite), linted by rules (depth ≤1, reviewer = other-vendor sibling, frontier nodes need a gate reason, subtree cost rollup). NOT an LLM-planned graph per spawn (frontier spend to save cheap spend).
 - First step: receipts carry `parent_id` + `edge` so the graph is derivable; visualization later.
+
+## Phase 3 probes (2026-09-05)
+- First real `verified`: tim, worker haiku (5/5 quotes, every sentence cited), reviewer gpt-5.6-luna → all verdicts ok, 0 omissions, 0 corrections. Draft names the Clause 3→8 override explicitly. Per-assertion draft check + omission-aware review prompt changed the outcome vs Phase 2 (which stopped at needs-review). N=1; not a quality claim.
+- Phase 3 T2 (correction loop) written by Codex gpt-5.4-mini, reviewed by gpt-5.6-luna (OpenAI-first per CEO, usage rebalancing); 73 tests.
+- speckit analyze (sonnet) produced 2 false CRITICAL/HIGH findings (claimed pipeline.py missing while a Codex worker was editing it). Lesson: analyze must not run concurrently with a writer on the same files; supervisor verified on disk before acting.
