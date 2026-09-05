@@ -30,7 +30,9 @@ def probe_cli(provider: str, runner=run_worker) -> dict:
     return {"provider": provider, "status": status, "detail": text[-300:], "at": _now()}
 
 def run(workspace: Path, providers=("claude", "codex"), runner=run_worker) -> dict:
-    out = {"results": {p: probe_cli(p, runner=runner) for p in providers}, "at": _now(), "epoch": time.time()}
+    results = {p: probe_cli(p, runner=runner) for p in providers}
+    paused = [p for p, r in results.items() if r["status"] == "WB_QUOTA_EXHAUSTED"]
+    out = {"results": results, "paused": paused, "at": _now(), "epoch": time.time()}
     d = workspace / ".workerbees"; d.mkdir(parents=True, exist_ok=True)
     (d / "doctor.json").write_text(json.dumps(out, indent=2))
     return out
@@ -49,3 +51,13 @@ def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600,
         cache = run(workspace, runner=runner)
     ok_required = {p for p, r in cache["results"].items() if r["status"] == "ok"}
     return (available_providers(env_path) - REQUIRED) | ok_required
+
+def quota_paused(workspace: Path) -> list[str]:
+    f = workspace / ".workerbees" / "doctor.json"
+    if not f.exists():
+        return []
+    try:
+        cache = json.loads(f.read_text())
+        return cache.get("paused", [])
+    except (json.JSONDecodeError, OSError):
+        return []

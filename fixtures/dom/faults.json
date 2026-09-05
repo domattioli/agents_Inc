@@ -3,4 +3,6 @@
   {"quote": "shall not exceed 500 milliseconds", "anchor": "dom#p3"},
   {"quote": "fully verified against site data", "anchor": "dom#p5"},
   {"quote": "signed 32-bit value in bar", "anchor": "dom#p6"}
+], "omissions": [
+  {"anchor": "dom#p3", "why": "Timing constraint applies only under nominal conditions; worst-case exceeds 500ms"}
 ]}
