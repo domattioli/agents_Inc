@@ -18,7 +18,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--setting-sources")+1], "")
 
     def test_codex_cmd_read_only_stdin(self):
-        cmd = codex.build_cmd("gpt-5-mini")
+        cmd = codex.build_cmd("gpt-5.4-mini")
         self.assertEqual(cmd[:2], ["codex", "exec"])
         self.assertIn("read-only", cmd)
         self.assertEqual(cmd[-1], "-")

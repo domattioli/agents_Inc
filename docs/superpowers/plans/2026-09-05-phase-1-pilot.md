@@ -29,10 +29,10 @@
 
 | Task | Tier | Claude model | Codex model | Optional (authorized workspaces only) | Gate before promotion |
 |---|---|---|---|---|---|
-| extract quotes/facts | cheap | `haiku` | `gpt-5-mini` | gemini flash / mistral small | schema valid + every quote anchors |
-| summarize section | cheap | `haiku` | `gpt-5-mini` | gemini flash / mistral small | cited-source gate |
-| draft brief | cheap | `haiku` | `gpt-5-mini` | none (drafts stay subscription-side) | rubric fields present |
-| review consequential claims | mid, OTHER vendor than drafter | `sonnet` | `gpt-5` | none | Verifier passed first |
+| extract quotes/facts | cheap | `haiku` | `gpt-5.4-mini` | gemini flash / mistral small | schema valid + every quote anchors |
+| summarize section | cheap | `haiku` | `gpt-5.4-mini` | gemini flash / mistral small | cited-source gate |
+| draft brief | cheap | `haiku` | `gpt-5.4-mini` | none (drafts stay subscription-side) | rubric fields present |
+| review consequential claims | mid, OTHER vendor than drafter | `sonnet` | `gpt-5.6-luna` | none | Verifier passed first |
 | verify quotes/hashes/anchors | code, no model | — | — | — | deterministic |
 | adjudicate reviewer↔worker conflict | frontier, only on conflict | `fable` (this session) | `gpt-6-astra` | none | never routine; within $0 |
 | orchestrate / decompose | Driver = Host session | whichever Host user runs | | | |
@@ -132,8 +132,8 @@ Expected: FAIL `ModuleNotFoundError: No module named 'workerbees'`
   "required": ["claude", "codex"],
   "optional": ["gemini", "mistral", "openrouter"],
   "tiers": {
-    "cheap":    {"claude": "haiku",  "codex": "gpt-5-mini", "gemini": "gemini-2.5-flash", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free"},
-    "mid":      {"claude": "sonnet", "codex": "gpt-5"},
+    "cheap":    {"claude": "haiku",  "codex": "gpt-5.4-mini", "gemini": "gemini-2.5-flash", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free"},
+    "mid":      {"claude": "sonnet", "codex": "gpt-5.6-luna"},
     "frontier": {"claude": "fable",  "codex": "gpt-6-astra"}
   },
   "task_tier": {"extract": "cheap", "summarize": "cheap", "draft": "cheap", "review": "mid", "adjudicate": "frontier"},
@@ -291,7 +291,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--setting-sources")+1], "")
 
     def test_codex_cmd_read_only_stdin(self):
-        cmd = codex.build_cmd("gpt-5-mini")
+        cmd = codex.build_cmd("gpt-5.4-mini")
         self.assertEqual(cmd[:2], ["codex", "exec"])
         self.assertIn("read-only", cmd)
         self.assertEqual(cmd[-1], "-")

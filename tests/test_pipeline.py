@@ -64,3 +64,11 @@ class PipelineTest(unittest.TestCase):
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
         self.assertIn("[p1]", captured_stdin[0])
         self.assertIn("[p6]", captured_stdin[0])
+
+    def test_empty_draft_is_returned(self):
+        # Good claims, empty draft → status returned, receipt content_review == "draft_missing"
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": ""}
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+                  runner=fake_runner_factory(payload))
+        self.assertEqual(r.status, "returned")
+        self.assertEqual(r.receipt["content_review"], "draft_missing")
