@@ -30,3 +30,17 @@ class AdapterTest(unittest.TestCase):
     def test_run_worker_quota_pattern_pauses(self):
         r = run_worker(["sh", "-c", "echo 'rate limit exceeded' >&2; exit 1"], "")
         self.assertEqual(r.status, "paused")
+
+    def test_codex_cmd_has_isolated_cwd_and_no_env(self):
+        cmd = codex.build_cmd("gpt-5.4-mini", cwd="/tmp/x")
+        self.assertIn("-C", cmd); self.assertEqual(cmd[cmd.index("-C")+1], "/tmp/x")
+        self.assertIn('shell_environment_policy.inherit="none"', cmd)
+        self.assertIn('web_search="disabled"', cmd)
+        self.assertIn("features.shell_tool=false", cmd)
+        self.assertNotIn("tools.web_search=false", cmd)
+
+    def test_run_worker_accepts_cwd(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        r = run_worker(["pwd"], "", cwd=d)
+        self.assertTrue(r.output.strip().endswith(d.split("/")[-1]))
