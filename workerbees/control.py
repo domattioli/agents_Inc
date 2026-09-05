@@ -105,7 +105,7 @@ class Control:
                 return ReplayResult(state="conflict", artifact_ref=row["artifact_ref"], reason="Same message ID but different envelope hash")
         except sqlite3.Error as e:
             if self._is_readonly_error(e):
-                return ReplayResult(state="new", reason="Database error")
+                return ReplayResult(state="error", reason="Database error")
             raise ControlError(f"Failed to check replay: {e}")
 
     def store_artifact(self, message_id: str, envelope_hash: str, artifact_ref: str) -> bool:
@@ -130,7 +130,7 @@ class Control:
                 exists = c.execute("SELECT 1 FROM cancellations WHERE run_id=?", (run_id,)).fetchone() is not None
             return exists
         except sqlite3.Error:
-            return False
+            return True
 
     def acquire_lease(self, run_id: str) -> bool:
         try:
