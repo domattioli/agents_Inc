@@ -1,0 +1,11 @@
+{
+  "required": ["claude", "codex"],
+  "optional": ["gemini", "mistral", "openrouter"],
+  "tiers": {
+    "cheap":    {"claude": "haiku",  "codex": "gpt-5-mini", "gemini": "gemini-2.5-flash", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free"},
+    "mid":      {"claude": "sonnet", "codex": "gpt-5"},
+    "frontier": {"claude": "fable",  "codex": "gpt-6-astra"}
+  },
+  "task_tier": {"extract": "cheap", "summarize": "cheap", "draft": "cheap", "review": "mid", "adjudicate": "frontier"},
+  "optional_allowed_tasks": ["extract", "summarize"]
+}
