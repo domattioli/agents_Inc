@@ -82,7 +82,7 @@ The operator exports the ledger as a diagram and a machine-readable file to past
 ### Key Entities
 
 - **Node**: one delegated job; identity = node id; attributes above.
-- **Edge**: directed relation child → parent typed by edge type; implied by parent id + edge type on the child.
+- **Edge**: directed relation child → parent typed by edge type; implied by parent id + edge type on the child. `depends-on` edge type reserved for future multi-worker decomposition; not emitted in MVP.
 - **Run**: one top-level brief or preflight; groups nodes; roots have no parent.
 - **Finding**: lint result: rule name, node ids, message.
 
@@ -96,6 +96,6 @@ The operator exports the ledger as a diagram and a machine-readable file to past
 ## Assumptions
 
 - One ledger file per workspace under the existing per-workspace state directory.
-- Subscription calls per node = 1 for a CLI invocation; optional HTTP providers count 1 per request.
+- Subscription calls per node = 1 (CLI invocation); optional HTTP providers out of MVP scope.
 - Gate reason is a short free-text string supplied by the caller when a frontier tier is chosen.
 - Mermaid is the diagram form; JSON the machine form.
