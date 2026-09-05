@@ -2,6 +2,7 @@
 import unittest
 import tempfile
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -15,28 +16,29 @@ from workerbees.adapters.base import WorkerResult
 
 class FakeRegistry(Registry):
     """Registry fixture for testing."""
-    def __init__(self):
+    def __init__(self, worker_provider=None):
+        agents_dict = {
+            "supervisor": Agent(
+                id="supervisor", name="Supervisor", type="system",
+                capabilities=[], enabled=True, created_date="2026-01-01",
+                clearance="internal"
+            ),
+            "worker": Agent(
+                id="worker", name="Worker", type="execution",
+                capabilities=["extract"], enabled=True, created_date="2026-01-01",
+                clearance="internal", runtime=worker_provider
+            ),
+            "reviewer": Agent(
+                id="reviewer", name="Reviewer", type="judgment",
+                capabilities=["review"], enabled=True, created_date="2026-01-01",
+                clearance="internal"
+            ),
+        }
         super().__init__(
             version="1.0",
             policy_version="1.0",
             snapshot_hash="test",
-            agents={
-                "supervisor": Agent(
-                    id="supervisor", name="Supervisor", type="system",
-                    capabilities=[], enabled=True, created_date="2026-01-01",
-                    clearance="internal"
-                ),
-                "worker": Agent(
-                    id="worker", name="Worker", type="execution",
-                    capabilities=["extract"], enabled=True, created_date="2026-01-01",
-                    clearance="internal"
-                ),
-                "reviewer": Agent(
-                    id="reviewer", name="Reviewer", type="judgment",
-                    capabilities=["review"], enabled=True, created_date="2026-01-01",
-                    clearance="internal"
-                ),
-            },
+            agents=agents_dict,
             capabilities={
                 "extract": Capability(id="extract", name="extract", enabled=True),
                 "review": Capability(id="review", name="review", enabled=True),
@@ -473,6 +475,60 @@ class GatewayTest(unittest.TestCase):
 
         self.assertEqual(result.status, "denied")
         self.assertEqual(result.decision.reason_code, "SENDER_MISMATCH")
+        self.assertEqual(fake_runner.call_count, 0)
+
+    def test_decision_id_format_hex_32_chars(self):
+        """Decision id should be uuid.uuid4().hex (32 hex chars)."""
+        gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
+        env = make_envelope()
+        route = Route("claude", "haiku", "cheap", "cli")
+        context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
+
+        result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
+
+        decision_id = result.decision.decision_id
+        self.assertEqual(len(decision_id), 32)
+        # All hex characters
+        self.assertTrue(all(c in "0123456789abcdef" for c in decision_id))
+
+    def test_route_provider_mismatch_one_decision_recorded(self):
+        """ROUTE_PROVIDER_MISMATCH should record exactly one decision."""
+        # Create registry with worker having "codex" provider, but route will be "claude"
+        registry = FakeRegistry(worker_provider="codex")
+
+        gw = Gateway(self.workspace, registry=registry, mode="enforce")
+        env = make_envelope()
+        route = Route("claude", "haiku", "cheap", "cli")  # route provider is "claude", mismatch
+        context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
+
+        result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
+
+        self.assertEqual(result.status, "denied")
+        self.assertEqual(result.decision.reason_code, "ROUTE_PROVIDER_MISMATCH")
+
+        # Check database: exactly one decision row with this node_id
+        conn = sqlite3.connect(str(gw.control.db_path))
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM decisions WHERE node_id = ?", (result.node_id,))
+        count = cur.fetchone()[0]
+        conn.close()
+
+        self.assertEqual(count, 1, "Should record exactly one decision for ROUTE_PROVIDER_MISMATCH")
+
+    def test_replay_error_enforce_blocked(self):
+        """Replay check error in enforce → blocked, 0 calls."""
+        mock_control = Mock(spec=Control)
+        mock_control.check_replay.return_value = Mock(state="error", reason="DB unavailable")
+
+        gw = Gateway(self.workspace, registry=self.registry, control=mock_control, mode="enforce")
+        env = make_envelope()
+        route = Route("claude", "haiku", "cheap", "cli")
+        context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
+
+        result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.decision.reason_code, "AUDIT_UNAVAILABLE")
         self.assertEqual(fake_runner.call_count, 0)
 
 
