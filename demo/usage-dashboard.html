@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usage Dashboard</title>
+<style>
+:root {
+  --bg-surface: #fcfcfb;
+  --bg-alt: #f5f5f4;
+  --text: #1a1a19;
+  --text-dim: #7a7a78;
+  --border: #e0e0de;
+  --chart-grid: #e0e0de;
+  --chart-text: #1a1a19;
+  --blue: #2a78d6;
+  --orange: #eb6834;
+  --aqua: #1baf7a;
+  --yellow: #eda100;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-surface: #1a1a19;
+    --bg-alt: #2a2a29;
+    --text: #e8e8e6;
+    --text-dim: #a0a09e;
+    --border: #3a3a39;
+    --chart-grid: #3a3a39;
+    --chart-text: #e8e8e6;
+    --blue: #3987e5;
+    --orange: #d95926;
+    --aqua: #199e70;
+    --yellow: #c98500;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-surface: #1a1a19;
+  --bg-alt: #2a2a29;
+  --text: #e8e8e6;
+  --text-dim: #a0a09e;
+  --border: #3a3a39;
+  --chart-grid: #3a3a39;
+  --chart-text: #e8e8e6;
+  --blue: #3987e5;
+  --orange: #d95926;
+  --aqua: #199e70;
+  --yellow: #c98500;
+}
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+h1, h2 { margin-top: 0; }
+.toggle-theme {
+  position: fixed; top: 20px; right: 20px;
+  padding: 8px 12px; border: 1px solid var(--border);
+  background: var(--bg-alt); color: var(--text);
+  cursor: pointer; border-radius: 4px; font-size: 12px;
+}
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin: 20px 0; }
+.tile { background: var(--bg-alt); padding: 16px; border-radius: 8px; border: 1px solid var(--border); }
+.tile-value { font-size: 24px; font-weight: bold; color: var(--text); }
+.tile-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.section { margin: 40px 0; }
+.chart { max-width: 100%; height: auto; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: var(--bg-alt); font-weight: bold; }
+tr:hover { background: var(--bg-alt); }
+</style>
+</head>
+<body>
+<button class="toggle-theme" onclick="toggleTheme()">🌙</button>
+<h1>Usage Dashboard</h1>
+<div class="stat-tiles">
+<div class="tile"><div class="tile-value">$1707.36</div><div class="tile-label">Est. Cost</div></div>
+<div class="tile"><div class="tile-value">2,314,986,135</div><div class="tile-label">Total Tokens</div></div>
+<div class="tile"><div class="tile-value">2026-06-03 .. 2026-09-03</div><div class="tile-label">Period</div></div>
+<div class="tile"><div class="tile-value">13862</div><div class="tile-label">Records</div></div>
+</div>
+<div class="section">
+<h2>Cost by Model</h2>
+<svg width="800" height="300" xmlns="http://www.w3.org/2000/svg" class="chart">
+<defs><style>
+.chart-text { font-family: system-ui; font-size: 12px; }
+.chart-label-left { text-anchor: end; }
+.chart-label-right { text-anchor: start; }
+</style></defs>
+<rect x="250" y="30" width="450" height="240" fill="none" stroke="var(--chart-grid)" stroke-width="0.5"/>
+<rect x="250" y="30.0" width="450.0" height="19.818181818181817" fill="#2a78d6" rx="2"/>
+<text x="245" y="44.90909090909091" class="chart-text chart-label-left" fill="var(--chart-text)">claude-fable-5</text>
+<text x="705.0" y="44.90909090909091" class="chart-text chart-label-right" fill="var(--chart-text)">$794.61</text>
+<rect x="250" y="51.81818181818181" width="266.850799664071" height="19.818181818181817" fill="#eb6834" rx="2"/>
+<text x="245" y="66.72727272727272" class="chart-text chart-label-left" fill="var(--chart-text)">claude-opus-5</text>
+<text x="521.850799664071" y="66.72727272727272" class="chart-text chart-label-right" fill="var(--chart-text)">$471.21</text>
+<rect x="250" y="73.63636363636363" width="92.78357527662554" height="19.818181818181817" fill="#1baf7a" rx="2"/>
+<text x="245" y="88.54545454545453" class="chart-text chart-label-left" fill="var(--chart-text)">claude-opus-4-8</text>
+<text x="347.7835752766255" y="88.54545454545453" class="chart-text chart-label-right" fill="var(--chart-text)">$163.84</text>
+<rect x="250" y="95.45454545454545" width="59.543602515934" height="19.818181818181817" fill="#eda100" rx="2"/>
+<text x="245" y="110.36363636363636" class="chart-text chart-label-left" fill="var(--chart-text)">claude-sonnet-5</text>
+<text x="314.543602515934" y="110.36363636363636" class="chart-text chart-label-right" fill="var(--chart-text)">$105.14</text>
+<rect x="250" y="117.27272727272727" width="58.07971192596075" height="19.818181818181817" fill="#2a78d6" rx="2"/>
+<text x="245" y="132.1818181818182" class="chart-text chart-label-left" fill="var(--chart-text)">claude-opus-4-7</text>
+<text x="313.07971192596074" y="132.1818181818182" class="chart-text chart-label-right" fill="var(--chart-text)">$102.56</text>
+<rect x="250" y="139.09090909090907" width="24.811661186390324" height="19.818181818181817" fill="#eb6834" rx="2"/>
+<text x="245" y="153.99999999999997" class="chart-text chart-label-left" fill="var(--chart-text)">claude-haiku-4-5-20251001</text>
+<text x="279.8116611863903" y="153.99999999999997" class="chart-text chart-label-right" fill="var(--chart-text)">$43.81</text>
+<rect x="250" y="160.9090909090909" width="14.327854975317031" height="19.818181818181817" fill="#1baf7a" rx="2"/>
+<text x="245" y="175.8181818181818" class="chart-text chart-label-left" fill="var(--chart-text)">claude-sonnet-4-6</text>
+<text x="269.32785497531705" y="175.8181818181818" class="chart-text chart-label-right" fill="var(--chart-text)">$25.30</text>
+<rect x="250" y="182.72727272727272" width="0.4996550143287556" height="19.818181818181817" fill="#eda100" rx="2"/>
+<text x="245" y="197.63636363636363" class="chart-text chart-label-left" fill="var(--chart-text)">claude-fable-5-1</text>
+<text x="255.49965501432877" y="197.63636363636363" class="chart-text chart-label-right" fill="var(--chart-text)">$0.88</text>
+<rect x="250" y="204.54545454545453" width="0.0" height="19.818181818181817" fill="none" stroke="var(--chart-grid)" stroke-width="1" rx="2"/>
+<text x="245" y="219.45454545454544" class="chart-text chart-label-left" fill="var(--chart-text)">codex</text>
+<text x="255.0" y="219.45454545454544" class="chart-text chart-label-right" fill="var(--chart-text)">n/a</text>
+<rect x="250" y="226.36363636363635" width="0.0" height="19.818181818181817" fill="#eb6834" rx="2"/>
+<text x="245" y="241.27272727272725" class="chart-text chart-label-left" fill="var(--chart-text)">gemini-3.8-flash</text>
+<text x="255.0" y="241.27272727272725" class="chart-text chart-label-right" fill="var(--chart-text)">$0.00</text>
+<rect x="250" y="248.18181818181816" width="0.0" height="19.818181818181817" fill="#1baf7a" rx="2"/>
+<text x="245" y="263.09090909090907" class="chart-text chart-label-left" fill="var(--chart-text)">gemini-flash-lite-latest</text>
+<text x="255.0" y="263.09090909090907" class="chart-text chart-label-right" fill="var(--chart-text)">$0.00</text>
+</svg>
+</div>
+<div class="section">
+<h2>Daily Tokens</h2>
+<svg width="800" height="300" xmlns="http://www.w3.org/2000/svg" class="chart">
+<rect x="60" y="30" width="720" height="210" fill="none" stroke="var(--chart-grid)" stroke-width="0.5"/>
+<text x="60.0" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-03</text>
+<text x="76.74418604651163" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-14</text>
+<text x="93.48837209302326" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-15</text>
+<text x="110.23255813953489" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-16</text>
+<text x="126.97674418604652" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-23</text>
+<text x="143.72093023255815" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-24</text>
+<text x="160.46511627906978" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-25</text>
+<text x="177.2093023255814" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-26</text>
+<text x="193.95348837209303" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-27</text>
+<text x="210.69767441860466" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-29</text>
+<text x="227.4418604651163" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-06-30</text>
+<text x="244.18604651162792" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-01</text>
+<text x="260.93023255813955" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-03</text>
+<text x="277.6744186046512" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-04</text>
+<text x="294.4186046511628" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-05</text>
+<text x="311.16279069767444" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-06</text>
+<text x="327.90697674418607" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-07</text>
+<text x="344.6511627906977" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-08</text>
+<text x="361.3953488372093" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-10</text>
+<text x="378.13953488372096" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-22</text>
+<text x="394.8837209302326" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-23</text>
+<text x="411.6279069767442" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-24</text>
+<text x="428.37209302325584" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-26</text>
+<text x="445.1162790697675" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-28</text>
+<text x="461.8604651162791" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-07-31</text>
+<text x="478.60465116279073" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-01</text>
+<text x="495.34883720930236" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-02</text>
+<text x="512.0930232558139" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-03</text>
+<text x="528.8372093023256" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-05</text>
+<text x="545.5813953488373" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-06</text>
+<text x="562.3255813953489" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-07</text>
+<text x="579.0697674418604" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-10</text>
+<text x="595.8139534883721" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-11</text>
+<text x="612.5581395348838" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-12</text>
+<text x="629.3023255813954" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-13</text>
+<text x="646.046511627907" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-16</text>
+<text x="662.7906976744187" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-18</text>
+<text x="679.5348837209303" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-20</text>
+<text x="696.2790697674419" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-24</text>
+<text x="713.0232558139535" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-08-31</text>
+<text x="729.7674418604652" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-09-01</text>
+<text x="746.5116279069769" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-09-02</text>
+<text x="763.2558139534884" y="290" class="chart-text" font-size="11" text-anchor="middle" fill="var(--chart-text)">2026-09-03</text>
+</svg>
+</div>
+<div class="section">
+<h2>Token Composition by Model</h2>
+<table>
+<thead><tr><th>Backend</th><th>Model</th><th>Input</th><th>Output</th><th>Reasoning</th><th>Cache Read</th><th>Cache Write</th><th>Est. Cost</th></tr></thead>
+<tbody>
+<tr><td>claude</td><td>claude-fable-5</td><td>398,032</td><td>1,611,397</td><td>0</td><td>544,194,229</td><td>13,269,639</td><td>$794.61</td></tr>
+<tr><td>claude</td><td>claude-opus-5</td><td>4,317</td><td>1,228,435</td><td>0</td><td>721,152,622</td><td>12,783,883</td><td>$471.21</td></tr>
+<tr><td>claude</td><td>claude-opus-4-8</td><td>643,575</td><td>1,058,976</td><td>0</td><td>166,785,777</td><td>8,120,493</td><td>$163.84</td></tr>
+<tr><td>claude</td><td>claude-sonnet-5</td><td>148,169</td><td>682,451</td><td>0</td><td>359,536,147</td><td>10,445,865</td><td>$105.14</td></tr>
+<tr><td>claude</td><td>claude-opus-4-7</td><td>613</td><td>443,402</td><td>0</td><td>150,011,092</td><td>2,634,260</td><td>$102.56</td></tr>
+<tr><td>claude</td><td>claude-haiku-4-5-20251001</td><td>48,590</td><td>254,342</td><td>0</td><td>262,489,845</td><td>12,994,733</td><td>$43.81</td></tr>
+<tr><td>claude</td><td>claude-sonnet-4-6</td><td>40,647</td><td>182,557</td><td>0</td><td>40,867,453</td><td>2,714,600</td><td>$25.30</td></tr>
+<tr><td>claude</td><td>claude-fable-5-1</td><td>2,151</td><td>30</td><td>0</td><td>104,895</td><td>66,645</td><td>$0.88</td></tr>
+<tr><td>codex</td><td></td><td>43,138</td><td>34</td><td>0</td><td>0</td><td>0</td><td>n/a</td></tr>
+<tr><td>gemini</td><td>gemini-3.8-flash</td><td>7</td><td>2</td><td>80</td><td>0</td><td>0</td><td>$0.00</td></tr>
+<tr><td>gemini</td><td>gemini-flash-lite-latest</td><td>6,263</td><td>16,749</td><td>0</td><td>0</td><td>0</td><td>$0.00</td></tr>
+</tbody>
+</table>
+</div>
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute("data-theme");
+  const next = current === "dark" ? "light" : "dark";
+  root.setAttribute("data-theme", next);
+  localStorage.setItem("theme", next);
+}
+window.addEventListener("load", () => {
+  const saved = localStorage.getItem("theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+});
+</script>
+</body>
+</html>

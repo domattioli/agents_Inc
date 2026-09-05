@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+.env
+.env.*
+*.pem
+*.p12
+*key*
+!*.pub
+*secret*
+*token*
+*credential*
+.venv/
+venv/
