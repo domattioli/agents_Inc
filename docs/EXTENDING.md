@@ -49,18 +49,12 @@ for m in d['models']:
 
 - Vendor addition
   - **Steps**
-    - a.
-      - Write a wrapper in `skills/codex-bridge/scripts/`, using `gask.sh` as the closest template. Read the key from a file or `.env`, never an argument, and never echo it. Map `--tier` from a friendly name to a real slug. Exit non-zero on API errors and write the verbatim error text to stderr. Log token counts through `usage_db.py`.
-    - b.
-      - Teach `route.sh` the backend name.
-    - c.
-      - Teach `agent.sh` to dispatch it.
-    - d.
-      - Add a roster row in `workerbee` Step 1a.
-    - e.
-      - Add prices to `prices.json` under the honesty rule.
-    - f.
-      - Add the limit, reset time, and exact failure string to `reference/budget-mode.md`. The quota record distinguishes a retryable failure from quota burning.
+    - a. Write a wrapper in `skills/codex-bridge/scripts/`, using `gask.sh` as the closest template. Read the key from a file or `.env`, never an argument, and never echo it. Map `--tier` from a friendly name to a real slug. Exit non-zero on API errors and write the verbatim error text to stderr. Log token counts through `usage_db.py`.
+    - b. Teach `route.sh` the backend name.
+    - c. Teach `agent.sh` to dispatch it.
+    - d. Add a roster row in `workerbee` Step 1a.
+    - e. Add prices to `prices.json` under the honesty rule.
+    - f. Add the limit, reset time, and exact failure string to `reference/budget-mode.md`. The quota record distinguishes a retryable failure from quota burning.
   - **Failure example**
     - `oask.sh` read the wrong key path, passed a file-exists check with placeholder content, and sent an empty bearer token that produced HTTP 401 without a clear key error.
   - **Required check**
@@ -70,14 +64,10 @@ for m in d['models']:
 
 - Task class
   - **Steps**
-    - a.
-      - Add it to `reference/routing-policy.md`.
-    - b.
-      - Give it an ORDERED chain because every backend has a ceiling.
-    - c.
-      - Explain the order in one clause. “Why this order” is a real column.
-    - d.
-      - For money or irreversible work, use numbered gates and `--sandbox read-only`, as required by `HOW-IT-WORKS.md`.
+    - a. Add it to `reference/routing-policy.md`.
+    - b. Give it an ORDERED chain because every backend has a ceiling.
+    - c. Explain the order in one clause. “Why this order” is a real column.
+    - d. For money or irreversible work, use numbered gates and `--sandbox read-only`, as required by `HOW-IT-WORKS.md`.
 
 ## Adapt to a new domain
 
