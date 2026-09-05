@@ -46,3 +46,21 @@ class PipelineTest(unittest.TestCase):
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"}, runner=runner)
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["source_integrity"], "unparsed")
+
+    def test_fenced_json_is_parsed(self):
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief."}
+        fenced = f"```json\n{json.dumps(payload)}\n```"
+        def runner(cmd, stdin_text, timeout=300): return WorkerResult("returned", fenced, "", 0)
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        self.assertEqual(r.status, "needs-review")
+        self.assertEqual(r.report.matched, 5)
+
+    def test_prompt_numbers_paragraphs(self):
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief."}
+        captured_stdin = [None]
+        def runner(cmd, stdin_text, timeout=300):
+            captured_stdin[0] = stdin_text
+            return WorkerResult("returned", json.dumps(payload), "", 0)
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        self.assertIn("[p1]", captured_stdin[0])
+        self.assertIn("[p6]", captured_stdin[0])

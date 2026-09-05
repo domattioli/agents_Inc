@@ -8,11 +8,13 @@ DISALLOWED = {"Bash","PowerShell","Read","Edit","Write","Glob","Grep","Task",
 
 class AdapterTest(unittest.TestCase):
     def test_claude_cmd_is_tool_free_and_not_bare(self):
-        cmd = claude.build_cmd("haiku", "hi")
+        cmd = claude.build_cmd("haiku")
         self.assertNotIn("--bare", cmd)
         self.assertIn("--strict-mcp-config", cmd)
         i = cmd.index("--disallowedTools")
-        self.assertTrue(DISALLOWED.issubset(set(cmd[i+1:])))
+        self.assertTrue(DISALLOWED.issubset(set(cmd[i+1:-1])))  # exclude the trailing "--"
+        self.assertEqual(cmd[-1], "--")  # last element must be "--"
+        self.assertNotIn("hi", cmd)  # prompt must not be in command
         self.assertEqual(cmd[cmd.index("--setting-sources")+1], "")
 
     def test_codex_cmd_read_only_stdin(self):
