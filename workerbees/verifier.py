@@ -42,3 +42,40 @@ def verify(source_text: str, source_id: str, claims: list[dict]) -> Report:
 
 def passed(report: Report) -> bool:
     return report.checked > 0 and report.checked == report.matched
+
+def check_draft(draft: str, anchored: set[str]) -> dict:
+    """Check draft citations against anchored paragraph set.
+
+    Args:
+        draft: Draft text with citations like (p3)
+        anchored: Set of paragraph numbers that have anchored claims
+
+    Returns:
+        Dict with: sentences (int), cited (int), uncited_sentences (list), bad_citations (list)
+    """
+    # Split sentences on .!? followed by space
+    sentences = re.split(r"(?<=[.!?])\s+", draft.strip())
+    sentences = [s for s in sentences if s.strip()]
+
+    uncited = []
+    bad_cites = set()
+    cited_count = 0
+
+    for sent in sentences:
+        # Find all citations (pN) in this sentence
+        cites = re.findall(r"\(p(\d+)\)", sent)
+        if not cites:
+            uncited.append(sent)
+        else:
+            cited_count += 1
+            # Track bad citations
+            for cite_n in cites:
+                if cite_n not in anchored:
+                    bad_cites.add(cite_n)
+
+    return {
+        "sentences": len(sentences),
+        "cited": cited_count,
+        "uncited_sentences": uncited,
+        "bad_citations": sorted(bad_cites)
+    }

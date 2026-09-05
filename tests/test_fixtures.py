@@ -18,3 +18,13 @@ class FixtureTest(unittest.TestCase):
 
     def test_tim(self): self._check("tim", "matter.md")
     def test_dom(self): self._check("dom", "design.md")
+
+    def test_fixture_omissions_valid(self):
+        for name in ["tim", "dom"]:
+            faults = json.loads((FIX / name / "faults.json").read_text())
+            omissions = faults.get("omissions", [])
+            self.assertGreater(len(omissions), 0, f"{name} must have ≥1 omission")
+            for om in omissions:
+                self.assertIn("anchor", om, f"{name} omission missing anchor")
+                self.assertIn("why", om, f"{name} omission missing why")
+                self.assertGreater(len(om["why"]), 0, f"{name} omission why must be nonempty")

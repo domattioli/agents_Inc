@@ -92,7 +92,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.receipt["content_review"], "uncited_draft")
 
     def test_verified_requires_reviewer_ok(self):
-        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief summary (p2)."}
         calls = []
         def runner(cmd, stdin_text, timeout=300):
             calls.append(cmd[0])
@@ -150,3 +150,19 @@ class PipelineTest(unittest.TestCase):
                   worker_provider="codex", review_enabled=False, runner=runner)
         self.assertEqual(r.route.provider, "codex")
         self.assertEqual(captured_cmd[0][0], "codex")
+
+    def test_pipeline_uncited_sentence_caps_needs_review(self):
+        # Good claims verify, but draft has uncited sentence → status needs-review (not verified)
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]],
+                "draft": "Cited claim (p2). Uncited claim. More cited (p3)."}
+        def runner(cmd, stdin_text, timeout=300):
+            if "codex" in cmd:  # Reviewer
+                return WorkerResult("returned", json.dumps({"verdicts":[
+                    {"claim":i,"ok":True,"issue":""} for i in range(5)
+                ],"omissions":[]}), "", 0)
+            # Worker
+            return WorkerResult("returned", json.dumps(good), "", 0)
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        self.assertEqual(r.status, "needs-review")
+        self.assertIn("uncited_sentences", r.receipt)
+        self.assertGreater(len(r.receipt.get("uncited_sentences", [])), 0)

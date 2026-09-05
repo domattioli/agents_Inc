@@ -60,3 +60,8 @@ CEO (Dom) rulings from grill session with fable (CTO) + astra (CSO). Each supers
 - Wrapper status: gemini LIVE (PONG); mistral key EXPIRED 2026-09-04; openrouter key file is a stub → both need rotation by operator.
 - Fixes: HOW-IT-WORKS `## Legacy wrappers for optional providers`; SKILL.md pointer; routing.json `optional_provider_wrappers`. No new adapters (Phase 3 decision).
 - Correction: commit cc8f811's message claims the invalid-reviewer/verifier_pass fix; Opus's cleanup reverted those edits before the commit. Re-applied in the following commit.
+
+## D13 candidate — dispatch graph (CEO idea 2026-09-05, not yet ruled)
+- Idea: every fan-out emits a graph (node = job w/ model, tier, task, parent; edges = depends-on / reviews / corrects) to make hierarchy and tokenomics deterministic and auditable.
+- CTO position: adopt as a ledger emitted by the runner (agent_runner already stores parent_id in SQLite), linted by rules (depth ≤1, reviewer = other-vendor sibling, frontier nodes need a gate reason, subtree cost rollup). NOT an LLM-planned graph per spawn (frontier spend to save cheap spend).
+- First step: receipts carry `parent_id` + `edge` so the graph is derivable; visualization later.
