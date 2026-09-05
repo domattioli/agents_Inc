@@ -15,7 +15,7 @@ this delegate's GREEN?" — a question that cost three false accepts in one
 session before these rules existed.
 
 This skill is judgment, not plumbing. The dispatch machinery lives in
-`codex-bridge` (`~/Projects/claude-codex`).
+`codex-bridge` (`~/Projects/workerbees`).
 
 ## Metadata
 
@@ -217,6 +217,40 @@ Real catches from one session: a reported 0.664s that measured 0.461s; a
 "gap closed" report that left the single most-used model still unpriced;
 row labels silently dropped from a live UI while the alignment gate stayed
 green. None of these were dishonesty. All were a delegate grading itself.
+
+### Step 3a: Poll every dispatch. Default on.
+
+A dispatch you are not polling is a dispatch that can hang silently. A
+long-running delegate that has died is indistinguishable from one that is
+thinking, and the difference is invisible until you go looking.
+
+**Poll by default, on every dispatch that outlives one tool call.**
+
+```
+scripts/poll.sh --pid-match <pat> --log <stderr> --out <stdout> \
+                --stall 480 --interval 60 --max 5400
+scripts/poll.sh --once ...        # single check
+```
+
+**Token-smart by construction: it reports STATE, never content.** One short
+line per state CHANGE, nothing at all on a tick where nothing changed.
+States: `RUNNING` / `QUIET` / `RESUMED` / `DONE` / `DIED` / `TIMEOUT`.
+
+Piping a delegate's log into the supervisor's context spends exactly the
+tokens delegation was meant to save. The supervisor needs to know THAT it is
+working, not WHAT it is saying — read the output once, at the end.
+
+`DIED` is the state that pays for the rest: process gone, output empty. Never
+infer completion from a process exiting. **Exit 0 means returned, not
+verified** — keep those two states distinct or a crashed job reads as a
+success.
+
+To actually watch a job, use `scripts/watch.sh` in another pane. That stream
+goes to a human's eyes, not into a context window — which is also the only
+progress signal available to an operator who cannot read a test.
+
+Self-test the poller both ways before trusting it, same bar as any harness
+(Step 2): prove it says `DONE` on a finished job and `DIED` on a killed one.
 
 ### Step 4: Triage delegate reports through a flash model
 

@@ -43,8 +43,24 @@ you (orchestrator)
 3. `agent.sh submit --backend <b> --wait "<prompt>"` → job id
 4. job runs. transient fail → auto retry. quota fail → cooldown, no retry.
 5. `agent.sh result <id>` → output + `result.json`
+5a. poll it the whole time → `poll.sh`. state only, never content. see `## Polling`
 6. YOU verify. See `## Trust` below.
 7. usage logged → cost visible later
+
+## Polling
+
+Every dispatch outliving one tool call gets polled. Default, not optional.
+
+```
+scripts/poll.sh --pid-match <pat> --log <stderr> --out <stdout>
+scripts/watch.sh <stderr>        # human-facing live stream, other pane
+```
+
+poll = state to the supervisor. watch = content to a human. Never swap them → piping a log into supervisor context burns the tokens delegation was meant to save.
+
+States: RUNNING / QUIET / RESUMED / DONE / DIED / TIMEOUT. Emits on CHANGE only.
+
+**exit 0 = returned, NOT verified.** Two different states. Conflating them → a crashed job reads as success. `DIED` = process gone + output empty; that is the state the poller exists for.
 
 ## Money
 
