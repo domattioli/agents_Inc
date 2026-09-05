@@ -37,3 +37,27 @@ class ReviewerTest(unittest.TestCase):
     def test_unparsed(self):
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False, runner=runner_with(None))
         self.assertEqual(res.status, "unparsed")
+
+    def test_empty_verdicts_is_issues(self):
+        res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False,
+                     runner=runner_with({"verdicts":[],"omissions":[]}))
+        self.assertEqual(res.status, "issues")
+        self.assertTrue(any("reviewer_incomplete" in o for o in res.omissions))
+
+    def test_string_true_is_issues(self):
+        res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False,
+                     runner=runner_with({"verdicts":[{"claim":0,"ok":"true","issue":""}],"omissions":[]}))
+        self.assertEqual(res.status, "issues")
+        self.assertTrue(any("reviewer_incomplete" in o for o in res.omissions))
+
+    def test_duplicate_claim_ids_is_issues(self):
+        res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False,
+                     runner=runner_with({"verdicts":[{"claim":0,"ok":True,"issue":""},{"claim":0,"ok":True,"issue":""}],"omissions":[]}))
+        self.assertEqual(res.status, "issues")
+        self.assertTrue(any("reviewer_incomplete" in o and "not unique" in o for o in res.omissions))
+
+    def test_missing_claim_is_issues(self):
+        res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False,
+                     runner=runner_with({"verdicts":[],"omissions":[]}))
+        self.assertEqual(res.status, "issues")
+        self.assertTrue(any("reviewer_incomplete" in o for o in res.omissions))
