@@ -151,7 +151,7 @@ print(json.dumps(files))
 " "${RESOLVED_FILES[@]:-}")
 
 # Build API request body
-BODY=$(python3 -c '
+BODY=$(python3 << 'PYTHON'
 import json
 import os
 import sys
@@ -182,7 +182,8 @@ body = {
 }
 
 print(json.dumps(body))
-')
+PYTHON
+)
 
 # Make request
 HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/oask_response.json \
