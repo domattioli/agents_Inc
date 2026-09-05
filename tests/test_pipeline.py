@@ -16,11 +16,11 @@ class PipelineTest(unittest.TestCase):
         self.exp = json.loads((FIX / "tim" / "expected.json").read_text())
 
     def test_good_worker_output_is_needs_review_not_verified(self):
-        # Phase 1 has Verifier but no Reviewer → best status is needs-review.
+        # Reviewer gets mismatched JSON → unparsed → status returned.
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload), review_enabled=True)
-        self.assertEqual(r.status, "needs-review")
+        self.assertEqual(r.status, "returned")
         self.assertEqual(r.report.matched, 5)
         self.assertEqual(r.receipt["source_integrity"], "pass")
         self.assertEqual(r.receipt["content_review"], "unparsed")
@@ -53,7 +53,8 @@ class PipelineTest(unittest.TestCase):
         fenced = f"```json\n{json.dumps(payload)}\n```"
         def runner(cmd, stdin_text, timeout=300): return WorkerResult("returned", fenced, "", 0)
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
-        self.assertEqual(r.status, "needs-review")
+        self.assertEqual(r.status, "returned")
+        self.assertEqual(r.receipt["source_integrity"], "pass")
         self.assertEqual(r.report.matched, 5)
 
     def test_prompt_numbers_paragraphs(self):
@@ -115,8 +116,8 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.status, "needs-review")
         self.assertIn("Clause 8", json.dumps(r.receipt))
 
-    def test_single_vendor_caps_at_needs_review(self):
+    def test_single_vendor_is_returned(self):
         good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"}, runner=fake_runner_factory(good))
-        self.assertEqual(r.status, "needs-review")
+        self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "no_other_vendor")

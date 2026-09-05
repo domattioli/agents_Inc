@@ -76,7 +76,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     rep = verify(source, source_id, claims)
     receipt = {"source_integrity": "pass" if passed(rep) else "fail",
                "checked": rep.checked, "matched": rep.matched, "failures": rep.failures,
-               "source_hash": rep.source_hash, "content_review": "not-run (no Reviewer in Phase 1)",
+               "source_hash": rep.source_hash, "content_review": "not-run",
                "human_decision_needed": True, "route": route.__dict__}
     status = "needs-review" if passed(rep) else "returned"
     if status == "needs-review" and not draft.strip():
@@ -102,8 +102,12 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             status, receipt["content_review"], receipt["human_decision_needed"] = "verified", "pass", False
         elif rv.status == "paused":
             status = "paused"
+        elif rv.status == "issues":
+            receipt["content_review"] = "issues"
         else:
-            receipt["content_review"] = rv.status if rv.status != "issues" else "issues"
+            status, receipt["content_review"] = "returned", rv.status
+    elif status == "needs-review" and not review_enabled:
+        status, receipt["content_review"] = "returned", "disabled"
     return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
 
 if __name__ == "__main__":

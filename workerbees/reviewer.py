@@ -52,5 +52,40 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
         omissions = [str(o) for o in payload.get("omissions", [])]
     except (json.JSONDecodeError, AttributeError):
         return ReviewResult("unparsed", raw=res.output[-500:])
-    ok = all(v.get("ok") for v in verdicts) and not omissions
+
+    # Validate verdicts structure for "ok" status
+    issues_list = []
+
+    # Check all ok values are actual booleans (not strings or other types)
+    for v in verdicts:
+        ok_val = v.get("ok")
+        if not isinstance(ok_val, bool):
+            issues_list.append(f"reviewer_incomplete: ok value is not boolean (got {type(ok_val).__name__})")
+            break
+
+    # Check claim ids are ints and cover range(len(claims))
+    if not issues_list:
+        claim_ids = []
+        for v in verdicts:
+            cid = v.get("claim")
+            if not isinstance(cid, int):
+                issues_list.append(f"reviewer_incomplete: claim id is not int (got {type(cid).__name__})")
+                break
+            claim_ids.append(cid)
+
+        if not issues_list:
+            # Check uniqueness
+            if len(claim_ids) != len(set(claim_ids)):
+                issues_list.append("reviewer_incomplete: claim ids are not unique")
+            # Check they cover range(len(claims))
+            elif sorted(claim_ids) != list(range(len(claims))):
+                issues_list.append(f"reviewer_incomplete: claim ids {sorted(claim_ids)} do not cover range(0, {len(claims)})")
+
+    # If structural issues found, return issues with synthetic omissions
+    if issues_list:
+        omissions_with_issues = omissions + issues_list
+        return ReviewResult("issues", verdicts, omissions_with_issues, res.output)
+
+    # Structure is valid; check if content is ok
+    ok = all(v.get("ok") is True for v in verdicts) and not omissions
     return ReviewResult("ok" if ok else "issues", verdicts, omissions, res.output)
