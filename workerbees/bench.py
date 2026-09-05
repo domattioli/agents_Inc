@@ -13,25 +13,33 @@ CONFIGS = [("claude", "cheap"), ("codex", "cheap"), ("claude", "frontier"), ("co
 
 def run_case(fixture, source_file, mode, worker_provider, worker_tier, workspace, runner=run_worker) -> dict:
     t0 = time.time()
-    r = brief(FIX / fixture / source_file, fixture, mode, workspace, available={worker_provider} if worker_tier == "frontier" else {"claude", "codex"},
-              runner=runner, worker_tier=worker_tier, review_enabled=(worker_tier != "frontier"))
+    r = brief(FIX / fixture / source_file, fixture, mode, workspace, available={"claude", "codex"},
+              worker_provider=worker_provider, runner=runner, worker_tier=worker_tier, review_enabled=(worker_tier != "frontier"))
     rc = r.receipt
+    if worker_tier == "cheap":
+        accepted = r.status in {"verified", "needs-review"} and rc.get("source_integrity") == "pass"
+    else:  # frontier
+        accepted = rc.get("source_integrity") == "pass"
     return {"fixture": fixture, "provider": worker_provider, "tier": worker_tier,
             "model": r.route.model if r.route else None, "status": r.status,
             "checked": rc.get("checked"), "matched": rc.get("matched"),
             "reviewer": rc.get("reviewer", {}).get("status", "disabled"), "seconds": round(time.time() - t0, 1),
-            "accepted": r.status in {"verified", "needs-review"} and rc.get("source_integrity") == "pass"}
+            "accepted": accepted, "review": rc.get("content_review")}
 
 def summarize(rows: list[dict]) -> str:
-    out = ["# Bench — measured pilot (D5/D10)", "", "| fixture | provider/tier | model | status | quotes | reviewer | seconds | accepted |", "|---|---|---|---|---|---|---|---|"]
+    out = ["# Bench — measured pilot (D5/D10)", "", "| fixture | provider/tier | model | status | quotes | reviewer | review | seconds | accepted |", "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        out.append(f"| {r['fixture']} | {r['provider']}/{r['tier']} | {r['model']} | {r['status']} | {r['matched']}/{r['checked']} | {r['reviewer']} | {r['seconds']} | {r['accepted']} |")
+        out.append(f"| {r['fixture']} | {r['provider']}/{r['tier']} | {r['model']} | {r['status']} | {r['matched']}/{r['checked']} | {r['reviewer']} | {r.get('review', 'n/a')} | {r['seconds']} | {r['accepted']} |")
     agg = defaultdict(lambda: {"n": 0, "acc": 0, "sec": 0.0})
     for r in rows:
         k = f"{r['provider']}/{r['tier']}"; agg[k]["n"] += 1; agg[k]["acc"] += int(r["accepted"]); agg[k]["sec"] += r["seconds"]
     out += ["", "## Per configuration"]
     for k, v in agg.items():
-        out.append(f"- {k}: accepted {v['acc']}/{v['n']}; mean seconds {v['sec']/v['n']:.1f}; incremental dollars: 0 (subscription only, D9); subscription calls: {v['n'] * (2 if k.endswith('cheap') else 1)}")
+        tier = "cheap" if k.endswith("cheap") else "frontier"
+        if tier == "frontier":
+            out.append(f"- {k}: accepted {v['acc']}/{v['n']} (frontier baseline accepted = verifier pass only, no Reviewer by definition); mean seconds {v['sec']/v['n']:.1f}; incremental dollars: 0 (subscription only, D9); subscription calls: {v['n']}")
+        else:
+            out.append(f"- {k}: accepted {v['acc']}/{v['n']}; mean seconds {v['sec']/v['n']:.1f}; incremental dollars: 0 (subscription only, D9); subscription calls: {v['n'] * 2}")
     out += ["", "No savings percentage is reported until both workflows are measured at N≥5 (D10)."]
     return "\n".join(out)
 

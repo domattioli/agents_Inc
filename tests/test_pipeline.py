@@ -121,3 +121,14 @@ class PipelineTest(unittest.TestCase):
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"}, runner=fake_runner_factory(good))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "no_other_vendor")
+
+    def test_worker_provider_preference(self):
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        captured_cmd = [None]
+        def runner(cmd, stdin_text, timeout=300):
+            captured_cmd[0] = cmd
+            return WorkerResult("returned", json.dumps(good), "", 0)
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude", "codex"},
+                  worker_provider="codex", review_enabled=False, runner=runner)
+        self.assertEqual(r.route.provider, "codex")
+        self.assertEqual(captured_cmd[0][0], "codex")

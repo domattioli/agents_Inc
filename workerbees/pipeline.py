@@ -46,10 +46,10 @@ def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
-          available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap", runner=run_worker) -> BriefResult:
+          available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap", worker_provider: str | None = None, runner=run_worker) -> BriefResult:
     source = source_path.read_text()
     avail = available if available is not None else doctor.available(workspace)
-    route = pick_model("extract", worker_tier, avail, is_authorized(workspace))
+    route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
     if route is None:
         return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
     try:
