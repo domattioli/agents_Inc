@@ -42,15 +42,27 @@ check_spend_guard() {
 
 # Load key from env or file
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]]; then
-  if [[ ! -f "$KEY_FILE" ]]; then
-    echo "openrouter key not found: $KEY_FILE (set OPEN_ROUTER_API_KEY or write key to that file, chmod 600)" >&2
-    exit 1
+  if [[ -f "$KEY_FILE" ]]; then
+    OPEN_ROUTER_API_KEY=$(cat "$KEY_FILE")
   fi
-  OPEN_ROUTER_API_KEY=$(cat "$KEY_FILE")
 fi
 
-if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]]; then
-  echo "oask: OPEN_ROUTER_API_KEY unset" >&2
+# Fallback: read from ~/Projects/.env if key is missing/empty/placeholder
+if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; then
+  if [[ -f "$HOME/Projects/.env" ]]; then
+    ENV_KEY=$(grep -m1 -E '^OPENROUTER_API_KEY=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
+    if [[ -n "$ENV_KEY" ]]; then
+      ENV_KEY="${ENV_KEY%\"}"
+      ENV_KEY="${ENV_KEY#\"}"
+      if [[ ${#ENV_KEY} -ge 20 ]]; then
+        OPEN_ROUTER_API_KEY="$ENV_KEY"
+      fi
+    fi
+  fi
+fi
+
+if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; then
+  echo "oask error: no API key (checked $KEY_FILE and ~/Projects/.env OPENROUTER_API_KEY)" >&2
   exit 2
 fi
 
@@ -111,7 +123,8 @@ check_spend_guard
 RESOLVED_FILES=("${DECLARE_FILES[@]:-}")
 for pattern in "${DECLARE_GLOBS[@]:-}"; do
   # shellcheck disable=SC2086
-  RESOLVED_FILES+=($(eval echo "$pattern" 2>/dev/null || true))
+  expanded=$(eval echo "$pattern" 2>/dev/null || true)
+  [[ -n "$expanded" ]] && RESOLVED_FILES+=("$expanded")
 done
 
 # Build request body with python3
@@ -125,6 +138,8 @@ import sys
 
 files = []
 for fpath in sys.argv[1:]:
+    if not fpath:  # Skip empty paths
+        continue
     try:
         with open(fpath, 'r') as f:
             content = f.read()

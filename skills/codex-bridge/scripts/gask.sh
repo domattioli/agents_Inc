@@ -33,13 +33,30 @@ tier_to_model() {
   esac
 }
 
-# Check key file exists
-if [[ ! -f "$KEY_FILE" ]]; then
-  echo "gemini key not found: $KEY_FILE (write key to that file, chmod 600)" >&2
-  exit 1
+# Load key from file
+KEY=""
+if [[ -f "$KEY_FILE" ]]; then
+  KEY=$(cat "$KEY_FILE")
 fi
 
-KEY=$(cat "$KEY_FILE")
+# Fallback: read from ~/Projects/.env if key is missing/empty/placeholder
+if [[ -z "$KEY" ]] || [[ ${#KEY} -lt 20 ]]; then
+  if [[ -f "$HOME/Projects/.env" ]]; then
+    ENV_KEY=$(grep -m1 -E '^(GEMINI_API_KEY|GOOGLE_API_KEY)=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
+    if [[ -n "$ENV_KEY" ]]; then
+      ENV_KEY="${ENV_KEY%\"}"
+      ENV_KEY="${ENV_KEY#\"}"
+      if [[ ${#ENV_KEY} -ge 20 ]]; then
+        KEY="$ENV_KEY"
+      fi
+    fi
+  fi
+fi
+
+if [[ -z "$KEY" ]] || [[ ${#KEY} -lt 20 ]]; then
+  echo "gask error: no API key (checked $KEY_FILE and ~/Projects/.env GEMINI_API_KEY|GOOGLE_API_KEY)" >&2
+  exit 2
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
