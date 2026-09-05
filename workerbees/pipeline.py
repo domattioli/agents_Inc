@@ -10,6 +10,7 @@ from .adapters import claude, codex
 from .adapters.base import run_worker, WorkerResult
 from .verifier import Report, verify, passed, paragraphs
 from .keys import available_providers
+from . import doctor
 
 EXTRACT_PROMPT = (
     "You are a {mode} document analyst. Source id: {source_id}. Paragraphs are numbered p1..pN, "
@@ -45,10 +46,10 @@ def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
-          available: set[str] | None = None, review_enabled: bool = True, runner=run_worker) -> BriefResult:
+          available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap", runner=run_worker) -> BriefResult:
     source = source_path.read_text()
-    avail = available if available is not None else available_providers()
-    route = pick_model("extract", "cheap", avail, is_authorized(workspace))
+    avail = available if available is not None else doctor.available(workspace)
+    route = pick_model("extract", worker_tier, avail, is_authorized(workspace))
     if route is None:
         return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
     try:

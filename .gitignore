@@ -229,3 +229,6 @@ __marimo__/
 *.pem
 *.p12
 .DS_Store
+
+# workerbees per-workspace state
+.workerbees/
