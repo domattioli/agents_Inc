@@ -17,7 +17,7 @@ class PipelineTest(unittest.TestCase):
 
     def test_good_worker_output_is_needs_review_not_verified(self):
         # Phase 1 has Verifier but no Reviewer → best status is needs-review.
-        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief."}
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "needs-review")
@@ -25,7 +25,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.receipt["source_integrity"], "pass")
 
     def test_forged_quote_is_returned_with_failures(self):
-        payload = {"claims": [{"text": "t", "quote": "rent weekly", "anchor": "tim#p3"}], "draft": "Brief."}
+        payload = {"claims": [{"text": "t", "quote": "rent weekly", "anchor": "tim#p3"}], "draft": "Brief. (p3)"}
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
@@ -48,7 +48,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.receipt["source_integrity"], "unparsed")
 
     def test_fenced_json_is_parsed(self):
-        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief."}
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         fenced = f"```json\n{json.dumps(payload)}\n```"
         def runner(cmd, stdin_text, timeout=300): return WorkerResult("returned", fenced, "", 0)
         r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
@@ -56,7 +56,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.report.matched, 5)
 
     def test_prompt_numbers_paragraphs(self):
-        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief."}
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         captured_stdin = [None]
         def runner(cmd, stdin_text, timeout=300):
             captured_stdin[0] = stdin_text
@@ -72,3 +72,19 @@ class PipelineTest(unittest.TestCase):
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "draft_missing")
+
+    def test_empty_claims_is_returned(self):
+        # Empty claims list → verifier fails (0 checked), status returned with source_integrity fail
+        payload = {"claims": [], "draft": "x (p2)"}
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+                  runner=fake_runner_factory(payload))
+        self.assertEqual(r.status, "returned")
+        self.assertEqual(r.receipt["source_integrity"], "fail")
+
+    def test_draft_citing_unanchored_paragraph_is_returned(self):
+        # Good 5 claims (p2, p3, p4, p5, p6), draft cites p9 (unanchored)
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Foo (p9)."}
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+                  runner=fake_runner_factory(payload))
+        self.assertEqual(r.status, "returned")
+        self.assertEqual(r.receipt["content_review"], "uncited_draft")

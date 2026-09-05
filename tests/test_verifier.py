@@ -25,5 +25,18 @@ class VerifierTest(unittest.TestCase):
     def test_hash_is_sha256(self):
         self.assertEqual(len(verify(SRC, "lease", []).source_hash), 64)
 
+    def test_zero_claims_not_passed(self):
+        r = verify(SRC, "lease", [])
+        self.assertEqual(r.checked, 0)
+        self.assertEqual(r.matched, 0)
+        self.assertFalse(passed(r))
+
+    def test_negation_prefix_forgery_fails(self):
+        # "unsigned 16-bit" should not match quote "signed 16-bit"
+        SRC2 = "This is an unsigned 16-bit value."
+        r = verify(SRC2, "spec", [{"text": "x", "quote": "signed 16-bit", "anchor": "spec#p1"}])
+        self.assertFalse(passed(r))
+        self.assertEqual(r.failures[0]["reason"], "quote_not_in_anchor")
+
 if __name__ == "__main__":
     unittest.main()
