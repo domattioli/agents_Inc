@@ -14,6 +14,7 @@ Delegation to cheap AI models, with the discipline to know whether to believe wh
 | [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) | operator/agent, caveman ultra |
 | [`docs/EXTENDING.md`](docs/EXTENDING.md) | adding a vendor, model, task class, or domain |
 | [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) | the build plan — cut line, architecture, phases |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | picking this up in a fresh session |
 | [`skills/workerbee/SKILL.md`](skills/workerbee/SKILL.md) | full supervision discipline |
 
 Two halves, deliberately separate: `skills/codex-bridge/` is mechanism (transport, routing, retries, cost logging), `skills/workerbee/` is judgment (tier choice, trust, verification). No code in the second, no opinions in the first.
