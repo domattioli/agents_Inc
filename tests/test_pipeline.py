@@ -398,3 +398,157 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("paused_reason", r.receipt)
         self.assertIn("RATE_LIMIT_EXHAUSTED", r.receipt["paused_reason"])
         self.assertEqual(calls, ["claude", "codex", "claude"])
+
+    def test_ledger_integration_worker_and_reviewer(self):
+        """T021: Worker + reviewer produces 2 ledger nodes + 1 edge."""
+        import json
+        from workerbees.ledger import load
+        
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        calls = []
+        def runner(cmd, stdin_text, timeout=300):
+            calls.append(cmd[0])
+            if len(calls) == 1:
+                return WorkerResult("returned", json.dumps(payload), "", 0)
+            return WorkerResult("returned", json.dumps({"verdicts":[{"claim":i,"ok":True,"issue":""} for i in range(5)],"omissions":[]}), "", 0)
+        
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+                  available={"claude","codex"}, runner=runner, max_corrections=0)
+        
+        # Check ledger exists and has 2 nodes
+        ledger = load(self.ws)
+        self.assertEqual(len(ledger.nodes), 2)
+        
+        # Check for reviews edge
+        reviewer_node = None
+        for node in ledger.nodes.values():
+            if node.edge_type == "reviews":
+                reviewer_node = node
+                break
+        self.assertIsNotNone(reviewer_node)
+
+    def test_ledger_sequential_briefs_distinct_run_ids(self):
+        """T023: Two briefs in same workspace produce distinct run_ids."""
+        from workerbees.ledger import load
+        
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        def runner(cmd, stdin_text, timeout=300):
+            if "codex" in cmd:
+                return WorkerResult("returned", json.dumps({"verdicts":[{"claim":i,"ok":True,"issue":""} for i in range(5)],"omissions":[]}), "", 0)
+            return WorkerResult("returned", json.dumps(payload), "", 0)
+        
+        # First brief
+        r1 = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+                   available={"claude","codex"}, runner=runner, max_corrections=0)
+        
+        # Second brief
+        r2 = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+                   available={"claude","codex"}, runner=runner, max_corrections=0)
+        
+        ledger = load(self.ws)
+        run_ids = {node.run_id for node in ledger.nodes.values() if node.run_id}
+        # Should have exactly 2 distinct run_ids (one per brief)
+        self.assertEqual(len(run_ids), 2)
+
+    def test_ledger_failure_does_not_affect_brief_status(self):
+        """T021: Ledger write failure never changes brief status."""
+        payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+                  runner=fake_runner_factory(payload), review_enabled=False)
+        # Even if ledger has an error, brief should succeed
+        self.assertEqual(r.status, "returned")
+
+    def test_ledger_records_correction_with_corrects_edge(self):
+        """Test: correction flow creates 4 nodes with corrects edge."""
+        from workerbees.ledger import load
+
+        worker_1 = {
+            "claims": [dict(text="t", **c) for c in self.exp["required_claims"]],
+            "draft": "Brief. (p2)."
+        }
+        worker_2 = {
+            "claims": [dict(text="t", **c) for c in self.exp["required_claims"]],
+            "draft": "Revised point (p2)."
+        }
+        calls = []
+        def runner(cmd, stdin_text, timeout=300):
+            calls.append(cmd[0])
+            if len(calls) == 1:  # First worker
+                return WorkerResult("returned", json.dumps(worker_1), "", 0)
+            if len(calls) == 2:  # First reviewer - issues on claim 2
+                return WorkerResult("returned", json.dumps({
+                    "verdicts": [
+                        {"claim": 0, "ok": True, "issue": ""},
+                        {"claim": 1, "ok": True, "issue": ""},
+                        {"claim": 2, "ok": False, "issue": "Clause 8 overrides Clause 3"},
+                        {"claim": 3, "ok": True, "issue": ""},
+                        {"claim": 4, "ok": True, "issue": ""},
+                    ],
+                    "omissions": ["Clause 3 says monthly rent"],
+                }), "", 0)
+            if len(calls) == 3:  # Second worker (correction)
+                return WorkerResult("returned", json.dumps(worker_2), "", 0)
+            if len(calls) == 4:  # Second reviewer - ok
+                return WorkerResult("returned", json.dumps({
+                    "verdicts": [{"claim": i, "ok": True, "issue": ""} for i in range(5)],
+                    "omissions": [],
+                }), "", 0)
+            return WorkerResult("returned", json.dumps(worker_2), "", 0)
+
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+                  available={"claude", "codex"}, runner=runner, max_corrections=1)
+
+        ledger = load(self.ws)
+        # Should have 4 nodes: worker1, reviewer1, worker2(corrects), reviewer2
+        self.assertEqual(len(ledger.nodes), 4)
+        # Find the corrects edge
+        corrects_nodes = [n for n in ledger.nodes.values() if n.edge_type == "corrects"]
+        self.assertEqual(len(corrects_nodes), 1)
+        corrects_node = corrects_nodes[0]
+        # Find first worker node (has no parent)
+        worker1_nodes = [n for n in ledger.nodes.values() if n.parent_id is None and n.task == "extract"]
+        self.assertEqual(len(worker1_nodes), 1)
+        worker1_id = worker1_nodes[0].id
+        # Corrects node should point back to worker1
+        self.assertEqual(corrects_node.parent_id, worker1_id)
+        # Number of nodes should equal number of runner calls (dedup doesn't apply across different ops)
+        self.assertEqual(len(calls), 4)
+
+    def test_ledger_single_vendor_has_one_node(self):
+        """Test: single vendor (no reviewer) yields 1 node in ledger."""
+        from workerbees.ledger import load
+
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"},
+                  runner=fake_runner_factory(good))
+
+        ledger = load(self.ws)
+        # Should have only 1 node (worker), no phantom reviewer
+        self.assertEqual(len(ledger.nodes), 1)
+        # The node should be the worker
+        node = list(ledger.nodes.values())[0]
+        self.assertEqual(node.task, "extract")
+        self.assertIsNone(node.parent_id)
+
+    def test_ledger_write_failure_sets_receipt(self):
+        """Test: ledger write failure sets receipt and preserves status."""
+        from workerbees.ledger import load
+
+        # First, run a baseline to get the expected status
+        good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
+        r_baseline = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"},
+                           runner=fake_runner_factory(good), review_enabled=False)
+        baseline_status = r_baseline.status
+
+        # Now run with write failure by making .workerbees a file
+        ws_fail = Path(tempfile.mkdtemp())
+        # Create .workerbees as a regular file to block ledger.jsonl creation
+        (ws_fail / ".workerbees").write_text("blocking file")
+
+        r_fail = brief(FIX/"tim"/"matter.md", "tim", "lawyer", ws_fail, available={"claude"},
+                       runner=fake_runner_factory(good), review_enabled=False)
+
+        # Status should be the same despite write failure
+        self.assertEqual(r_fail.status, baseline_status)
+        # Receipt should indicate write failure
+        self.assertEqual(r_fail.receipt.get("ledger_error"), "write_failed")

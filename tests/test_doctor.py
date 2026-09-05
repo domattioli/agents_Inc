@@ -35,3 +35,28 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(result["paused"], ["claude"])
         paused = doctor.quota_paused(self.ws)
         self.assertEqual(paused, ["claude"])
+
+class DoctorLedgerTest(unittest.TestCase):
+    def setUp(self):
+        self.ws = Path(tempfile.mkdtemp())
+
+    def test_doctor_run_creates_ledger_with_probe_nodes(self):
+        """T022: doctor.run() records N probe nodes with edge_type='probes'."""
+        from workerbees.ledger import load
+        
+        calls = {"n": 0}
+        def r(cmd, stdin_text, timeout=300, cwd=None):
+            calls["n"] += 1
+            return WorkerResult("returned", "PONG", "", 0)
+        
+        doctor.run(self.ws, runner=r)
+        ledger = load(self.ws)
+        
+        # Should have 2 nodes (claude and codex probes)
+        self.assertEqual(len(ledger.nodes), 2)
+        
+        # All should have edge_type="probes" and parent_id=None
+        for node in ledger.nodes.values():
+            self.assertEqual(node.edge_type, "probes")
+            self.assertIsNone(node.parent_id)
+            self.assertEqual(node.task, "probe")

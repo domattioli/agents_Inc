@@ -1,7 +1,7 @@
 """Markdown source -> cheap Worker extract+draft -> deterministic Verifier -> receipt.
 Phase 1 ships no Reviewer, so the best reachable status is needs-review (D5 quality floor)."""
 from __future__ import annotations
-import json, re
+import json, re, time, uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from .router import Route, pick_model
@@ -11,6 +11,7 @@ from .adapters.base import run_worker, WorkerResult
 from .verifier import Report, verify, passed, paragraphs, check_draft
 from .keys import available_providers
 from . import doctor
+from . import ledger
 
 EXTRACT_PROMPT = (
     "You are a {mode} document analyst. Source id: {source_id}. Paragraphs are numbered p1..pN, "
@@ -148,12 +149,16 @@ def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
 
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
           available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap",
-          worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1) -> BriefResult:
+          worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1,
+          gate_reason: str | None = None) -> BriefResult:
     source = source_path.read_text()
     avail = available if available is not None else doctor.available(workspace)
     route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
     if route is None:
         return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
+
+    # Generate run_id for this brief (groups worker + reviewer + corrections)
+    run_id = uuid.uuid4().hex
     try:
         check_dispatch(route, workspace, confidential)
     except PolicyError as e:
@@ -165,9 +170,21 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         cmd, stdin = _cmd(route, prompt)
     except NotImplementedError as e:
         return BriefResult("blocked", route=route, receipt={"reason": str(e)})
+
+    # Record worker dispatch and return (T018)
+    worker_node_id = uuid.uuid4().hex
+    dispatch_ok = ledger.record_dispatch(workspace, node_id=worker_node_id, run_id=run_id, model=route.model,
+                          tier=route.tier, task="extract", provider=route.provider,
+                          parent_id=None, edge_type=None, gate_reason=gate_reason if route.tier == "frontier" else None)
+    start_time = time.monotonic()
     res: WorkerResult = runner(cmd, stdin)
+    elapsed = time.monotonic() - start_time
+    return_ok = ledger.record_return(workspace, node_id=worker_node_id, status=res.status, seconds=elapsed, subscription_calls=1)
+
     status, rep, claims, draft, worker_receipt = _process_worker_result(source, source_id, res)
     receipt = {"route": route.__dict__, "corrections": 0}
+    if not dispatch_ok or not return_ok:
+        receipt["ledger_error"] = "write_failed"
     receipt.update(worker_receipt)
     if status != "needs-review":
         return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
@@ -178,7 +195,29 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     corrections = 0
     while True:
         from .reviewer import review
-        rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode)
+
+        # Pick reviewer route once (D2)
+        reviewer_route = pick_model("review", "mid", avail, is_authorized(workspace), exclude_provider=route.provider)
+
+        # Record reviewer dispatch and return (T019) only if route exists (D2 — no phantom nodes)
+        reviewer_node_id = None
+        if reviewer_route:
+            reviewer_node_id = uuid.uuid4().hex
+            dispatch_ok = ledger.record_dispatch(workspace, node_id=reviewer_node_id, run_id=run_id, model=reviewer_route.model,
+                                  tier=reviewer_route.tier, task="review", provider=reviewer_route.provider,
+                                  parent_id=worker_node_id, edge_type="reviews", gate_reason=None)
+            if not dispatch_ok:
+                receipt["ledger_error"] = "write_failed"
+            start_time = time.monotonic()
+
+        rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route)
+
+        if reviewer_node_id:
+            elapsed = time.monotonic() - start_time
+            return_ok = ledger.record_return(workspace, node_id=reviewer_node_id, status=rv.status, seconds=elapsed, subscription_calls=1)
+            if not return_ok:
+                receipt["ledger_error"] = "write_failed"
+
         receipt["reviewer"] = {"status": rv.status, "verdicts": rv.verdicts, "omissions": rv.omissions}
         if rv.status == "ok":
             status, receipt["content_review"], receipt["human_decision_needed"] = "verified", "pass", False
@@ -209,7 +248,21 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         except NotImplementedError as e:
             return BriefResult("blocked", route=route, receipt={"reason": str(e)})
         prior_draft, prior_rep = draft, rep
+
+        # Record correction worker dispatch and return (D1 — corrects edge)
+        correction_node_id = uuid.uuid4().hex
+        dispatch_ok = ledger.record_dispatch(workspace, node_id=correction_node_id, run_id=run_id, model=route.model,
+                              tier=route.tier, task="extract", provider=route.provider,
+                              parent_id=worker_node_id, edge_type="corrects", gate_reason=None)
+        if not dispatch_ok:
+            receipt["ledger_error"] = "write_failed"
+        start_time = time.monotonic()
         res = runner(cmd, stdin)
+        elapsed = time.monotonic() - start_time
+        return_ok = ledger.record_return(workspace, node_id=correction_node_id, status=res.status, seconds=elapsed, subscription_calls=1)
+        if not return_ok:
+            receipt["ledger_error"] = "write_failed"
+
         status, rep, claims, draft, worker_receipt = _process_worker_result(source, source_id, res)
         receipt.pop("uncited_sentences", None)
         receipt.pop("uncited", None)
