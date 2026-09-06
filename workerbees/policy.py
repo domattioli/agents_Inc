@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from .router import Route, _TABLE
 from .envelope import Envelope, Decision
 from .registry import Registry, CLEARANCE_LEVELS
@@ -57,6 +57,9 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         recipient_agent = registry.agent(envelope.recipient, include_disabled=True)
         if not recipient_agent:
             return deny("UNKNOWN_RECIPIENT", f"Recipient '{envelope.recipient}' not in registry")
+        checked_rules.append("sender_enabled")
+        if not sender_agent.enabled:
+            return deny("SENDER_DISABLED", f"Sender '{envelope.sender}' disabled")
         checked_rules.append("recipient_enabled")
         if not recipient_agent.enabled:
             return deny("RECIPIENT_DISABLED", f"Recipient '{envelope.recipient}' disabled")
@@ -67,6 +70,16 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         edge = registry.edge(envelope.sender, envelope.recipient, rel_type)
         if not edge:
             return deny("NO_EDGE", f"No '{rel_type}' from {envelope.sender} to {envelope.recipient}")
+
+        checked_rules.append("intent_capability")
+        intent = envelope.intent.removesuffix("ion") if envelope.intent == "extraction" else envelope.intent
+        matching = [c for c in recipient_agent.capabilities
+                    if c == intent or c.startswith(intent + ".")]
+        if registry.capabilities and not matching:
+            return deny("CAPABILITY_NOT_ALLOWED", f"Recipient lacks capability for '{envelope.intent}'")
+        if any(not registry.capability(c, include_disabled=True).enabled for c in matching
+               if registry.capability(c, include_disabled=True)):
+            return deny("CAPABILITY_DISABLED", f"Capability for '{envelope.intent}' disabled")
 
         # Operation & schema validation
         checked_rules.append("operation_allowed")
@@ -104,12 +117,17 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         checked_rules.append("not_expired")
         if envelope.expires_at:
             try:
-                now = datetime.fromisoformat(context.get("now", datetime.utcnow().isoformat() + "Z").replace("Z", "+00:00"))
+                raw_now = context.get("now") or datetime.now(timezone.utc)
+                now = raw_now if isinstance(raw_now, datetime) else datetime.fromisoformat(raw_now.replace("Z", "+00:00"))
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=timezone.utc)
                 expires = datetime.fromisoformat(envelope.expires_at.replace("Z", "+00:00"))
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
                 if now > expires:
                     return deny("EXPIRED", "Envelope expired")
-            except (ValueError, AttributeError):
-                pass
+            except (ValueError, AttributeError, TypeError):
+                return deny("INVALID_EXPIRY", "Envelope expiry or clock is invalid")
         checked_rules.append("not_cancelled")
         if context.get("cancelled", False):
             return deny("CANCELLED", "Request cancelled")
@@ -117,8 +135,8 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         # D5: Approval required if registry edge OR capability OR envelope security says so
         checked_rules.append("approval_required")
         needs_approval = edge.requires_approval or envelope.security.get("approval_required", False)
-        if needs_approval and not envelope.security.get("approved", False):
-            return deny("APPROVAL_REQUIRED", "Approval required by policy")
+        if needs_approval and not context.get("approval_valid", False):
+            return deny("APPROVAL_REQUIRED", "Durable bound approval required by policy")
 
         # Budget: cost zero, usage within limits
         checked_rules.append("cost_zero")
@@ -130,13 +148,15 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         checked_rules.append("budget_within_limits")
         budget_used = context.get("budget_used", {})
         calls, seconds = budget_used.get("calls", 0), budget_used.get("seconds", 0.0)
-        max_calls = envelope.budget.get("max_calls") or context.get("budget_limits", {}).get("max_calls")
-        max_seconds = envelope.budget.get("max_seconds") or context.get("budget_limits", {}).get("max_seconds")
+        max_calls = envelope.budget.get("max_calls", context.get("budget_limits", {}).get("max_calls"))
+        max_seconds = envelope.budget.get("max_seconds", context.get("budget_limits", {}).get("max_seconds"))
+        if envelope.budget.get("max_tokens") is not None:
+            return deny("TOKEN_BUDGET_UNSUPPORTED", "Token caps are not enforceable by this gateway")
         projected_calls = calls + 1
         projected_seconds = seconds + (envelope.budget.get("max_seconds") or 0)
-        if max_calls and projected_calls > max_calls:
+        if max_calls is not None and projected_calls > max_calls:
             return deny("BUDGET_EXCEEDED", f"Projected calls {projected_calls} > {max_calls}")
-        if max_seconds and projected_seconds > max_seconds:
+        if max_seconds is not None and projected_seconds > max_seconds:
             return deny("BUDGET_EXCEEDED", f"Projected seconds {projected_seconds} > {max_seconds}")
 
         # All rules passed

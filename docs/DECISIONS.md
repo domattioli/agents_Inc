@@ -170,3 +170,12 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - D17: $0 spend stands. Remove `OR_ALLOW_PAID` and any paid/model override escape in gask/mask/oask. Non-$0 creds never used by delegates.
 - D18: release blocked until (a) audit parity JSONL↔sqlite and (b) both-host isolation each have retained, rerunnable proof artifacts (test files + saved output), not doc claims.
 - D19: sol (codex) orchestrates the astra fix list; fable dispatches without operator. Sol fixes directly inside codex sandbox when delegation unavailable.
+
+## D20 — Astra review 2, group 2 policy/gateway closure (2026-09-06)
+
+- Rows 02–09 and 17 reproduced and fixed as one admission-boundary change.
+  - Policy now checks sender state, recipient capability/intent, durable bound approvals, zero and token budgets, and committed call usage.
+  - Gateway now binds protocol to operation schema, owns its clock, claims replay IDs before invocation, resolves routes from the model catalog, requires frontier gate reasons, and handles shadow denials without dereferencing a missing result.
+  - Audit now records invalid envelopes and final late denials with sender, recipient, and operation. The legacy decision table migrates these columns in place.
+- Evidence: `tests/test_astra_group2.py` adds 12 regression tests; each targets a reviewed defect and fails if its fix is reverted. Full repository gate: 397 tests pass.
+- Not reproduced: none in this group.
