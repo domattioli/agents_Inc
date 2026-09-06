@@ -260,3 +260,4 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Run spec: CEO names Supervisor + Orchestrator; rest derived. Only those two rungs have children.
 - Derivation: Second = Supervisor's pair; Orchestrator reviewed by its pair; workhorse/grunt = Orchestrator's vendor, reviewed by pairs; reviewer = fallback at every rung.
 - Modalities: ideal (full ladder) vs budget (free grunts fill workhorse/grunt, ladder kept for supervise/orchestrate/review/fallback).
+- Budget review: free grunt reviewed by cross-upstream-vendor free grunt (OpenRouter + Gemini + Mistral pooled); quota-paused → ladder grunt fallback.
