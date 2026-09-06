@@ -1,6 +1,6 @@
 {
-  "version": "2026-09-05.2",
-  "policy_version": "2026-09-05.2",
+  "version": "2026-09-05.3",
+  "policy_version": "2026-09-05.3",
   "trust_hierarchy": [
     "public",
     "internal",
@@ -100,6 +100,14 @@
       "relationship_params": [
         "extract",
         "draft"
+      ]
+    },
+    {
+      "source_agent_id": "agent-supervisor-01",
+      "target_agent_id": "agent-reviewer-01",
+      "relationship_type": "delegates_to",
+      "relationship_params": [
+        "review"
       ]
     },
     {

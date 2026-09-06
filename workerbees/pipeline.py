@@ -221,9 +221,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         from .reviewer import review
         reviewer_route = pick_model("review", "mid", avail, is_authorized(workspace), exclude_provider=route.provider)
 
-        # Record reviewer dispatch and return (T019) only if route exists (D2 — no phantom nodes)
+        # Record reviewer dispatch and return (T019) only in off mode; gateway owns ledger in shadow/enforce
         reviewer_node_id = None
-        if reviewer_route:
+        if reviewer_route and gov_mode == "off":
             reviewer_node_id = uuid.uuid4().hex
             dispatch_ok = ledger.record_dispatch(workspace, node_id=reviewer_node_id, run_id=run_id, model=reviewer_route.model,
                                   tier=reviewer_route.tier, task="review", provider=reviewer_route.provider,
@@ -232,7 +232,11 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
                 receipt["ledger_error"] = "write_failed"
             start_time = time.monotonic()
 
-        rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route)
+        if gov_mode == "off":
+            rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route)
+        else:
+            rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
+                       governance_mode=gov_mode, gateway=_gateway, registry=_registry, workspace=workspace, run_id=run_id, parent_id=worker_node_id, confidential=confidential)
 
         if reviewer_node_id:
             elapsed = time.monotonic() - start_time
@@ -244,12 +248,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         if rv.status == "ok":
             status, receipt["content_review"], receipt["human_decision_needed"] = "verified", "pass", False
             break
-        if rv.status == "invalid":
-            status, receipt["content_review"] = "returned", "invalid"
-            break
-        if rv.status == "paused":
-            status = "paused"
-            receipt["paused_reason"] = _paused_tail(rv.raw)
+        if rv.status in ("invalid", "paused", "same_vendor", "blocked"):
+            status, receipt["content_review"] = "returned", rv.status
+            if rv.status == "paused": receipt["paused_reason"] = _paused_tail(rv.raw)
             break
         if rv.status != "issues":
             status, receipt["content_review"] = "returned", rv.status

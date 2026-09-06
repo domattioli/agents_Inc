@@ -33,19 +33,48 @@ def _strip_fence(s: str) -> str:
 
 def review(source_text: str, source_id: str, claims: list[dict], draft: str, worker_provider: str,
            available: set[str], workspace_authorized: bool, runner=run_worker, role: str = "document",
-           route=None) -> ReviewResult:
+           route=None, *, governance_mode: str | None = None, gateway=None, registry=None,
+           workspace=None, run_id=None, parent_id=None, confidential: bool = True) -> ReviewResult:
+    import os
+    from pathlib import Path
+    gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
+    if gov_mode not in ("off", "shadow", "enforce"):
+        raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
     if route is None:
         route = pick_model("review", "mid", available, workspace_authorized, exclude_provider=worker_provider)
     if route is None:
         return ReviewResult("no_other_vendor")
+    # VENDOR RULE: same-vendor route forbidden in all modes
+    if route.provider == worker_provider:
+        return ReviewResult("same_vendor")
     numbered = "\n\n".join(f"[p{i}] {p}" for i, p in enumerate(paragraphs(source_text), 1))
     claim_lines = "\n".join(f"{i}. quote={c.get('quote')!r} anchor={c.get('anchor')} claim={c.get('text')!r}"
                             for i, c in enumerate(claims))
     prompt = REVIEW_PROMPT.format(role=role, source_id=source_id, claims=claim_lines, draft=draft, source=numbered)
-    cmd = claude.build_cmd(route.model) if route.provider == "claude" else codex.build_cmd(route.model)
-    res = runner(cmd, prompt)
+    if gov_mode == "off":
+        cmd = claude.build_cmd(route.model) if route.provider == "claude" else codex.build_cmd(route.model)
+        res = runner(cmd, prompt)
+    else:  # shadow or enforce
+        import uuid
+        from datetime import datetime
+        from .envelope import Envelope
+        uid = uuid.uuid4().hex
+        env = Envelope(message_id=uid, task_id=uid, parent_task_id=None, correlation_id=uid,
+            sender="agent-supervisor-01", recipient="agent-reviewer-01", intent="review", operation="request",
+            protocol="v1", schema="request_v1", payload={"prompt": prompt},
+            data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z")
+        result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
+            "parent_id": parent_id, "edge_type": "reviews"}, runner=runner, route=route)
+        # Handle non-allowed for ALL governed modes (G1 fix)
+        if result.status != "allowed":
+            d = result.decision
+            if gov_mode == "enforce":
+                return ReviewResult("blocked", raw=d.reason if d else "unknown")
+            # For shadow mode or any governed mode: return status with decision reason
+            return ReviewResult(result.status, raw=d.reason if d else "")
+        res = result.worker_result
     if res.status != "returned":
-        return ReviewResult(res.status, raw=res.stderr[-500:])
+        return ReviewResult(res.status, raw=res.stderr[-500:] if hasattr(res, 'stderr') else "")
     try:
         payload = json.loads(_strip_fence(res.output))
         if not isinstance(payload, dict) or "verdicts" not in payload or "omissions" not in payload:
