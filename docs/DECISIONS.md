@@ -213,3 +213,9 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
   - A nonexistent source workspace supplied with an explicit destination DB records `workspace_not_found` in `import_issue`.
 - Evidence: migration suite 8/8 passes; full repository gate 412 tests passes. Proof outputs: `docs/governance/proof/audit_parity.txt` and `docs/governance/proof/isolation.txt`.
 - Not reproduced: Codex isolation cleanliness. Probe execution was inconclusive; no clean claim made.
+
+## Astra review 2 closed (2026-09-06, fable)
+- All 25 rows fixed or dispositioned by gpt-5.6-sol over 5 codex runs; fable committed per group (codex sandbox cannot write .git), revert-checked groups 2/3/4 (tests fail on old impl), probed T4 migrate directly. Commits: 0ac7a74, 3cdd0de, 6e26d70, ed444b4, de1a75f. Tests 383 → 412 OK.
+- D18 proofs retained: `docs/governance/proof/audit_parity.txt` PASS tim+dom; `isolation.txt` claude 3/3 CLEAN, codex 3/3 CLEAN (fable rerun outside sandbox; sol's nested run was INCONCLUSIVE, superseded).
+- D18 release gate: satisfied at this HEAD. Sol model id = `gpt-5.6-sol` (bare `sol` rejected); `gpt-5.6-terra` also listed, unprobed.
+- Still open from PLAN-BUILD-2: T5 SQL lint backend, T6/T6b doc sections + luna/sol FD review, T9 OR probes, T10 sol into routing.json, T11 run-lease, T12 budgets, T14 patterns (draft in .scratch/t4_wip/PATTERNS.md, not D14-compliant), T15 bench.

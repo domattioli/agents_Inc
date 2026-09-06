@@ -1,10 +1,12 @@
-date: 2026-09-06T13:08:34-04:00
-HEAD: ed444b442b720bbd3213e285101d4636bb55fd4f
+date: 2026-09-06T13:10:44-04:00
+HEAD: de1a75fcf10b124ca782b5140431b8e13ee75137
+runner: fable session, outside codex sandbox (sol's run was nested → INCONCLUSIVE)
 claude PROBE 1 CLEAN
 claude PROBE 2 CLEAN
 claude PROBE 3 CLEAN
 claude RESULT CLEAN
-codex PROBE 1 INCONCLUSIVE
-codex PROBE 2 INCONCLUSIVE
-codex PROBE 3 INCONCLUSIVE
-codex RESULT INCONCLUSIVE
+codex PROBE 1 CLEAN
+codex PROBE 2 CLEAN
+codex PROBE 3 CLEAN
+codex RESULT CLEAN
+exit: 0
