@@ -43,11 +43,11 @@ def run_demo(use_fake=False):
         print(f"Decision: {json.dumps(results['allowed'], indent=2)}")
         print(f"Worker result: {result_a.worker_result}")
 
-        # Case B: Denied (supervisor→reviewer, request)
-        print("\n" + "=" * 60 + "\nCASE B: DENIED (supervisor→reviewer, request)\n" + "=" * 60)
+        # Case B: Denied (worker→reviewer, no edge exists)
+        print("\n" + "=" * 60 + "\nCASE B: DENIED (worker→reviewer, no edge)\n" + "=" * 60)
         env_b = Envelope(
             message_id="msg-deny-001", task_id="task-deny-001", parent_task_id=None,
-            correlation_id="corr-deny-001", sender="agent-supervisor-01",
+            correlation_id="corr-deny-001", sender="agent-worker-01",
             recipient="agent-reviewer-01", intent="review", operation="request",
             protocol="v1", schema="request_v1", payload={"prompt":"reply exactly PONG"},
             data_classification="internal", created_at=datetime.utcnow().isoformat()+"Z"

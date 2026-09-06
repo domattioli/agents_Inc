@@ -104,13 +104,16 @@ class EvaluateTest(unittest.TestCase):
         self.assertEqual(decision.reason_code, "RECIPIENT_DISABLED")
 
     def test_no_edge(self):
-        env = self._make_envelope(recipient="agent-reviewer-01")
-        context = {"authenticated_sender": "agent-supervisor-01", "depth": 0, "budget_used": {},
+        """Policy denies dispatch when no edge exists between sender and recipient.
+        agent-worker-01 and agent-reviewer-01 have no relationship defined in governance.json."""
+        env = self._make_envelope(sender="agent-worker-01", recipient="agent-reviewer-01")
+        context = {"authenticated_sender": "agent-worker-01", "depth": 0, "budget_used": {},
                    "now": datetime.utcnow().isoformat() + "Z", "cancelled": False,
                    "policy_version": "1.0"}
         decision = evaluate(context, env, self.registry)
         self.assertFalse(decision.allowed)
         self.assertEqual(decision.reason_code, "NO_EDGE")
+        self.assertIn("edge_exists", decision.checked_rules)
 
     def test_invalid_operation(self):
         # D1: edge check before operation. Use sender/recipient with no edge so NO_EDGE is returned first
