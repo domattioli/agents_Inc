@@ -233,8 +233,12 @@ class EvaluateTest(unittest.TestCase):
 
     def test_rule_order_edge_before_operation(self):
         """D1: Verify edge_exists is checked and reported before operation_allowed."""
-        # This is covered by test_invalid_operation which verifies NO_EDGE reported before OPERATION_NOT_ALLOWED
-        pass
+        env = self._make_envelope(operation="invalid_op", sender="agent-worker-01",
+                                  recipient="agent-supervisor-01")
+        decision = evaluate({"authenticated_sender": "agent-worker-01"}, env, self.registry)
+        self.assertEqual(decision.reason_code, "NO_EDGE")
+        self.assertIn("edge_exists", decision.checked_rules)
+        self.assertNotIn("operation_allowed", decision.checked_rules)
 
     def test_classification_sender_clearance_insufficient(self):
         """D2: Sender clearance must be >= data_classification."""

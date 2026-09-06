@@ -1,5 +1,5 @@
 import unittest
-from workerbees.router import pick_model, Route
+from workerbees.router import pick_model, pick_model_chain, Route
 
 class RouterTest(unittest.TestCase):
     def test_cheap_extract_prefers_required_provider(self):
@@ -25,6 +25,17 @@ class RouterTest(unittest.TestCase):
         r = pick_model("extract", "cheap", {"claude", "codex"}, workspace_authorized=False, prefer_provider="codex")
         self.assertEqual(r.provider, "codex")
         self.assertEqual(r.model, "gpt-5.4-mini")
+
+    def test_catalog_excludes_unavailable_mistral(self):
+        self.assertIsNone(pick_model("extract", "cheap", {"mistral"}, True))
+
+    def test_openrouter_named_chain_with_auto_last(self):
+        chain = pick_model_chain("extract", "cheap", {"openrouter"}, True)
+        self.assertGreater(len(chain), 2)
+        self.assertNotEqual(chain[0].model, "openrouter/auto:free")
+        self.assertEqual(chain[-1].model, "openrouter/auto:free")
+        self.assertEqual(len({r.model for r in chain}), len(chain))
+        self.assertTrue(all(r.provider == "openrouter" for r in chain))
 
 if __name__ == "__main__":
     unittest.main()

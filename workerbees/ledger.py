@@ -168,15 +168,18 @@ def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str,
         except sqlite3.IntegrityError:
             route_id = None
 
+        node_inserted = False
         try:
             # Insert node (node_id IS request_id, FK to request)
             store.insert_node(node_id, route_id=route_id, tier=tier, task=task, created_at=now)
+            node_inserted = True
         except sqlite3.IntegrityError:
             pass  # Node already exists
 
         try:
             # Append dispatch event
-            store.append_event(node_id, "dispatched", now, usage=None)
+            if node_inserted:
+                store.append_event(node_id, "dispatched", now, usage=None)
         except sqlite3.IntegrityError:
             pass  # Event already exists (shouldn't happen, but safe)
 
