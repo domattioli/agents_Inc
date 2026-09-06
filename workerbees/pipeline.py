@@ -149,7 +149,7 @@ def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway, registry,
-                     confidential, gate_reason, parent_id, edge_type):
+                     confidential, gate_reason, parent_id, edge_type, run_budget=None):
     if mode == "off":
         nid = uuid.uuid4().hex
         d_ok = ledger.record_dispatch(workspace, node_id=nid, run_id=run_id, model=route.model, tier=route.tier, task="extract", provider=route.provider, parent_id=parent_id, edge_type=edge_type, gate_reason=gate_reason)
@@ -163,7 +163,8 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
     env = Envelope(message_id=uid, task_id=uid, parent_task_id=None, correlation_id=uid,
         sender="agent-supervisor-01", recipient="agent-worker-01", intent="extract", operation="request",
         protocol="v1", schema="request_v1", payload={"prompt": stdin},
-        data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z")
+        data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z",
+        budget=dict(run_budget or {}))
     result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
         "parent_id": parent_id, "edge_type": edge_type}, runner=runner, route=route)
     if result.status != "allowed" or result.worker_result is None:
@@ -173,7 +174,7 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
           available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap",
           worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1,
-          gate_reason: str | None = None, *, governance_mode: str | None = None, registry=None, gateway=None) -> BriefResult:
+          gate_reason: str | None = None, run_budget: dict | None = None, *, governance_mode: str | None = None, registry=None, gateway=None) -> BriefResult:
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
@@ -201,7 +202,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         return BriefResult("blocked", route=route, receipt={"reason": str(e)})
     res, worker_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
         workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-        gate_reason if route.tier == "frontier" else None, None, None)
+        gate_reason if route.tier == "frontier" else None, None, None, run_budget)
     if block_receipt:
         return BriefResult("blocked", route=route, receipt=block_receipt)
 
@@ -235,10 +236,12 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             start_time = time.monotonic()
 
         if gov_mode == "off":
-            rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route)
+            rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
+                       governance_mode="off")
         else:
             rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
-                       governance_mode=gov_mode, gateway=_gateway, registry=_registry, workspace=workspace, run_id=run_id, parent_id=worker_node_id, confidential=confidential)
+                       governance_mode=gov_mode, gateway=_gateway, registry=_registry, workspace=workspace, run_id=run_id, parent_id=worker_node_id, confidential=confidential,
+                       run_budget=run_budget)
 
         if reviewer_node_id:
             elapsed = time.monotonic() - start_time
@@ -277,7 +280,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         # Record correction worker dispatch and return (D1 — corrects edge)
         res, correction_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
             workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-            None, worker_node_id, "corrects")
+            None, worker_node_id, "corrects", run_budget)
         if block_receipt:
             return BriefResult("blocked", route=route, receipt=block_receipt)
         if not dispatch_ok or not return_ok:

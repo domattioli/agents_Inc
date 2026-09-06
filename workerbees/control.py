@@ -53,6 +53,7 @@ class Control:
                 c.execute("CREATE TABLE IF NOT EXISTS replay_keys (message_id TEXT PRIMARY KEY,envelope_hash TEXT,artifact_ref TEXT,created_at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS cancellations (run_id TEXT PRIMARY KEY,at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS run_lease (workspace_key TEXT PRIMARY KEY,run_id TEXT,acquired_at TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS run_budgets (run_id TEXT PRIMARY KEY,max_calls INT,max_seconds REAL,created_at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS approvals (approval_id TEXT PRIMARY KEY,run_id TEXT,requester TEXT,action TEXT,resource TEXT,artifact_hash TEXT,risk TEXT,rule_ids TEXT,expires_at TEXT,approver TEXT,decision TEXT,decided_at TEXT)")
                 cols = {r[1] for r in c.execute("PRAGMA table_info(decisions)")}
                 for name in ("sender", "recipient", "operation"):
@@ -135,6 +136,37 @@ class Control:
             return {"calls": row["total_calls"] or 0, "seconds": row["total_seconds"] or 0.0}
         except sqlite3.Error:
             return {"calls": 0, "seconds": 0.0}
+
+    def commit_usage(self, run_id: str, node_id: str, seconds: float) -> bool:
+        """Attach observed duration to the retained call reservation."""
+        try:
+            with self._conn() as c:
+                c.execute("UPDATE reservations SET seconds=? WHERE run_id=? AND node_id=? AND released=0",
+                          (max(0.0, seconds), run_id, node_id))
+            if _store_enabled():
+                _dual_write_transition(
+                    self.workspace,
+                    lambda s: s.conn.execute("UPDATE reservation SET seconds=? WHERE request_id=? AND released=0",
+                                             (max(0.0, seconds), node_id)))
+            return True
+        except sqlite3.Error:
+            return False
+
+    def record_run_budget(self, run_id: str, budget: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist first declared run limit; return the durable value."""
+        max_calls = budget.get("max_calls")
+        max_seconds = budget.get("max_seconds")
+        try:
+            with self._conn() as c:
+                c.execute("INSERT OR IGNORE INTO run_budgets(run_id,max_calls,max_seconds,created_at) VALUES (?,?,?,?)",
+                          (run_id, max_calls, max_seconds, datetime.utcnow().isoformat() + "Z"))
+                row = c.execute("SELECT max_calls,max_seconds FROM run_budgets WHERE run_id=?", (run_id,)).fetchone()
+            durable = {"max_calls": row["max_calls"], "max_seconds": row["max_seconds"]}
+            if _store_enabled():
+                _dual_write_run_budget(self.workspace, run_id, durable)
+            return durable
+        except sqlite3.Error as e:
+            raise ControlError(f"Failed to record run budget: {e}")
 
     def check_replay(self, message_id: str, envelope_hash: str) -> ReplayResult:
         try:
@@ -493,6 +525,23 @@ def _dual_write_reservation(workspace: Path, run_id: str, node_id: str, calls: i
             pass
 
         # Commit changes
+        store.conn.commit()
+
+
+def _dual_write_run_budget(workspace: Path, run_id: str, budget: Dict[str, Any]) -> None:
+    """Mirror the immutable per-run budget into canonical 3NF storage."""
+    from workerbees.store import Store
+
+    db_path = workspace / ".workerbees" / "workerbees.db"
+    with Store(db_path) as store:
+        try:
+            store.insert_run(run_id, datetime.utcnow().isoformat() + "Z")
+        except sqlite3.IntegrityError:
+            pass
+        try:
+            store.insert_run_budget(run_id, budget.get("max_calls"), budget.get("max_seconds"))
+        except sqlite3.IntegrityError:
+            pass
         store.conn.commit()
 
 

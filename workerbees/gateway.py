@@ -1,6 +1,6 @@
 """Governance gateway: validate, authorize, reserve, invoke, audit in one pass."""
 from __future__ import annotations
-import os, uuid, hashlib, json, logging
+import os, uuid, hashlib, json, logging, time
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
@@ -126,6 +126,13 @@ class Gateway:
                 trusted_context["now"] = datetime.now(timezone.utc)
                 durable_used = self.control.used(run_id)
                 trusted_context["budget_used"] = durable_used if isinstance(durable_used, dict) else context.get("budget_used", {})
+                try:
+                    durable_limits = self.control.record_run_budget(run_id, envelope.budget)
+                except ControlError:
+                    if self.mode == "enforce":
+                        return GatewayResult("blocked", Decision(False, node_id, "AUDIT_UNAVAILABLE", "Run budget unavailable", "1.0", []), None, node_id, False)
+                    durable_limits = envelope.budget
+                trusted_context["budget_limits"] = durable_limits if isinstance(durable_limits, dict) else envelope.budget
                 approval_id = envelope.security.get("approval_id")
                 trusted_context["approval_valid"] = bool(approval_id) and self.control.approval_binds(
                     approval_id, envelope.intent, envelope.security.get("resource", ""),
@@ -208,8 +215,9 @@ class Gateway:
         # Step 10: Reserve budget
         if self.mode in ("shadow", "enforce"):
             try:
+                limits = envelope.budget if self.mode == "enforce" else {}
                 reserved = self.control.reserve_bounded(run_id, node_id, calls=1, seconds=0.0,
-                    max_calls=envelope.budget.get("max_calls"), max_seconds=envelope.budget.get("max_seconds"))
+                    max_calls=limits.get("max_calls"), max_seconds=limits.get("max_seconds"))
                 if not reserved:
                     return GatewayResult(status="blocked", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
             except ControlError:
@@ -268,6 +276,7 @@ class Gateway:
             pass
 
         # Step 14: Invoke worker
+        started_at = time.monotonic()
         try:
             if route.provider == "claude":
                 cmd = claude.build_cmd(route.model)
@@ -282,10 +291,13 @@ class Gateway:
                 worker_result = runner(cmd, envelope.payload.get("prompt", ""), cwd=context.get("cwd"))
         except Exception as e:
             worker_result = base.WorkerResult("failed", "", str(e), 1)
+        elapsed = time.monotonic() - started_at
+        if self.mode in ("shadow", "enforce"):
+            self.control.commit_usage(run_id, node_id, elapsed)
 
         # Step 15: Record return to ledger
         try:
-            record_return(self.workspace, node_id=node_id, status=worker_result.status, seconds=0.0, subscription_calls=1)
+            record_return(self.workspace, node_id=node_id, status=worker_result.status, seconds=elapsed, subscription_calls=1)
         except Exception:
             pass
 
