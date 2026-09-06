@@ -219,3 +219,8 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - D18 proofs retained: `docs/governance/proof/audit_parity.txt` PASS tim+dom; `isolation.txt` claude 3/3 CLEAN, codex 3/3 CLEAN (fable rerun outside sandbox; sol's nested run was INCONCLUSIVE, superseded).
 - D18 release gate: satisfied at this HEAD. Sol model id = `gpt-5.6-sol` (bare `sol` rejected); `gpt-5.6-terra` also listed, unprobed.
 - Still open from PLAN-BUILD-2: T5 SQL lint backend, T6/T6b doc sections + luna/sol FD review, T9 OR probes, T10 sol into routing.json, T11 run-lease, T12 budgets, T14 patterns (draft in .scratch/t4_wip/PATTERNS.md, not D14-compliant), T15 bench.
+
+## Sol phase 2, G7 (2026-09-06)
+- Landed: DomI statusline smoke 57/57; T5 sqlite lint backend + cycle guard (`tests/test_ledger_sqlite.py`); T6 SCHEMA-3NF sections complete. Tests 416 OK.
+- T6b luna FD review: PASS 42/42 (fable ran; see doc trailer).
+- Lesson: nested `codex exec` inside a codex workspace-write sandbox fails at app-server init (`Operation not permitted`) regardless of model or `--ephemeral`. Sol cannot delegate to OpenAI models from inside the sandbox; sol builds directly, free HTTP wrappers still work, codex sub-reviews run by fable. Sol escalated correctly (opus first, then fable) rather than bypassing CODEX_HOME/auth rules.
