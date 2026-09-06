@@ -463,14 +463,26 @@ def load(workspace: Path) -> Ledger:
     return Ledger(nodes=nodes, warnings=warnings)
 
 
-def lint(ledger: Ledger) -> list[Finding]:
-    """Check three lint rules on the ledger; return findings (no model calls, deterministic).
+def lint(ledger: Ledger | None = None, *, source: str = "jsonl",
+         workspace: Path | None = None) -> list[Finding]:
+    """Check lint rules from JSONL state or the canonical SQLite queries.
 
     Rules:
     1. depth: node with true depth > 1 (more than one parent-child edge from root)
     2. same_vendor_review: reviewer node with same provider as reviewed node
     3. frontier_without_gate: frontier tier node with null/empty gate_reason
     """
+    if source not in ("jsonl", "sqlite"):
+        raise ValueError(f"Invalid lint source: {source!r}")
+    if source == "sqlite":
+        if workspace is None:
+            raise ValueError("workspace is required for sqlite lint")
+        return _lint_sqlite(workspace)
+    if ledger is None:
+        if workspace is None:
+            raise ValueError("ledger or workspace is required for jsonl lint")
+        ledger = load(workspace)
+
     findings: list[Finding] = []
 
     # Rule 1: depth (compute true depth by walking parent chain; flag if depth > 1)
@@ -478,7 +490,11 @@ def lint(ledger: Ledger) -> list[Finding]:
         """Return depth: 0 if no parent, 1 if root's child, 2+ if deeper."""
         depth = 0
         current_id = node_id
+        seen: set[str] = set()
         while current_id and current_id in ledger.nodes:
+            if current_id in seen:
+                return 2
+            seen.add(current_id)
             parent = ledger.nodes[current_id]
             if parent.parent_id is None:
                 break
@@ -515,6 +531,56 @@ def lint(ledger: Ledger) -> list[Finding]:
                     message=f"Frontier node {node.id} has no gate_reason"
                 ))
 
+    return findings
+
+
+def _lint_sqlite(workspace: Path) -> list[Finding]:
+    """Run q1-q5 against workerbees.db; convert q1/q3/q4 rows to findings."""
+    import sqlite3
+    from workerbees.schema import QUERIES
+
+    db_file = workspace / ".workerbees" / "workerbees.db"
+    findings: list[Finding] = []
+    with sqlite3.connect(str(db_file)) as conn:
+        conn.row_factory = sqlite3.Row
+        family_ids = [r[0] for r in conn.execute(
+            "SELECT family_id FROM family ORDER BY family_id"
+        )]
+        for family_id in family_ids:
+            for row in conn.execute(QUERIES["q1"], {"family_id": family_id}):
+                if row["has_cycle"] or row["depth_gt1"]:
+                    findings.append(Finding(
+                        rule="depth", node_ids=[row["node_id"]],
+                        message=(f"Node {row['node_id']} has cycle" if row["has_cycle"]
+                                 else f"Node {row['node_id']} has depth > 1")
+                    ))
+            # q2 is the complete usage rollup; execute once per root as a schema gate.
+            roots = [r[0] for r in conn.execute(
+                """SELECT n.node_id FROM node n JOIN request rq ON rq.request_id=n.node_id
+                   LEFT JOIN legacy_parent lp ON lp.child_id=n.node_id
+                   WHERE rq.family_id=? AND lp.parent_id IS NULL ORDER BY n.node_id""",
+                (family_id,),
+            )]
+            for root_id in roots:
+                conn.execute(QUERIES["q2"], {
+                    "family_id": family_id, "root_id": root_id,
+                }).fetchone()
+            for row in conn.execute(QUERIES["q3"], {"family_id": family_id}):
+                findings.append(Finding(
+                    rule="same_vendor_review",
+                    node_ids=[row["target_id"], row["source_id"]],
+                    message=f"Review {row['source_id']} -> {row['target_id']} is not other-vendor",
+                ))
+            for row in conn.execute(QUERIES["q4"], {"family_id": family_id}):
+                findings.append(Finding(
+                    rule="frontier_without_gate", node_ids=[row["node_id"]],
+                    message=f"Frontier node {row['node_id']} has no gate_reason",
+                ))
+            # q5 is the compatibility rollup used by the 002 ledger.
+            for root_id in roots:
+                conn.execute(QUERIES["q5"], {
+                    "family_id": family_id, "root_id": root_id,
+                }).fetchone()
     return findings
 
 
