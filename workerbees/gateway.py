@@ -261,7 +261,7 @@ class Gateway:
 
         # Step 13: Record dispatch to ledger
         try:
-            record_dispatch(self.workspace, node_id=node_id, run_id=run_id, model=route.model, tier=route.tier, task=envelope.intent, provider=route.provider, parent_id=context.get("parent_id"), edge_type=context.get("edge_type"))
+            record_dispatch(self.workspace, node_id=node_id, run_id=run_id, model=route.model, tier=route.tier, task=envelope.intent, provider=route.provider, parent_id=context.get("parent_id"), edge_type=context.get("edge_type"), artifact_hash=context.get("artifact_hash"), artifact_size=context.get("artifact_size", 0))
         except Exception:
             pass
 

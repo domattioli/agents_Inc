@@ -1,7 +1,7 @@
 """Markdown source -> cheap Worker extract+draft -> deterministic Verifier -> receipt.
 Phase 1 ships no Reviewer, so the best reachable status is needs-review (D5 quality floor)."""
 from __future__ import annotations
-import json, re, time, uuid, os
+import hashlib, json, re, time, uuid, os
 from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
@@ -227,7 +227,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             reviewer_node_id = uuid.uuid4().hex
             dispatch_ok = ledger.record_dispatch(workspace, node_id=reviewer_node_id, run_id=run_id, model=reviewer_route.model,
                                   tier=reviewer_route.tier, task="review", provider=reviewer_route.provider,
-                                  parent_id=worker_node_id, edge_type="reviews", gate_reason=None)
+                                  parent_id=worker_node_id, edge_type="reviews", gate_reason=None,
+                                  artifact_hash=hashlib.sha256(draft.encode()).hexdigest(),
+                                  artifact_size=len(draft.encode()))
             if not dispatch_ok:
                 receipt["ledger_error"] = "write_failed"
             start_time = time.monotonic()
@@ -282,6 +284,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             receipt["ledger_error"] = "write_failed"
 
         status, rep, claims, draft, worker_receipt = _process_worker_result(source, source_id, res)
+        worker_node_id = correction_node_id
         receipt.pop("uncited_sentences", None)
         receipt.pop("uncited", None)
         receipt.update(worker_receipt)
