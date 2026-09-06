@@ -58,6 +58,17 @@ class Gateway:
         auth_sender = context.get("authenticated_sender")
         if auth_sender is not None and auth_sender != envelope.sender:
             decision = Decision(False, node_id, "SENDER_MISMATCH", "Authenticated sender != envelope sender", "1.0", [])
+            # Compute envelope hash defensively (envelope not yet fully validated)
+            try:
+                envelope_hash = canonical_hash(envelope)
+            except Exception:
+                envelope_hash = ""
+            # Record decision in shadow/enforce modes, fail closed
+            if self.mode in ("shadow", "enforce"):
+                try:
+                    self.control.record_decision(decision, run_id, node_id, envelope_hash)
+                except ControlError:
+                    pass  # Fail closed: never let recording failure turn denial into allow
             return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=False)
 
         # Step 2: Validate envelope
