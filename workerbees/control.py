@@ -76,7 +76,8 @@ class Control:
                 raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
             if store_mode in ("sqlite", "both"):
                 try:
-                    _dual_write_decision(self.workspace, decision, run_id, node_id, envelope_hash)
+                    _dual_write_decision(self.workspace, decision, run_id, node_id, envelope_hash,
+                                         sender, recipient)
                 except Exception:
                     # Swallow store errors per FR-008
                     pass
@@ -117,6 +118,8 @@ class Control:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
                 c.execute("UPDATE reservations SET released=1 WHERE run_id=? AND node_id=?", (run_id, node_id))
+            if _store_enabled():
+                _dual_write_transition(self.workspace, lambda s: s.release_reservation(node_id))
             return True
         except sqlite3.Error:
             return False
@@ -264,6 +267,8 @@ class Control:
         try:
             with self._conn() as c:
                 c.execute("DELETE FROM run_lease WHERE run_id=?", (run_id,))
+            if _store_enabled():
+                _dual_write_transition(self.workspace, lambda s: s.release_lease("default", run_id))
             return True
         except sqlite3.Error:
             return False
@@ -310,6 +315,10 @@ class Control:
                 if now_dt > expires_dt:
                     return False
                 c.execute("UPDATE approvals SET approver=?, decision=?, decided_at=? WHERE approval_id=?", (approver[:256], decision, now, approval_id))
+            if _store_enabled():
+                _dual_write_transition(
+                    self.workspace,
+                    lambda s: s.decide_approval(approval_id, approver[:256], decision, now))
             return True
         except sqlite3.Error as e:
             if self._is_readonly_error(e):
@@ -353,7 +362,35 @@ class Control:
 
 # Dual-write helpers (all swallow errors per FR-008)
 
-def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_id: str, envelope_hash: str) -> None:
+def _store_enabled() -> bool:
+    mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+    if mode not in ("jsonl", "sqlite", "both"):
+        raise ValueError(f"Invalid WORKERBEES_STORE value: {mode!r}")
+    return mode in ("sqlite", "both")
+
+
+def _dual_write_transition(workspace: Path, operation) -> None:
+    from workerbees.store import Store
+    with Store(workspace / ".workerbees" / "workerbees.db") as store:
+        operation(store)
+        store.conn.commit()
+
+
+def _ensure_normalized_request(store, run_id: str, node_id: str, now: str) -> None:
+    family_id = f"synthetic-{run_id}"
+    for operation in (
+        lambda: store.insert_run(run_id, now),
+        lambda: store.insert_family(family_id, run_id, label=None),
+        lambda: store.insert_request(node_id, family_id, envelope_hash=None),
+    ):
+        try:
+            operation()
+        except sqlite3.IntegrityError:
+            pass
+
+
+def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_id: str,
+                         envelope_hash: str, sender: str, recipient: str) -> None:
     """Write decision to normalized 3NF schema. Idempotent via IntegrityError catch.
 
     Synthetic family: family_id = f"synthetic-{run_id}", request_id == node_id.
@@ -365,7 +402,8 @@ def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_
     db_path = d / "workerbees.db"
 
     with Store(db_path) as store:
-        family_id = f"synthetic-{run_id}"
+        now = datetime.utcnow().isoformat() + "Z"
+        _ensure_normalized_request(store, run_id, node_id, now)
         rules = decision.checked_rules[:64] if decision.checked_rules else []
         rules = [r[:64] for r in rules]
 
@@ -377,9 +415,20 @@ def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_
         try:
             store.insert_decision(decision.decision_id, node_id, decision.reason_code,
                                  reason=None, policy_version=decision.policy_version,
-                                 created_at=datetime.utcnow().isoformat() + "Z")
+                                 created_at=now)
         except sqlite3.IntegrityError:
             pass
+
+        for ordinal, rule in enumerate(rules):
+            try:
+                store.insert_decision_rule(decision.decision_id, ordinal, rule)
+            except sqlite3.IntegrityError:
+                pass
+        if sender and recipient:
+            try:
+                store.insert_decision_identity(decision.decision_id, sender, recipient)
+            except sqlite3.IntegrityError:
+                pass
 
         # Commit changes
         store.conn.commit()
@@ -501,10 +550,21 @@ def _dual_write_approval(workspace: Path, approval_id: str, run_id: str, request
     db_path = d / "workerbees.db"
 
     with Store(db_path) as store:
+        now = datetime.utcnow().isoformat() + "Z"
+        try:
+            store.insert_run(run_id, now)
+        except sqlite3.IntegrityError:
+            pass
         try:
             store.insert_approval(approval_id, run_id, requester, action, resource,
                                  artifact_hash, risk, expires_at)
         except sqlite3.IntegrityError:
             pass
+
+        for ordinal, rule_id in enumerate(rule_ids):
+            try:
+                store.insert_approval_rule(approval_id, ordinal, rule_id)
+            except sqlite3.IntegrityError:
+                pass
 
         store.conn.commit()

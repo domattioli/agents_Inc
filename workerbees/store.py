@@ -96,7 +96,7 @@ class Store:
         # Check if (provider,route_name,model_id) already exists in ANY revision
         existing_row = self.conn.execute(
             "SELECT route_id FROM route "
-            "WHERE provider_id=? AND route_name=? AND model_id=? "
+            "WHERE provider_id=? AND route_name=? AND model_id IS ? "
             "LIMIT 1",
             (provider_id, route_name, model_id)
         ).fetchone()
@@ -125,6 +125,18 @@ class Store:
             (route_id, provider_id, route_name, new_rev, model_id)
         )
         return route_id
+
+    def release_reservation(self, request_id: str) -> None:
+        self.conn.execute("UPDATE reservation SET released=1 WHERE request_id=?", (request_id,))
+
+    def release_lease(self, workspace_key: str, run_id: str) -> None:
+        self.conn.execute("DELETE FROM lease WHERE workspace_key=? AND run_id=?", (workspace_key, run_id))
+
+    def decide_approval(self, approval_id: str, approver: str, decision: str,
+                        decided_at: str) -> None:
+        self.conn.execute(
+            "UPDATE approval SET approver=?,decision=?,decided_at=? WHERE approval_id=?",
+            (approver, decision, decided_at, approval_id))
 
     # Run/family/request
 

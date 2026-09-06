@@ -69,7 +69,8 @@ def _now_iso() -> str:
 
 def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, tier: str,
                     task: str, provider: str, parent_id: str | None, edge_type: str | None,
-                    gate_reason: str | None = None) -> bool:
+                    gate_reason: str | None = None,
+                    artifact_hash: str | None = None, artifact_size: int = 0) -> bool:
     """Record a job dispatch. Idempotent on node id (dedup on read). Never raises (FR-008).
 
     Dual-write mode controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
@@ -102,6 +103,7 @@ def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, t
                 "seconds": None,
                 "subscription_calls": None,
                 "gate_reason": gate_reason,
+                "artifact_hash": artifact_hash,
                 "timestamp": _now_iso()
             })
             with open(ledger_file, "a") as f:
@@ -110,7 +112,7 @@ def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, t
         # Write to sqlite if requested (both or sqlite modes)
         if store_mode in ("sqlite", "both"):
             _dual_write_dispatch(workspace, node_id, run_id, model, tier, task, provider,
-                                parent_id, edge_type, gate_reason)
+                                parent_id, edge_type, gate_reason, artifact_hash, artifact_size)
 
         return True
     except Exception:
@@ -119,7 +121,8 @@ def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, t
 
 def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str, tier: str,
                          task: str, provider: str, parent_id: str | None, edge_type: str | None,
-                         gate_reason: str | None) -> None:
+                         gate_reason: str | None, artifact_hash: str | None = None,
+                         artifact_size: int = 0) -> None:
     """Write dispatch event to normalized 3NF schema. Idempotent via IntegrityError catch.
 
     Creates synthetic family (family_id = f"synthetic-{run_id}") and request (request_id == node_id).
@@ -178,7 +181,7 @@ def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str,
             pass  # Event already exists (shouldn't happen, but safe)
 
         # Write lineage (parent-child relationship)
-        if parent_id:
+        if parent_id and edge_type in ("corrects", "depends-on"):
             try:
                 store.insert_lineage(node_id, parent_id)
             except sqlite3.IntegrityError:
@@ -190,6 +193,20 @@ def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str,
                 store.insert_graph_edge(node_id, parent_id, edge_type)
             except sqlite3.IntegrityError:
                 pass  # Edge already exists
+
+        if gate_reason:
+            try:
+                store.insert_frontier_gate(node_id, gate_reason)
+            except sqlite3.IntegrityError:
+                pass
+
+        if artifact_hash and parent_id and edge_type:
+            store.ensure_artifact(artifact_hash, artifact_size)
+            try:
+                store.insert_edge_artifact(node_id, parent_id, edge_type, 0,
+                                           artifact_hash, "candidate")
+            except sqlite3.IntegrityError:
+                pass
 
         # Write legacy_parent (002 projection: all nodes with nullable parent/edge_type).
         # Probe nodes have parent_id=None and edge_type="probes"; this table holds them.
@@ -291,8 +308,13 @@ def load(workspace: Path) -> Ledger:
     nodes: dict[str, Node] = {}
     warnings: list[str] = []
 
-    # Try JSONL first (primary source)
-    if ledger_file.exists():
+    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+    if store_mode not in ("jsonl", "sqlite", "both"):
+        warnings.append(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+        return Ledger(nodes=nodes, warnings=warnings)
+
+    # Selected backend is authoritative. Both preserves JSONL compatibility.
+    if ledger_file.exists() and store_mode != "sqlite":
         try:
             with open(ledger_file) as f:
                 for line_num, line in enumerate(f, 1):
