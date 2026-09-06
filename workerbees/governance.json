@@ -1,6 +1,6 @@
 {
-  "version": "2026-09-05.3",
-  "policy_version": "2026-09-05.3",
+  "version": "2026-09-05.4",
+  "policy_version": "2026-09-05.4",
   "trust_hierarchy": [
     "public",
     "internal",
@@ -116,6 +116,14 @@
       "relationship_type": "requests",
       "relationship_params": [
         "reviews"
+      ]
+    },
+    {
+      "source_agent_id": "agent-supervisor-01",
+      "target_agent_id": "agent-doctor-01",
+      "relationship_type": "delegates_to",
+      "relationship_params": [
+        "probe"
       ]
     },
     {

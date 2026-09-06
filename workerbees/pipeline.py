@@ -178,15 +178,15 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
     source = source_path.read_text()
-    avail = available if available is not None else doctor.available(workspace)
-    route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
-    if route is None:
-        return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
     _registry = _gateway = None
     if gov_mode != "off":
         from .gateway import Gateway; from .registry import Registry
         _registry = registry or Registry.load(str(Path(__file__).resolve().parent))
         _gateway = gateway or Gateway(workspace, registry=_registry, mode=gov_mode)
+    avail = available if available is not None else doctor.available(workspace, governance_mode=gov_mode, gateway=_gateway, registry=_registry)
+    route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
+    if route is None:
+        return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
     run_id = uuid.uuid4().hex
     try:
         check_dispatch(route, workspace, confidential)
