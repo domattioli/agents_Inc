@@ -352,12 +352,12 @@ class EvaluateTest(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertEqual(decision.reason_code, "BUDGET_EXCEEDED")
 
-    def test_budget_projected_seconds(self):
-        """D6: Projected seconds = budget_used.seconds + envelope.budget.max_seconds must not exceed limit."""
+    def test_budget_used_seconds_at_limit(self):
+        """D6: Used seconds at the durable run limit deny."""
         env = self._make_envelope()
         env.budget["max_seconds"] = 30
         context = {"authenticated_sender": "agent-supervisor-01", "depth": 0,
-                   "budget_used": {"calls": 0, "seconds": 20},
+                   "budget_used": {"calls": 0, "seconds": 40},
                    "now": datetime.utcnow().isoformat() + "Z", "cancelled": False,
                    "policy_version": "1.0",
                    "budget_limits": {"max_seconds": 40}}

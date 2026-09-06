@@ -148,16 +148,15 @@ def evaluate(context: Dict[str, Any], envelope: Envelope, registry: Registry) ->
         checked_rules.append("budget_within_limits")
         budget_used = context.get("budget_used", {})
         calls, seconds = budget_used.get("calls", 0), budget_used.get("seconds", 0.0)
-        max_calls = envelope.budget.get("max_calls", context.get("budget_limits", {}).get("max_calls"))
-        max_seconds = envelope.budget.get("max_seconds", context.get("budget_limits", {}).get("max_seconds"))
+        limits = context.get("budget_limits", {})
+        max_calls = limits.get("max_calls", envelope.budget.get("max_calls"))
+        max_seconds = limits.get("max_seconds", envelope.budget.get("max_seconds"))
         if envelope.budget.get("max_tokens") is not None:
             return deny("TOKEN_BUDGET_UNSUPPORTED", "Token caps are not enforceable by this gateway")
-        projected_calls = calls + 1
-        projected_seconds = seconds + (envelope.budget.get("max_seconds") or 0)
-        if max_calls is not None and projected_calls > max_calls:
-            return deny("BUDGET_EXCEEDED", f"Projected calls {projected_calls} > {max_calls}")
-        if max_seconds is not None and projected_seconds > max_seconds:
-            return deny("BUDGET_EXCEEDED", f"Projected seconds {projected_seconds} > {max_seconds}")
+        if max_calls is not None and calls >= max_calls:
+            return deny("BUDGET_EXCEEDED", f"Used calls {calls} >= {max_calls}")
+        if max_seconds is not None and seconds >= max_seconds:
+            return deny("BUDGET_EXCEEDED", f"Used seconds {seconds} >= {max_seconds}")
 
         # All rules passed
         return Decision(True, decision_id, "ALLOWED", "All policy rules satisfied", policy_version, checked_rules)

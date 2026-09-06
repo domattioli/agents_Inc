@@ -232,3 +232,19 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - T11: reservation acquisition atomically claims the workspace lease. A concurrent second reservation, including the same `run_id`, returns false and writes a `run_busy` denial. Gateway releases the call-slot lease after invocation while retaining committed usage.
 - Evidence: thread race admits exactly one reservation and audits exactly one denial. Full suite: 420 tests pass.
 - G8 note (fable): T9 probes 0/23 ok are NOT model verdicts. fable reproduced: OpenRouter `429 Rate limit exceeded: free-models-per-day` (daily free cap hit by day's usage). 17 `probed_fail` = empty content under throttling. Rerun T9 after OR daily reset before trusting `.workerbees/model_probes.json`. routing.json T10 edit verified: keys unchanged, only codex mid → list.
+
+## D25 — Build plan 2, group 9 (2026-09-06)
+
+- T12: the first envelope budget is durable per run in control state and canonical `run_budget`. Policy denies when committed call or observed-second usage reaches the durable limit. Off ignores policy; shadow records `BUDGET_EXCEEDED` and still invokes; enforce records and denies before invocation. The three-mode matrix observes call counts 1/1/0. Later envelopes cannot raise the run limit.
+- T14: delegation failures are condensed into `docs/PATTERNS.md`: verify the requested gate, read assertions, trace production wiring, reject weakened gates, bound diffs, and prefer evidenced stops. Issue #1 received a 12-line summary and doc link; it was already closed and remains closed.
+- T15 harness: `bench.py --t15` requires N>=5, store=both, governance=enforce; runs paired off/enforce Tim and Dom rows on haiku and gpt-5.4-mini; records wrapper-observed calls; appends to BENCH; rejects status drift. OpenRouter is omitted because its daily quota is exhausted. Cost is subscription, unknown dollars.
+- T15 measurement is not claimed here. This sandbox cannot initialize nested Codex. Exact fable command is retained in `.scratch/FABLE_RUN.md`. Sonnet diff review also produced no result before timeout; local verification is the source of record.
+- Evidence: 424 tests pass. `workerbees/routing.json` unchanged.
+
+## D26 — PLAN-BUILD-2 closure (2026-09-06, fable)
+
+- G9 landed. Tests 424 → 425 OK. T12 revert-check: old impl fails 4/4 budget tests. Issue #1 commented; already closed.
+- T15 bench run by fable outside sandbox (sol cannot start nested Codex). First run crashed: `pipeline.py` off-mode reviewer call omitted `governance_mode`, reviewer re-read env `enforce`, gateway None. Fixed + regression test. Sol's harness had never executed end to end; harness-only claims are not measurements.
+- T15 result: 40 rows, 59 calls. Off vs enforce status parity 20/20. Quality gate not measured: Codex quota exhausted mid-day, every Codex call paused. BENCH.md carries the reading of record above sol's FAIL line.
+- PLAN-BUILD-2 status: S1–S7 all landed. Open: T9 OpenRouter probes rerun after daily reset; T15 quality rerun after Codex quota reset; DomI statusline commits unpushed.
+- Next phase: measured pilot tim+dom vs all-frontier (D5/D10), once both quotas reset.
