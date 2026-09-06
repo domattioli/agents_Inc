@@ -6,11 +6,22 @@ Lint: Three rules (depth, same_vendor_review, frontier_without_gate) with determ
 Export: JSON (round-trippable) and Mermaid (human-readable graph).
 Rollup: Cost per root node (subscription calls + seconds).
 
+Dual-write mode: controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
+When jsonl: JSONL only, no sqlite writes, byte-identical to pre-dual-write behavior.
+When sqlite: normalized 3NF schema only, no JSONL.
+When both: both JSONL and sqlite.
+
+Synthetic family generation for dual-write:
+- One family per run_id (family_id = f"synthetic-{run_id}")
+- request_id == node_id (schema FK: node.node_id REFERENCES request(request_id))
+- All writes are idempotent (duplicate inserts swallowed via IntegrityError catch)
+
 All recording functions swallow errors per FR-008 (ledger failure never fails a brief).
 """
 from __future__ import annotations
 import datetime
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,131 +72,368 @@ def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, t
                     gate_reason: str | None = None) -> bool:
     """Record a job dispatch. Idempotent on node id (dedup on read). Never raises (FR-008).
 
+    Dual-write mode controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
     Returns True on success, False on any error.
+
+    Raises ValueError if WORKERBEES_STORE has invalid value (checked before swallowing).
     """
+    # Validate flag before try block so ValueError propagates
+    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+    if store_mode not in ("jsonl", "sqlite", "both"):
+        raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+
     try:
         d = workspace / ".workerbees"
         d.mkdir(parents=True, exist_ok=True)
-        ledger_file = d / "ledger.jsonl"
-        line = json.dumps({
-            "id": node_id,
-            "run_id": run_id,
-            "model": model,
-            "tier": tier,
-            "task": task,
-            "provider": provider,
-            "parent_id": parent_id,
-            "edge_type": edge_type,
-            "status": "dispatched",
-            "seconds": None,
-            "subscription_calls": None,
-            "gate_reason": gate_reason,
-            "timestamp": _now_iso()
-        })
-        with open(ledger_file, "a") as f:
-            f.write(line + "\n")
+
+        # Write to JSONL if requested (jsonl or both modes)
+        if store_mode in ("jsonl", "both"):
+            ledger_file = d / "ledger.jsonl"
+            line = json.dumps({
+                "id": node_id,
+                "run_id": run_id,
+                "model": model,
+                "tier": tier,
+                "task": task,
+                "provider": provider,
+                "parent_id": parent_id,
+                "edge_type": edge_type,
+                "status": "dispatched",
+                "seconds": None,
+                "subscription_calls": None,
+                "gate_reason": gate_reason,
+                "timestamp": _now_iso()
+            })
+            with open(ledger_file, "a") as f:
+                f.write(line + "\n")
+
+        # Write to sqlite if requested (both or sqlite modes)
+        if store_mode in ("sqlite", "both"):
+            _dual_write_dispatch(workspace, node_id, run_id, model, tier, task, provider,
+                                parent_id, edge_type, gate_reason)
+
         return True
     except Exception:
         return False  # Swallow all errors per FR-008
+
+
+def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str, tier: str,
+                         task: str, provider: str, parent_id: str | None, edge_type: str | None,
+                         gate_reason: str | None) -> None:
+    """Write dispatch event to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Creates synthetic family (family_id = f"synthetic-{run_id}") and request (request_id == node_id).
+    Raises on real errors; swallowed by record_dispatch per FR-008.
+    """
+    from workerbees.store import Store
+    import sqlite3
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        now = _now_iso()
+
+        # Synthetic family: one per run_id (stable, idempotent)
+        family_id = f"synthetic-{run_id}"
+
+        try:
+            # Insert run (non-idempotent, but catch dup)
+            store.insert_run(run_id, now)
+        except sqlite3.IntegrityError:
+            pass  # Run already exists
+
+        try:
+            # Insert synthetic family (one per run)
+            store.insert_family(family_id, run_id, label=None)
+        except sqlite3.IntegrityError:
+            pass  # Family already exists for this run
+
+        try:
+            # Insert request (request_id == node_id, FK to family)
+            store.insert_request(node_id, family_id, envelope_hash=None)
+        except sqlite3.IntegrityError:
+            pass  # Request already exists
+
+        # Ensure provider and model are in DB
+        store.ensure_provider(provider)
+        store.ensure_model(model, vendor_id=None)
+
+        # Create route binding
+        try:
+            route_id = store.ensure_route(provider, f"dispatch-{task}", model)
+        except sqlite3.IntegrityError:
+            route_id = None
+
+        try:
+            # Insert node (node_id IS request_id, FK to request)
+            store.insert_node(node_id, route_id=route_id, tier=tier, task=task, created_at=now)
+        except sqlite3.IntegrityError:
+            pass  # Node already exists
+
+        try:
+            # Append dispatch event
+            store.append_event(node_id, "dispatched", now, usage=None)
+        except sqlite3.IntegrityError:
+            pass  # Event already exists (shouldn't happen, but safe)
+
+        # Write lineage (parent-child relationship)
+        if parent_id:
+            try:
+                store.insert_lineage(node_id, parent_id)
+            except sqlite3.IntegrityError:
+                pass  # Lineage already exists
+
+        # Write graph edge (edge type)
+        if edge_type and parent_id:
+            try:
+                store.insert_graph_edge(node_id, parent_id, edge_type)
+            except sqlite3.IntegrityError:
+                pass  # Edge already exists
+
+        # Write legacy_parent (002 projection: all nodes with nullable parent/edge_type).
+        # Probe nodes have parent_id=None and edge_type="probes"; this table holds them.
+        try:
+            store.insert_legacy_parent(node_id, parent_id, edge_type)
+        except sqlite3.IntegrityError:
+            pass  # Legacy parent already exists
+
+        # Commit changes
+        store.conn.commit()
 
 
 def record_return(workspace: Path, *, node_id: str, status: str, seconds: float,
                   subscription_calls: int) -> bool:
     """Record a job return (terminal status). Idempotent on node id. Never raises (FR-008).
 
+    Dual-write mode controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
     Returns True on success, False on any error.
+
+    Raises ValueError if WORKERBEES_STORE has invalid value (checked before swallowing).
     """
+    # Validate flag before try block so ValueError propagates
+    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+    if store_mode not in ("jsonl", "sqlite", "both"):
+        raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+
     try:
         d = workspace / ".workerbees"
         d.mkdir(parents=True, exist_ok=True)
-        ledger_file = d / "ledger.jsonl"
-        line = json.dumps({
-            "id": node_id,
-            "run_id": None,
-            "model": None,
-            "tier": None,
-            "task": None,
-            "provider": None,
-            "parent_id": None,
-            "edge_type": None,
-            "status": status,
-            "seconds": seconds,
-            "subscription_calls": subscription_calls,
-            "gate_reason": None,
-            "timestamp": _now_iso()
-        })
-        with open(ledger_file, "a") as f:
-            f.write(line + "\n")
+
+        # Write to JSONL if requested (jsonl or both modes)
+        if store_mode in ("jsonl", "both"):
+            ledger_file = d / "ledger.jsonl"
+            line = json.dumps({
+                "id": node_id,
+                "run_id": None,
+                "model": None,
+                "tier": None,
+                "task": None,
+                "provider": None,
+                "parent_id": None,
+                "edge_type": None,
+                "status": status,
+                "seconds": seconds,
+                "subscription_calls": subscription_calls,
+                "gate_reason": None,
+                "timestamp": _now_iso()
+            })
+            with open(ledger_file, "a") as f:
+                f.write(line + "\n")
+
+        # Write to sqlite if requested (both or sqlite modes)
+        if store_mode in ("sqlite", "both"):
+            _dual_write_return(workspace, node_id, status, seconds, subscription_calls)
+
         return True
     except Exception:
         return False  # Swallow all errors per FR-008
 
 
-def load(workspace: Path) -> Ledger:
-    """Load ledger from JSONL file; dedupe by node id (merge dispatch + return records).
+def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: float,
+                       subscription_calls: int) -> None:
+    """Write return event to normalized 3NF schema. Idempotent via IntegrityError catch.
 
+    Appends event record to node. Raises on real errors; swallowed by record_return per FR-008.
+    """
+    from workerbees.store import Store
+    import sqlite3
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        now = _now_iso()
+        usage = {
+            "seconds": seconds,
+            "subscription_calls": subscription_calls
+        }
+
+        try:
+            # Append return event with usage
+            store.append_event(node_id, status, now, usage=usage)
+        except sqlite3.IntegrityError:
+            # Seq collision unlikely, but if it happens, silently skip
+            pass
+
+        # Commit changes
+        store.conn.commit()
+
+
+def load(workspace: Path) -> Ledger:
+    """Load ledger from JSONL file or sqlite DB; dedupe by node id.
+
+    Loads from JSONL if it exists (compatibility mode).
+    Falls back to sqlite if JSONL missing but workerbees.db exists (sqlite-only mode).
     Returns empty Ledger + warnings on corrupt/missing file, never raises.
     """
     ledger_file = workspace / ".workerbees" / "ledger.jsonl"
     nodes: dict[str, Node] = {}
     warnings: list[str] = []
 
-    if not ledger_file.exists():
-        return Ledger(nodes={}, warnings=[])
+    # Try JSONL first (primary source)
+    if ledger_file.exists():
+        try:
+            with open(ledger_file) as f:
+                for line_num, line in enumerate(f, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                        node_id = data.get("id", "")
 
-    try:
-        with open(ledger_file) as f:
-            for line_num, line in enumerate(f, 1):
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                    node_id = data.get("id", "")
-
-                    if node_id not in nodes:
-                        # First record for this id
-                        node = Node(
-                            id=node_id,
-                            run_id=data.get("run_id"),
-                            model=data.get("model"),
-                            tier=data.get("tier"),
-                            task=data.get("task"),
-                            provider=data.get("provider"),
-                            parent_id=data.get("parent_id"),
-                            edge_type=data.get("edge_type"),
-                            status=data.get("status", "unknown"),
-                            seconds=data.get("seconds"),
-                            subscription_calls=data.get("subscription_calls"),
-                            gate_reason=data.get("gate_reason"),
-                            timestamp=data.get("timestamp", "")
-                        )
-                        nodes[node_id] = node
-                    else:
-                        # Merge with existing: keep non-null fields, prefer later timestamp
-                        existing = nodes[node_id]
-                        new_timestamp = data.get("timestamp", "")
-                        if (new_timestamp or "") > (existing.timestamp or ""):
-                            # New record is later, merge in the updated fields
+                        if node_id not in nodes:
+                            # First record for this id
                             node = Node(
                                 id=node_id,
-                                run_id=data.get("run_id") or existing.run_id,
-                                model=data.get("model") or existing.model,
-                                tier=data.get("tier") or existing.tier,
-                                task=data.get("task") or existing.task,
-                                provider=data.get("provider") or existing.provider,
-                                parent_id=data.get("parent_id") or existing.parent_id,
-                                edge_type=data.get("edge_type") or existing.edge_type,
-                                status=data.get("status") or existing.status,
-                                seconds=data.get("seconds") if data.get("seconds") is not None else existing.seconds,
-                                subscription_calls=data.get("subscription_calls") if data.get("subscription_calls") is not None else existing.subscription_calls,
-                                gate_reason=data.get("gate_reason") or existing.gate_reason,
-                                timestamp=new_timestamp
+                                run_id=data.get("run_id"),
+                                model=data.get("model"),
+                                tier=data.get("tier"),
+                                task=data.get("task"),
+                                provider=data.get("provider"),
+                                parent_id=data.get("parent_id"),
+                                edge_type=data.get("edge_type"),
+                                status=data.get("status", "unknown"),
+                                seconds=data.get("seconds"),
+                                subscription_calls=data.get("subscription_calls"),
+                                gate_reason=data.get("gate_reason"),
+                                timestamp=data.get("timestamp", "")
                             )
                             nodes[node_id] = node
-                except json.JSONDecodeError:
-                    warnings.append(f"Line {line_num}: invalid JSON")
-    except OSError as e:
-        warnings.append(f"Failed to read ledger file: {e}")
+                        else:
+                            # Merge with existing: keep non-null fields, prefer later timestamp
+                            existing = nodes[node_id]
+                            new_timestamp = data.get("timestamp", "")
+                            if (new_timestamp or "") > (existing.timestamp or ""):
+                                # New record is later, merge in the updated fields
+                                node = Node(
+                                    id=node_id,
+                                    run_id=data.get("run_id") or existing.run_id,
+                                    model=data.get("model") or existing.model,
+                                    tier=data.get("tier") or existing.tier,
+                                    task=data.get("task") or existing.task,
+                                    provider=data.get("provider") or existing.provider,
+                                    parent_id=data.get("parent_id") or existing.parent_id,
+                                    edge_type=data.get("edge_type") or existing.edge_type,
+                                    status=data.get("status") or existing.status,
+                                    seconds=data.get("seconds") if data.get("seconds") is not None else existing.seconds,
+                                    subscription_calls=data.get("subscription_calls") if data.get("subscription_calls") is not None else existing.subscription_calls,
+                                    gate_reason=data.get("gate_reason") or existing.gate_reason,
+                                    timestamp=new_timestamp
+                                )
+                                nodes[node_id] = node
+                    except json.JSONDecodeError:
+                        warnings.append(f"Line {line_num}: invalid JSON")
+        except OSError as e:
+            warnings.append(f"Failed to read ledger file: {e}")
+
+        return Ledger(nodes=nodes, warnings=warnings)
+
+    # Fallback: try sqlite if JSONL missing (sqlite-only mode compatibility)
+    db_file = workspace / ".workerbees" / "workerbees.db"
+    if db_file.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_file))
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Load nodes with all related data
+            rows = cursor.execute("""
+                SELECT n.node_id, n.route_id, n.tier, n.task, n.created_at,
+                       r.model_id, r.provider_id,
+                       (SELECT f.run_id FROM request req
+                        JOIN family f ON req.family_id = f.family_id
+                        WHERE req.request_id = n.node_id) as run_id
+                FROM node n
+                LEFT JOIN route r ON n.route_id = r.route_id
+            """).fetchall()
+
+            # Build parent_id and edge_type maps from legacy_parent (002 projection).
+            # This table is the authority for both, and includes probe nodes (parent_id=None).
+            parent_map = {}
+            edge_map = {}
+            legacy_rows = cursor.execute("SELECT child_id, parent_id, edge_type FROM legacy_parent").fetchall()
+            for row in legacy_rows:
+                parent_map[row["child_id"]] = row["parent_id"]
+                edge_map[row["child_id"]] = row["edge_type"]
+
+            # Build status and usage maps from node events
+            status_map = {}
+            cursor.execute("""
+                SELECT n.node_id,
+                       (SELECT ne.status FROM node_event ne
+                        WHERE ne.node_id = n.node_id
+                        ORDER BY ne.event_seq DESC LIMIT 1) as status
+                FROM node n
+            """)
+            for row in cursor.fetchall():
+                if row["status"]:
+                    status_map[row["node_id"]] = row["status"]
+
+            usage_map = {}
+            cursor.execute("""
+                SELECT n.node_id,
+                       (SELECT u.seconds FROM node_event ne
+                        JOIN usage u ON u.event_id = ne.event_id
+                        WHERE ne.node_id = n.node_id
+                        ORDER BY ne.event_seq DESC LIMIT 1) as seconds,
+                       (SELECT u.subscription_calls FROM node_event ne
+                        JOIN usage u ON u.event_id = ne.event_id
+                        WHERE ne.node_id = n.node_id
+                        ORDER BY ne.event_seq DESC LIMIT 1) as subscription_calls
+                FROM node n
+            """)
+            for row in cursor.fetchall():
+                usage_map[row["node_id"]] = (row["seconds"], row["subscription_calls"])
+
+            for row in rows:
+                node_id = row["node_id"]
+                status = status_map.get(node_id, "unknown")
+                seconds, subscription_calls = usage_map.get(node_id, (None, None))
+                parent_id = parent_map.get(node_id)
+                edge_type = edge_map.get(node_id)
+
+                node = Node(
+                    id=node_id,
+                    run_id=row["run_id"],
+                    model=row["model_id"],
+                    tier=row["tier"],
+                    task=row["task"],
+                    provider=row["provider_id"],
+                    parent_id=parent_id,
+                    edge_type=edge_type,
+                    status=status,
+                    seconds=seconds,
+                    subscription_calls=subscription_calls,
+                    gate_reason=None,
+                    timestamp=row["created_at"] or ""
+                )
+                nodes[node_id] = node
+
+            conn.close()
+        except Exception as e:
+            warnings.append(f"Failed to load from sqlite: {e}")
 
     return Ledger(nodes=nodes, warnings=warnings)
 

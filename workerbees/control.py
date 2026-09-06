@@ -1,4 +1,12 @@
-"""Workspace-local control and audit state machine for SQLite decisions/budgets."""
+"""Workspace-local control and audit state machine for SQLite decisions/budgets.
+
+Dual-write mode: controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
+When jsonl: no store writes, no dual-write operations.
+When sqlite: writes to normalized 3NF schema.
+When both: writes to both control.sqlite and normalized schema.
+
+All operations follow FR-008 (swallow store errors, never break caller).
+"""
 from __future__ import annotations
 import sqlite3, json, os
 from datetime import datetime
@@ -56,6 +64,18 @@ class Control:
             with self._conn() as c:
                 c.execute("INSERT INTO decisions (decision_id,run_id,node_id,envelope_hash,allowed,reason_code,policy_version,checked_rules,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                          (decision.decision_id, run_id, node_id, envelope_hash, int(decision.allowed), decision.reason_code, decision.policy_version, json.dumps(rules), datetime.utcnow().isoformat() + "Z"))
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_decision(self.workspace, decision, run_id, node_id, envelope_hash)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
             return True
         except sqlite3.Error as e:
             if self._is_readonly_error(e):
@@ -69,6 +89,18 @@ class Control:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
                 c.execute("INSERT INTO reservations (run_id,node_id,calls,seconds,created_at) VALUES (?,?,?,?,?)", (run_id, node_id, calls, seconds, datetime.utcnow().isoformat() + "Z"))
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_reservation(self.workspace, run_id, node_id, calls, seconds)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
             return True
         except sqlite3.Error as e:
             if self._is_readonly_error(e):
@@ -112,6 +144,18 @@ class Control:
         try:
             with self._conn() as c:
                 c.execute("INSERT OR REPLACE INTO replay_keys (message_id,envelope_hash,artifact_ref,created_at) VALUES (?,?,?,?)", (message_id, envelope_hash, artifact_ref, datetime.utcnow().isoformat() + "Z"))
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_replay(self.workspace, message_id, envelope_hash, artifact_ref)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
             return True
         except sqlite3.Error:
             return False
@@ -120,6 +164,18 @@ class Control:
         try:
             with self._conn() as c:
                 c.execute("INSERT OR REPLACE INTO cancellations (run_id,at) VALUES (?,?)", (run_id, datetime.utcnow().isoformat() + "Z"))
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_cancellation(self.workspace, run_id)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
             return True
         except sqlite3.Error:
             return False
@@ -142,9 +198,24 @@ class Control:
                 if cur.rowcount == 0:
                     row = c.execute("SELECT run_id FROM run_lease WHERE workspace_key=?", (workspace_key,)).fetchone()
                     if row and row["run_id"] == run_id:
-                        return True
-                    return False
-            return True
+                        result = True
+                    else:
+                        return False
+                else:
+                    result = True
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_lease(self.workspace, "default", run_id)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
+            return result
         except sqlite3.Error:
             return False
 
@@ -163,6 +234,19 @@ class Control:
             with self._conn() as c:
                 c.execute("INSERT INTO approvals (approval_id,run_id,requester,action,resource,artifact_hash,risk,rule_ids,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
                          (approval_id, run_id, requester, action[:256], resource[:256], artifact_hash, risk[:256], json.dumps(rule_ids), expires_at))
+
+            # Dual-write to normalized schema
+            store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+            if store_mode not in ("jsonl", "sqlite", "both"):
+                raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+            if store_mode in ("sqlite", "both"):
+                try:
+                    _dual_write_approval(self.workspace, approval_id, run_id, requester, action,
+                                        resource, artifact_hash, risk, rule_ids, expires_at)
+                except Exception:
+                    # Swallow store errors per FR-008
+                    pass
+
             return approval_id
         except sqlite3.Error as e:
             if self._is_readonly_error(e):
@@ -224,3 +308,162 @@ class Control:
             if self._is_readonly_error(e):
                 return False
             raise ControlError(f"Failed to check approval binding: {e}")
+
+
+# Dual-write helpers (all swallow errors per FR-008)
+
+def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_id: str, envelope_hash: str) -> None:
+    """Write decision to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Synthetic family: family_id = f"synthetic-{run_id}", request_id == node_id.
+    Raises on real errors; swallowed by record_decision per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        family_id = f"synthetic-{run_id}"
+        rules = decision.checked_rules[:64] if decision.checked_rules else []
+        rules = [r[:64] for r in rules]
+
+        try:
+            store.ensure_decision_code(decision.reason_code, int(decision.allowed))
+        except sqlite3.IntegrityError:
+            pass
+
+        try:
+            store.insert_decision(decision.decision_id, node_id, decision.reason_code,
+                                 reason=None, policy_version=decision.policy_version,
+                                 created_at=datetime.utcnow().isoformat() + "Z")
+        except sqlite3.IntegrityError:
+            pass
+
+        # Commit changes
+        store.conn.commit()
+
+
+def _dual_write_reservation(workspace: Path, run_id: str, node_id: str, calls: int, seconds: float) -> None:
+    """Write reservation to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Synthetic family: family_id = f"synthetic-{run_id}", request_id == node_id.
+    Raises on real errors; swallowed by reserve per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        family_id = f"synthetic-{run_id}"
+        now = datetime.utcnow().isoformat() + "Z"
+
+        try:
+            # Ensure run/family/request exist
+            store.insert_run(run_id, now)
+        except sqlite3.IntegrityError:
+            pass
+
+        try:
+            store.insert_family(family_id, run_id, label=None)
+        except sqlite3.IntegrityError:
+            pass
+
+        try:
+            store.insert_request(node_id, family_id, envelope_hash=None)
+        except sqlite3.IntegrityError:
+            pass
+
+        try:
+            store.insert_reservation(node_id, calls, seconds, released=0, created_at=now)
+        except sqlite3.IntegrityError:
+            pass
+
+        # Commit changes
+        store.conn.commit()
+
+
+def _dual_write_replay(workspace: Path, message_id: str, envelope_hash: str, artifact_ref: Optional[str]) -> None:
+    """Write replay record to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Raises on real errors; swallowed by check_replay/store_artifact per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        now = datetime.utcnow().isoformat() + "Z"
+
+        try:
+            store.insert_replay(message_id, envelope_hash, artifact_ref, created_at=now)
+        except sqlite3.IntegrityError:
+            pass
+
+        store.conn.commit()
+
+
+def _dual_write_cancellation(workspace: Path, run_id: str) -> None:
+    """Write cancellation to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Raises on real errors; swallowed by cancel per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        at = datetime.utcnow().isoformat() + "Z"
+
+        try:
+            store.insert_cancellation(run_id, at)
+        except sqlite3.IntegrityError:
+            pass
+
+        store.conn.commit()
+
+
+def _dual_write_lease(workspace: Path, workspace_key: str, run_id: str) -> None:
+    """Write lease to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Raises on real errors; swallowed by acquire_lease per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        now = datetime.utcnow().isoformat() + "Z"
+
+        try:
+            store.insert_lease(workspace_key, run_id, now)
+        except sqlite3.IntegrityError:
+            pass
+
+        store.conn.commit()
+
+
+def _dual_write_approval(workspace: Path, approval_id: str, run_id: str, requester: str,
+                        action: str, resource: str, artifact_hash: str, risk: str,
+                        rule_ids: list, expires_at: str) -> None:
+    """Write approval to normalized 3NF schema. Idempotent via IntegrityError catch.
+
+    Raises on real errors; swallowed by request_approval per FR-008.
+    """
+    from workerbees.store import Store
+
+    d = workspace / ".workerbees"
+    db_path = d / "workerbees.db"
+
+    with Store(db_path) as store:
+        try:
+            store.insert_approval(approval_id, run_id, requester, action, resource,
+                                 artifact_hash, risk, expires_at)
+        except sqlite3.IntegrityError:
+            pass
+
+        store.conn.commit()
