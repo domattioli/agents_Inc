@@ -34,7 +34,8 @@ def _strip_fence(s: str) -> str:
 def review(source_text: str, source_id: str, claims: list[dict], draft: str, worker_provider: str,
            available: set[str], workspace_authorized: bool, runner=run_worker, role: str = "document",
            route=None, *, governance_mode: str | None = None, gateway=None, registry=None,
-           workspace=None, run_id=None, parent_id=None, confidential: bool = True) -> ReviewResult:
+           workspace=None, run_id=None, parent_id=None, confidential: bool = True,
+           run_budget: dict | None = None) -> ReviewResult:
     import os
     import hashlib
     from pathlib import Path
@@ -63,7 +64,8 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
         env = Envelope(message_id=uid, task_id=uid, parent_task_id=None, correlation_id=uid,
             sender="agent-supervisor-01", recipient="agent-reviewer-01", intent="review", operation="request",
             protocol="v1", schema="request_v1", payload={"prompt": prompt},
-            data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z")
+            data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z",
+            budget=dict(run_budget or {}))
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
             "parent_id": parent_id, "edge_type": "reviews",
             "artifact_hash": hashlib.sha256(draft.encode()).hexdigest(),
