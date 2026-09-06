@@ -346,11 +346,7 @@ class TestConcurrentReservations(unittest.TestCase):
             del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws), ignore_errors=True)
 
-    def test_n4_concurrent_reserve_per_node_not_per_run(self):
-        """N4 (documented behavior): Reservations are per (run_id, node_id), not per run_id.
-        Two different node_ids on the same run_id BOTH succeed, and calls sum.
-        Note: ASSESSMENT §3 states "one active run/workspace, one model call at a time";
-        the product does not implement that constraint. Reservations are tracked per node."""
+    def test_n4_second_reservation_denied_and_audited(self):
         control1 = Control(self.ws)
         control2 = Control(self.ws)
 
@@ -368,20 +364,16 @@ class TestConcurrentReservations(unittest.TestCase):
         used2 = control2.used(run_id)
         self.assertEqual(used2["calls"], 5, f"Second control should see 5 calls reserved, got {used2['calls']}")
 
-        # Reserve with different node_id: should succeed (PK is (run_id, node_id))
+        # A second node in the same run cannot overlap the active call.
         reserved_different_node = control2.reserve(run_id, "node-002", calls=3, seconds=5.0)
-        self.assertTrue(reserved_different_node, "Reserve with different node_id should succeed")
+        self.assertFalse(reserved_different_node)
 
-        # Verify calls sum across nodes
+        # Only the admitted reservation counts; denial is retained.
         used_sum = control1.used(run_id)
-        self.assertEqual(used_sum["calls"], 8, f"used() should sum both unreleased reservations: 5+3=8, got {used_sum['calls']}")
-
-        # Duplicate (run_id, node_id) should fail
-        with self.assertRaises(ControlError):
-            control2.reserve(run_id, "node-001", calls=3, seconds=5.0)
-
-        # Verify ledger: exactly one node per dispatch (when fully exercised in dispatch flow)
-        # This test documents the current behavior: reservations are per-node, not per-run.
+        self.assertEqual(used_sum["calls"], 5)
+        with control1._conn() as c:
+            row = c.execute("SELECT allowed,reason_code FROM decisions WHERE node_id='node-002'").fetchone()
+        self.assertEqual(tuple(row), (0, "run_busy"))
 
 
 # ============================================================================

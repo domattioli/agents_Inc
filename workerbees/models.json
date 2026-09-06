@@ -62,7 +62,7 @@
       "cost_class": "mid",
       "status": "available"
     },
-    "sol": {
+    "gpt-5.6-sol": {
       "vendor": "openai",
       "provider": "codex",
       "tier": "mid",

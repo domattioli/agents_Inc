@@ -148,3 +148,35 @@
  }
 ]
 ```
+
+## OpenRouter catalog probe — 2026-09-06
+
+- Method: one `/bin/zsh oask.sh` call per catalog route. Fixed response contract: `PONG`, then `POSITIVE` for a fixed positive sentence.
+- Result: 0 `probed_ok`; 17 `probed_fail`; 6 `quota`. Runtime detail is retained in `.workerbees/model_probes.json`.
+- Interpretation: this is an availability result, not a model-quality ranking. Empty completions, route restrictions, retired routes, and the hard `:free` guard remain visible.
+
+| Model | Status | Seconds | Result |
+|---|---:|---:|---|
+| `cohere/north-mini-code:free` | probed_fail | 1.025 | Empty completion |
+| `dots-studio/dots-3-note-preview:free` | probed_fail | 3.573 | Empty completion |
+| `google/gemma-4-26b-a4b-it:free` | quota | 0.504 | HTTP 429 daily free limit |
+| `google/gemma-4-31b-it:free` | quota | 0.380 | HTTP 429 daily free limit |
+| `google/lyria-3-clip-preview` | probed_fail | 0.012 | Refused: not `:free` |
+| `google/lyria-3-pro-preview` | probed_fail | 0.012 | Refused: not `:free` |
+| `inclusionai/ling-3.0-flash-fin:free` | probed_fail | 2.045 | Empty completion |
+| `inclusionai/ling-3.0-flash-sante:free` | probed_fail | 3.043 | Empty completion |
+| `liquid/lfm-2.5-2.6b:free` | probed_fail | 2.298 | Empty completion |
+| `minimax/minimax-m2.7:free` | probed_fail | 5.613 | Empty completion |
+| `minimax/minimax-m3:free` | probed_fail | 1.359 | Empty completion |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | quota | 0.310 | HTTP 429 daily free limit |
+| `nvidia/nemotron-3-super-120b-a12b:free` | quota | 0.406 | HTTP 429 daily free limit |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | probed_fail | 83.117 | Empty completion |
+| `nvidia/nemotron-3.5-content-safety:free` | probed_fail | 2.613 | Empty completion |
+| `nvidia/nemotron-3.5-lightning:free` | probed_fail | 10.270 | Empty completion |
+| `openrouter/auto:free` | probed_fail | 0.284 | HTTP 404; no route matched restrictions |
+| `openrouter/free` | probed_fail | 0.013 | Refused: not `:free` suffix |
+| `poolside/laguna-s-2.1:free` | quota | 0.552 | HTTP 429 provider limit |
+| `poolside/laguna-xs-2.1:free` | quota | 0.429 | HTTP 429 provider limit |
+| `thinkingmachines/inkling-small:free` | probed_fail | 0.159 | HTTP 403; agentic harness required |
+| `thinkingmachines/inkling:free` | probed_fail | 0.168 | HTTP 403; agentic harness required |
+| `z-ai/glm-5.2:free` | probed_fail | 0.170 | HTTP 404; free route unavailable |
