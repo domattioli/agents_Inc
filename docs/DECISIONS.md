@@ -179,3 +179,15 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
   - Audit now records invalid envelopes and final late denials with sender, recipient, and operation. The legacy decision table migrates these columns in place.
 - Evidence: `tests/test_astra_group2.py` adds 12 regression tests; each targets a reviewed defect and fails if its fix is reverted. Full repository gate: 397 tests pass.
 - Not reproduced: none in this group.
+
+## D21 — Astra review 2, group 3 store/ledger closure (2026-09-06)
+
+- Rows 12–16 reproduced and closed against the canonical 3NF DDL.
+  - Normalized decisions now create their request dependency and retain checked rules plus authenticated identities.
+  - Reservation, approval, lease, and frontier-gate state now reaches the normalized store.
+  - SQLite mode is authoritative at read time; stale JSONL cannot hide SQLite-only jobs.
+  - Unknown-model routes use null-safe identity matching.
+  - Review edges no longer claim spawn lineage. Reviews bind the candidate artifact hash, and repeat review targets the correction node.
+- Evidence: `tests/test_astra_group3.py` adds five row regressions. The correction-loop regression also checks corrected-candidate targeting and artifact linkage. Full repository gate: 402 tests pass.
+- Not reproduced: row 15's mutable-alias subclaim. Dispatch receives the selected catalog model identity; there is no separate mutable alias in the current ledger API. The confirmed NULL-idempotency defect was fixed.
+- DDL changes: none.

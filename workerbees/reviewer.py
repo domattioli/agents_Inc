@@ -36,6 +36,7 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
            route=None, *, governance_mode: str | None = None, gateway=None, registry=None,
            workspace=None, run_id=None, parent_id=None, confidential: bool = True) -> ReviewResult:
     import os
+    import hashlib
     from pathlib import Path
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
@@ -64,7 +65,9 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
             protocol="v1", schema="request_v1", payload={"prompt": prompt},
             data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z")
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
-            "parent_id": parent_id, "edge_type": "reviews"}, runner=runner, route=route)
+            "parent_id": parent_id, "edge_type": "reviews",
+            "artifact_hash": hashlib.sha256(draft.encode()).hexdigest(),
+            "artifact_size": len(draft.encode())}, runner=runner, route=route)
         # Handle non-allowed for ALL governed modes (G1 fix)
         if result.status != "allowed":
             d = result.decision

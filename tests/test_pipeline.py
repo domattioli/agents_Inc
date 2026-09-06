@@ -1,4 +1,4 @@
-import json, tempfile, unittest
+import json, sqlite3, tempfile, unittest
 from pathlib import Path
 from workerbees.pipeline import brief
 from workerbees.adapters.base import WorkerResult
@@ -511,6 +511,15 @@ class PipelineTest(unittest.TestCase):
         worker1_id = worker1_nodes[0].id
         # Corrects node should point back to worker1
         self.assertEqual(corrects_node.parent_id, worker1_id)
+        review_nodes = [n for n in ledger.nodes.values() if n.edge_type == "reviews"]
+        self.assertEqual(len(review_nodes), 2)
+        self.assertEqual(review_nodes[-1].parent_id, corrects_node.id)
+        with sqlite3.connect(self.ws / ".workerbees" / "workerbees.db") as conn:
+            self.assertEqual(conn.execute(
+                "SELECT count(*) FROM lineage l JOIN graph_edge g "
+                "ON g.source_id=l.child_id WHERE g.edge_type='reviews'").fetchone()[0], 0)
+            self.assertEqual(conn.execute(
+                "SELECT count(*) FROM edge_artifact WHERE edge_type='reviews'").fetchone()[0], 2)
         # Number of nodes should equal number of runner calls (dedup doesn't apply across different ops)
         self.assertEqual(len(calls), 4)
 
