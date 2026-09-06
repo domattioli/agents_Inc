@@ -6,7 +6,7 @@ Human doc. What the governance slice does, what it does not do, how to turn it o
 
 - **A boundary between a prompt and a dispatch.** In shadow and enforce, every model call the pipeline makes — worker, correction, reviewer, doctor probe — passes through one gateway that decides, records the decision, and only then invokes the provider.
   - **Deterministic.** The decision comes from a versioned JSON graph and a pure evaluation function. No model is consulted, and nothing in the source text can reach the decision.
-  - **Auditable.** Allow and deny both write a row to `control.sqlite` before any provider call. The row carries who asked, of whom, for what operation, the verdict, the reason code, the rules checked and the policy version. It carries no prompt text, no model output and no secrets.
+- **Auditable admission.** Gateway decisions write to `control.sqlite`. Normal admission rows carry authenticated sender, recipient, operation, verdict, reason code, checked rules and policy version. Validation failures can lack identity or operation because the envelope was not trusted. A control-store failure blocks dispatch. This is decision evidence, not a complete reconstruction of provider execution or cost.
   - **Additive.** Governance changes the audit trail, not the answer. The same brief returns the same status with the flag off, in shadow, or in enforce.
 
 ## The flag

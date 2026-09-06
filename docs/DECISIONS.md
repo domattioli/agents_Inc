@@ -191,3 +191,13 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Evidence: `tests/test_astra_group3.py` adds five row regressions. The correction-loop regression also checks corrected-candidate targeting and artifact linkage. Full repository gate: 402 tests pass.
 - Not reproduced: row 15's mutable-alias subclaim. Dispatch receives the selected catalog model identity; there is no separate mutable alias in the current ledger API. The confirmed NULL-idempotency defect was fixed.
 - DDL changes: none.
+
+## D22 — Astra review 2, group 4 tests/router/claims closure (2026-09-06)
+
+- Rows 18–24 reproduced and closed.
+  - Router reads `models.json`, excludes unavailable/task-ineligible models, and returns a bounded OpenRouter named-model chain with `openrouter/auto:free` last. `routing.json` is unchanged.
+  - Rows 19–23 now assert exercised rule order, canonical q5 parity, injected normalized-store failure, reservation/release parity, and replay event/state idempotency.
+  - T3's earlier rollup-parity claim is retracted: its committed gate did not compare canonical q5 results. Group 4 adds that comparison, but D18 still requires retained rerunnable proof before release.
+  - The operating guide no longer implies every decision has complete reconstructable identity/operation data or that decision rows reconstruct provider execution and cost.
+- Mutation evidence: each guarded implementation was temporarily broken; its targeted test failed; implementation restored; final full suite passed.
+- Not reproduced: none in this group.

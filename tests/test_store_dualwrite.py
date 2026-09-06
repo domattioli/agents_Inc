@@ -279,57 +279,23 @@ class TestStoreDualWrite(unittest.TestCase):
             ledger.record_return(self.workspace, node_id="root", status="returned", seconds=2.0, subscription_calls=5)
             ledger.record_return(self.workspace, node_id="child", status="returned", seconds=1.0, subscription_calls=3)
 
-            # Query sqlite for rollup
+            # Execute canonical q5, not a test-local substitute.
+            from workerbees.schema import QUERIES
             db_file = self.workspace / ".workerbees" / "workerbees.db"
             conn = sqlite3.connect(str(db_file))
             conn.row_factory = sqlite3.Row
 
             # Query q5 (graph_subtree_calls) - graph subtree rollup
             cursor = conn.cursor()
-            rows = cursor.execute("""
-                SELECT source_id,
-                       COUNT(DISTINCT node_id) as node_count,
-                       SUM(subscription_calls) as calls,
-                       SUM(seconds) as seconds
-                FROM (
-                    WITH RECURSIVE subtree AS (
-                        SELECT node_id, node_id as source_id FROM node WHERE node_id = ?
-                        UNION ALL
-                        SELECT n.node_id, s.source_id
-                        FROM node n
-                        JOIN lineage l ON n.node_id = l.child_id
-                        JOIN subtree s ON l.parent_id = s.node_id
-                    )
-                    SELECT s.source_id, n.node_id,
-                           COALESCE(u.subscription_calls, 0) as subscription_calls,
-                           COALESCE(u.seconds, 0.0) as seconds
-                    FROM subtree s
-                    JOIN node n ON s.node_id = n.node_id
-                    LEFT JOIN node_event ne ON n.node_id = ne.node_id
-                    LEFT JOIN usage u ON ne.event_id = u.event_id
-                )
-                GROUP BY source_id
-            """, ("root",)).fetchall()
-
-            sqlite_rollup = {}
-            for row in rows:
-                source = row["source_id"]
-                calls = row["calls"] or 0
-                seconds = row["seconds"] or 0.0
-                sqlite_rollup[source] = {
-                    "calls": calls,
-                    "seconds": seconds,
-                    "node_count": row["node_count"]
-                }
-
-            # Compare
-            self.assertIn("root", sqlite_rollup, f"Root not in sqlite rollup: {sqlite_rollup}")
-            # Note: the query may not capture lineage correctly if not set up, so we just verify the logic
-            # For now, verify at least the nodes exist
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM node")
-            node_count = cursor.fetchone()[0]
-            self.assertEqual(node_count, 2, f"Expected 2 nodes in sqlite, got {node_count}")
+            row = cursor.execute(QUERIES["q5"], {
+                "root_id": "root", "family_id": "synthetic-run_eq"
+            }).fetchone()
+            jsonl_missing = sum(
+                n.subscription_calls is None for n in ledger_data.nodes.values()
+            )
+            self.assertEqual(row["node_count"], len(ledger_data.nodes))
+            self.assertEqual(row["subscription_calls"], jsonl_rollup["root"]["calls"])
+            self.assertEqual(row["missing_count"], jsonl_missing)
 
             conn.close()
         finally:
@@ -371,8 +337,9 @@ class TestStoreDualWrite(unittest.TestCase):
         """
         os.environ["WORKERBEES_STORE"] = "both"
         try:
-            # First, record a dispatch normally
-            success = ledger.record_dispatch(
+            fault = OSError("injected normalized store failure")
+            with patch("workerbees.store.Store.append_event", side_effect=fault) as append:
+                success = ledger.record_dispatch(
                 self.workspace,
                 node_id="node_fr008",
                 run_id="run_fr008",
@@ -382,27 +349,17 @@ class TestStoreDualWrite(unittest.TestCase):
                 provider="openai",
                 parent_id=None,
                 edge_type=None
-            )
-            self.assertTrue(success)
-
-            # Try record_return - should return True regardless
-            success = ledger.record_return(
-                self.workspace,
-                node_id="node_fr008",
-                status="returned",
-                seconds=1.0,
-                subscription_calls=1
-            )
-            # Should succeed (return True)
-            self.assertTrue(success)
+                )
+            self.assertTrue(append.called)
+            self.assertFalse(success)
 
             # Verify JSONL was written
             ledger_file = self.workspace / ".workerbees" / "ledger.jsonl"
             self.assertTrue(ledger_file.exists())
             with open(ledger_file) as f:
                 lines = f.readlines()
-            # Should have dispatch + return
-            self.assertGreater(len(lines), 0)
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0])["id"], "node_fr008")
         finally:
             os.environ.pop("WORKERBEES_STORE", None)
 
@@ -563,14 +520,31 @@ class TestStoreDualWrite(unittest.TestCase):
             control_db = self.workspace / ".workerbees" / "control.sqlite"
             wb_db = self.workspace / ".workerbees" / "workerbees.db"
             self.assertTrue(control_db.exists())
-            # workerbees.db may not exist if store errors are swallowed, so don't assert
+            self.assertTrue(wb_db.exists())
 
             # Verify control.sqlite has the reservation
             conn = sqlite3.connect(str(control_db))
             cursor = conn.cursor()
             row = cursor.execute("SELECT * FROM reservations WHERE run_id=? AND node_id=?", ("run_res", "node_res")).fetchone()
             self.assertIsNotNone(row, "Reservation not found in control.sqlite")
+            self.assertEqual((row[2], row[3], row[4]), (10, 5.0, 0))
             conn.close()
+
+            conn = sqlite3.connect(str(wb_db))
+            self.assertEqual(conn.execute(
+                "SELECT calls,seconds,released FROM reservation WHERE request_id=?",
+                ("node_res",)).fetchone(), (10, 5.0, 0))
+            conn.close()
+
+            self.assertTrue(ctrl.release("run_res", "node_res"))
+            with sqlite3.connect(str(control_db)) as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT released FROM reservations WHERE run_id=? AND node_id=?",
+                    ("run_res", "node_res")).fetchone()[0], 1)
+            with sqlite3.connect(str(wb_db)) as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT released FROM reservation WHERE request_id=?",
+                    ("node_res",)).fetchone()[0], 1)
         finally:
             os.environ.pop("WORKERBEES_STORE", None)
 
@@ -606,15 +580,20 @@ class TestStoreDualWrite(unittest.TestCase):
             )
             self.assertTrue(success2)
 
-            # Verify sqlite doesn't have duplicate rows (via count)
+            # Replay preserves one immutable dispatch fact and one dispatch event.
             db_file = self.workspace / ".workerbees" / "workerbees.db"
-            if db_file.exists():
-                conn = sqlite3.connect(str(db_file))
-                cursor = conn.cursor()
-                row = cursor.execute("SELECT COUNT(*) as cnt FROM node WHERE node_id=?", ("node_idempotent",)).fetchone()
-                # Should be 1 (idempotent)
-                self.assertEqual(row[0], 1, "Replay created duplicate nodes")
-                conn.close()
+            self.assertTrue(db_file.exists())
+            with sqlite3.connect(str(db_file)) as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM node WHERE node_id=?", ("node_idempotent",)).fetchone()[0], 1)
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM node_event WHERE node_id=? AND status='dispatched'",
+                    ("node_idempotent",)).fetchone()[0], 1)
+                self.assertEqual(conn.execute(
+                    "SELECT n.tier,n.task,r.provider_id,r.model_id FROM node n "
+                    "JOIN route r ON r.route_id=n.route_id WHERE n.node_id=?",
+                    ("node_idempotent",)).fetchone(),
+                    ("frontier", "test", "openai", "gpt-4"))
         finally:
             os.environ.pop("WORKERBEES_STORE", None)
 
