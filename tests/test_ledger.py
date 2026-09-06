@@ -1,5 +1,6 @@
 """Tests for dispatch graph ledger module (TDD — tests first)."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,11 +53,16 @@ class LedgerFoundationTest(unittest.TestCase):
         self.assertIn("n1", ledger.nodes)
 
     def test_record_dispatch_creates_file(self):
-        """T002: record_dispatch creates ledger file."""
-        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
-                       task="extract", provider="claude", parent_id=None, edge_type=None)
-        ledger_file = self.ws / ".workerbees" / "ledger.jsonl"
-        self.assertTrue(ledger_file.exists())
+        """T002: record_dispatch creates ledger file (JSONL mode)."""
+        # This test asserts a JSONL-specific artifact, so set the mode explicitly
+        os.environ["WORKERBEES_STORE"] = "jsonl"
+        try:
+            record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+                           task="extract", provider="claude", parent_id=None, edge_type=None)
+            ledger_file = self.ws / ".workerbees" / "ledger.jsonl"
+            self.assertTrue(ledger_file.exists())
+        finally:
+            os.environ.pop("WORKERBEES_STORE", None)
 
     def test_record_return_updates_node(self):
         """T002: record_return updates status/seconds/calls."""
