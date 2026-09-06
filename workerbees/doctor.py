@@ -1,13 +1,15 @@
 """Preflight: probe each Required provider CLI; cache results; feed the router. No auth files touched."""
 from __future__ import annotations
-import json, re, time, uuid, os
+import json, re, time, uuid, os, subprocess
 from pathlib import Path
 from datetime import datetime
 from .adapters import claude, codex
 from .adapters.base import run_worker
 from .keys import ENV_PATH, available_providers, REQUIRED
-from .router import _TABLE
+from .router import _TABLE, _CATALOG
 from . import ledger
+
+_OR_PROMPT = "Reply with exactly two lines: PONG\\nPOSITIVE\\nClassify this text as POSITIVE or NEGATIVE: I enjoyed the clear answer."
 
 _AUTH = re.compile(r"not logged in|/login|unauthori[sz]ed|auth", re.I)
 
@@ -116,3 +118,35 @@ def quota_paused(workspace: Path) -> list[str]:
         return cache.get("paused", [])
     except (json.JSONDecodeError, OSError):
         return []
+
+def probe_openrouter_models(workspace: Path, runner=subprocess.run) -> dict:
+    """Probe every cataloged OpenRouter route. Cache facts; never edit catalog."""
+    script = Path(__file__).parents[1] / "skills/codex-bridge/scripts/oask.sh"
+    results = {}
+    for model, profile in _CATALOG.items():
+        if profile.get("provider") != "openrouter":
+            continue
+        env = os.environ.copy()
+        env["MODEL"] = model
+        started = time.monotonic()
+        try:
+            proc = runner(["/bin/zsh", str(script), "--raw", _OR_PROMPT], capture_output=True,
+                          text=True, timeout=240, env=env)
+            text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+            low = text.lower()
+            if "429" in low or "quota" in low or "rate limit" in low:
+                status = "quota"
+            elif proc.returncode == 0 and "PONG" in (proc.stdout or "") and "POSITIVE" in (proc.stdout or ""):
+                status = "probed_ok"
+            else:
+                status = "probed_fail"
+            detail = text[-300:]
+        except subprocess.TimeoutExpired:
+            status, detail = "probed_fail", "timeout"
+        results[model] = {"status": status, "detail": detail,
+                          "seconds": round(time.monotonic() - started, 3), "at": _now()}
+    out = {"results": results, "at": _now(), "epoch": time.time()}
+    target = workspace / ".workerbees" / "model_probes.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    return out

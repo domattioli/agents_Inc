@@ -224,3 +224,11 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Landed: DomI statusline smoke 57/57; T5 sqlite lint backend + cycle guard (`tests/test_ledger_sqlite.py`); T6 SCHEMA-3NF sections complete. Tests 416 OK.
 - T6b luna FD review: PASS 42/42 (fable ran; see doc trailer).
 - Lesson: nested `codex exec` inside a codex workspace-write sandbox fails at app-server init (`Operation not permitted`) regardless of model or `--ephemeral`. Sol cannot delegate to OpenAI models from inside the sandbox; sol builds directly, free HTTP wrappers still work, codex sub-reviews run by fable. Sol escalated correctly (opus first, then fable) rather than bypassing CODEX_HOME/auth rules.
+
+## D24 — Build plan 2, group 8 (2026-09-06)
+
+- T9: `doctor.py` probes every OpenRouter catalog route with one fixed PONG/classify request. Runtime cache records `probed_ok`, `probed_fail`, or `quota`; catalog stays immutable. Real `/bin/zsh oask.sh` run: 0 ok, 17 fail, 6 quota. Failures retained in cache and BENCH.
+- T10: router tier entries accept string or ordered list. Codex mid tier is now `gpt-5.6-luna` default, `gpt-5.6-sol` quota fallback. Top-level routing keys unchanged. Catalog corrected from rejected bare `sol` to executable model ID.
+- T11: reservation acquisition atomically claims the workspace lease. A concurrent second reservation, including the same `run_id`, returns false and writes a `run_busy` denial. Gateway releases the call-slot lease after invocation while retaining committed usage.
+- Evidence: thread race admits exactly one reservation and audits exactly one denial. Full suite: 420 tests pass.
+- G8 note (fable): T9 probes 0/23 ok are NOT model verdicts. fable reproduced: OpenRouter `429 Rate limit exceeded: free-models-per-day` (daily free cap hit by day's usage). 17 `probed_fail` = empty content under throttling. Rerun T9 after OR daily reset before trusting `.workerbees/model_probes.json`. routing.json T10 edit verified: keys unchanged, only codex mid → list.

@@ -8,7 +8,7 @@ When both: writes to both control.sqlite and normalized schema.
 All operations follow FR-008 (swallow store errors, never break caller).
 """
 from __future__ import annotations
-import sqlite3, json, os
+import sqlite3, json, os, uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -94,6 +94,8 @@ class Control:
         try:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
+                if not self._claim_run_for_reservation(c, run_id, node_id):
+                    return False
                 c.execute("INSERT INTO reservations (run_id,node_id,calls,seconds,created_at) VALUES (?,?,?,?,?)", (run_id, node_id, calls, seconds, datetime.utcnow().isoformat() + "Z"))
 
             # Dual-write to normalized schema
@@ -102,6 +104,7 @@ class Control:
                 raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
             if store_mode in ("sqlite", "both"):
                 try:
+                    _dual_write_lease(self.workspace, "default", run_id)
                     _dual_write_reservation(self.workspace, run_id, node_id, calls, seconds)
                 except Exception:
                     # Swallow store errors per FR-008
@@ -118,6 +121,7 @@ class Control:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
                 c.execute("UPDATE reservations SET released=1 WHERE run_id=? AND node_id=?", (run_id, node_id))
+                c.execute("DELETE FROM run_lease WHERE run_id=?", (run_id,))
             if _store_enabled():
                 _dual_write_transition(self.workspace, lambda s: s.release_reservation(node_id))
             return True
@@ -170,16 +174,34 @@ class Control:
         try:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
+                if not self._claim_run_for_reservation(c, run_id, node_id):
+                    return False
                 row = c.execute("SELECT COALESCE(SUM(calls),0),COALESCE(SUM(seconds),0) FROM reservations WHERE run_id=? AND released=0", (run_id,)).fetchone()
                 if max_calls is not None and row[0] + calls > max_calls:
+                    c.execute("DELETE FROM run_lease WHERE run_id=?", (run_id,))
                     return False
                 if max_seconds is not None and row[1] + seconds > max_seconds:
+                    c.execute("DELETE FROM run_lease WHERE run_id=?", (run_id,))
                     return False
                 c.execute("INSERT INTO reservations(run_id,node_id,calls,seconds,created_at) VALUES (?,?,?,?,?)",
                           (run_id, node_id, calls, seconds, datetime.utcnow().isoformat() + "Z"))
             return True
         except sqlite3.Error as e:
             raise ControlError(f"Failed bounded reservation: {e}")
+
+    def _claim_run_for_reservation(self, c: sqlite3.Connection, run_id: str, node_id: str) -> bool:
+        """Claim the workspace call slot. Busy attempts are denied and audited atomically."""
+        now = datetime.utcnow().isoformat() + "Z"
+        cur = c.execute("INSERT INTO run_lease(workspace_key,run_id,acquired_at) "
+                        "SELECT 'default',?,? WHERE NOT EXISTS "
+                        "(SELECT 1 FROM run_lease WHERE workspace_key='default')", (run_id, now))
+        if cur.rowcount:
+            return True
+        c.execute("INSERT INTO decisions(decision_id,run_id,node_id,envelope_hash,allowed,reason_code,"
+                  "policy_version,checked_rules,created_at,sender,recipient,operation) "
+                  "VALUES (?,?,?,?,0,'run_busy','runtime',?,?,'','','reserve')",
+                  (uuid.uuid4().hex, run_id, node_id, "", json.dumps(["run_lease"]), now))
+        return False
 
     def store_artifact(self, message_id: str, envelope_hash: str, artifact_ref: str) -> bool:
         try:

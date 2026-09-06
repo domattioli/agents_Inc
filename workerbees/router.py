@@ -36,11 +36,11 @@ def _provider_routes(provider: str, task: str, tier: str) -> list[Route]:
         if _eligible(_AUTO_FREE, task, require_good=True):
             named.append(Route(provider, _AUTO_FREE, tier, "http"))
         return named
-    model = _TABLE["tiers"].get(tier, {}).get(provider)
-    if not model or not _eligible(model, task):
-        return []
+    configured = _TABLE["tiers"].get(tier, {}).get(provider)
+    models = configured if isinstance(configured, list) else [configured]
     kind = "cli" if provider in _TABLE["required"] else "http"
-    return [Route(provider, model, tier, kind)]
+    return [Route(provider, model, tier, kind) for model in models
+            if model and _eligible(model, task)]
 
 def pick_model_chain(task: str, tier: str, available: set[str], workspace_authorized: bool,
                      exclude_provider: str | None = None,

@@ -1,5 +1,5 @@
 import unittest
-from workerbees.router import pick_model, pick_model_chain, Route
+from workerbees.router import pick_model, pick_model_chain, Route, _TABLE
 
 class RouterTest(unittest.TestCase):
     def test_cheap_extract_prefers_required_provider(self):
@@ -36,6 +36,14 @@ class RouterTest(unittest.TestCase):
         self.assertEqual(chain[-1].model, "openrouter/auto:free")
         self.assertEqual(len({r.model for r in chain}), len(chain))
         self.assertTrue(all(r.provider == "openrouter" for r in chain))
+
+    def test_mid_codex_default_then_quota_fallback(self):
+        chain = pick_model_chain("review", "mid", {"codex"}, False)
+        self.assertEqual([r.model for r in chain], ["gpt-5.6-luna", "gpt-5.6-sol"])
+
+    def test_routing_top_level_keys_unchanged(self):
+        self.assertEqual(sorted(_TABLE), ["optional", "optional_allowed_tasks",
+            "optional_provider_wrappers", "required", "task_tier", "tiers"])
 
 if __name__ == "__main__":
     unittest.main()

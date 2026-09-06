@@ -1,4 +1,4 @@
-import json, tempfile, unittest
+import json, subprocess, tempfile, unittest
 from pathlib import Path
 from workerbees import doctor
 from workerbees.adapters.base import WorkerResult
@@ -35,6 +35,18 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(result["paused"], ["claude"])
         paused = doctor.quota_paused(self.ws)
         self.assertEqual(paused, ["claude"])
+
+    def test_openrouter_probe_writes_cache_and_keeps_failures(self):
+        def runner(cmd, **kwargs):
+            model = kwargs["env"]["MODEL"]
+            if model == "openrouter/auto:free":
+                return subprocess.CompletedProcess(cmd, 1, "", "oask error 429: quota")
+            return subprocess.CompletedProcess(cmd, 0, "PONG\nPOSITIVE\n", "")
+        out = doctor.probe_openrouter_models(self.ws, runner=runner)
+        cache = json.loads((self.ws / ".workerbees/model_probes.json").read_text())
+        self.assertEqual(cache, out)
+        self.assertEqual(out["results"]["openrouter/auto:free"]["status"], "quota")
+        self.assertTrue(any(v["status"] == "probed_ok" for v in out["results"].values()))
 
 class DoctorLedgerTest(unittest.TestCase):
     def setUp(self):

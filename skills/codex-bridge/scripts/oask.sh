@@ -15,10 +15,11 @@ command -v jq >/dev/null || { echo "error: jq required" >&2; exit 1; }
 KEY_DIR="$HOME/.codex-bridge"
 KEY_FILE="$KEY_DIR/openrouter-key"
 USAGE_LOG="$KEY_DIR/usage.jsonl"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 
 # Defaults
-MODEL="nvidia/nemotron-3-ultra-550b-a55b:free"
+MODEL="${MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}"
 RAW=false
 OASK_TIMEOUT="${OASK_TIMEOUT:-180}"
 OASK_CONNECT_TIMEOUT="${OASK_CONNECT_TIMEOUT:-10}"
@@ -117,11 +118,13 @@ check_spend_guard
 
 # Expand --glob patterns
 RESOLVED_FILES=("${DECLARE_FILES[@]:-}")
-for pattern in "${DECLARE_GLOBS[@]:-}"; do
-  while IFS= read -r match; do
-    RESOLVED_FILES+=("$match")
-  done < <(compgen -G "$pattern" || true)
-done
+if (( ${#DECLARE_GLOBS[@]} )); then
+  for pattern in "${DECLARE_GLOBS[@]}"; do
+    while IFS= read -r match; do
+      RESOLVED_FILES+=("$match")
+    done < <(compgen -G "$pattern" || true)
+  done
+fi
 
 # Build request body with python3
 export PROMPT

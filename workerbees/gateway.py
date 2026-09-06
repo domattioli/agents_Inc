@@ -254,6 +254,8 @@ class Gateway:
                     max_sec = envelope.budget.get("max_seconds", 300) if envelope.budget else 300
                     timeout_arg = int(min(rem, max_sec))
             except (ValueError, TypeError, AttributeError):
+                if self.mode in ("shadow", "enforce"):
+                    self.control.release_lease(run_id)
                 invalid = Decision(False, decision.decision_id, "INVALID_DEADLINE", "Deadline is invalid", "1.0", decision.checked_rules)
                 if self.mode in ("shadow", "enforce"):
                     decision_recorded = self.control.record_decision(invalid, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
@@ -294,5 +296,8 @@ class Gateway:
                 self.control.store_artifact(envelope.message_id, envelope_hash, output_hash)
             except ControlError:
                 pass
+
+        if self.mode in ("shadow", "enforce"):
+            self.control.release_lease(run_id)
 
         return GatewayResult(status="allowed", decision=decision, worker_result=worker_result, node_id=node_id, decision_recorded=decision_recorded)

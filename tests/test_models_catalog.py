@@ -146,8 +146,9 @@ class TestModelsCatalog(unittest.TestCase):
 
         # Extract all model strings from tiers
         for tier_name, providers in self.routing_data["tiers"].items():
-            for provider, model_id in providers.items():
-                routing_models.add(model_id)
+            for provider, configured in providers.items():
+                model_ids = configured if isinstance(configured, list) else [configured]
+                routing_models.update(model_ids)
 
         for model_id in routing_models:
             self.assertIn(
