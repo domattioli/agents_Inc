@@ -27,3 +27,8 @@ Canonical terms for agents_for_dummies. Glossary only; no implementation detail.
 | **Run** | Groups of nodes from one brief or one doctor preflight (identified by run_id); groups all worker, reviewer, and correction nodes for one top-level invocation. |
 | **Finding** | Lint result from dispatch graph ledger; carries rule (depth, same_vendor_review, frontier_without_gate), node_ids, and human-readable message. |
 | **Ledger** | Append-only JSONL file (`<workspace>/.workerbees/ledger.jsonl`) recording every delegated job as a node; idempotent by node id on read (dedup merges dispatch + return records). |
+| **Agent** | Registered identity in the governance graph; carries id, name, type, capabilities, clearance, enabled flag. Model id is not an agent id. |
+| **Capability** | A named operation an agent may perform (e.g. `extract.markdown`, `review.claims`). Unsupported ones — deploy, delete, send, grant, tools, web — are registered as disabled and always denied. |
+| **Relationship** | Directed edge between two agents (`delegates_to`, `requests`, `probes`) with allowed params. Policy maps a `request` envelope to `delegates_to`; absent edge denies. |
+| **Decision** | Verdict of one policy evaluation: allowed, decision_id, reason_code, reason, policy_version, checked_rules. Persisted before dispatch, for denials as well as allows. Never carries prompts, output, or secrets. |
+| **Gateway** | The single dispatch boundary. Validates the envelope, authorizes it, reserves budget, invokes the adapter, records the decision and the ledger node, releases in `finally`. Permission from the gateway is never a claim about output quality. |
