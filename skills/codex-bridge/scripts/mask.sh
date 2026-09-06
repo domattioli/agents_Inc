@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # codex-bridge mask: Send a prompt to the Mistral API
-# Usage: mask.sh [--model M] [--tier cheap|code|deep] [--agent] [--reset] [--file PATH]... [--raw] ["prompt"]
+# Usage: mask.sh [--tier cheap|code|deep] [--agent] [--reset] [--file PATH]... [--raw] ["prompt"]
+
+if [[ "${WORKERBEES_GOVERNANCE:-off}" != "off" ]]; then
+  echo "mask: REFUSED — legacy wrappers are disabled in governed lanes" >&2
+  exit 3
+fi
 
 command -v python3 >/dev/null || { echo "error: python3 required" >&2; exit 1; }
 
@@ -32,11 +37,6 @@ tier_to_model() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model)
-      [[ $# -ge 2 ]] || { echo "error: --model requires a value" >&2; exit 2; }
-      MODEL="$2"
-      shift 2
-      ;;
     --tier)
       [[ $# -ge 2 ]] || { echo "error: --tier requires a value" >&2; exit 2; }
       TIER="$2"
@@ -75,9 +75,7 @@ if [[ -z "$PROMPT" ]]; then
   exit 1
 fi
 
-if [[ -z "$MODEL" ]]; then
-  MODEL=$(tier_to_model "$TIER")
-fi
+MODEL=$(tier_to_model "$TIER")
 
 KEY="${MISTRAL_API_KEY:-}"
 if [[ -z "$KEY" ]] && [[ -f "$KEY_FILE" ]]; then
