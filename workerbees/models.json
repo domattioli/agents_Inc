@@ -1,0 +1,346 @@
+{
+  "version": "2026-09-05.1",
+  "_note": "tasks_good/tasks_bad = raw per-model task quality, NOT the CLAUDE.md economic dispatch policy; the two axes need not agree.",
+  "models": {
+    "haiku": {
+      "vendor": "anthropic",
+      "provider": "claude",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify", "summarize"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 200000,
+      "cost_class": "cheap",
+      "status": "available"
+    },
+    "sonnet": {
+      "vendor": "anthropic",
+      "provider": "claude",
+      "tier": "mid",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify"],
+      "tasks_bad": ["review-of-record"],
+      "ctx_hint": 200000,
+      "cost_class": "mid",
+      "status": "available"
+    },
+    "opus": {
+      "vendor": "anthropic",
+      "provider": "claude",
+      "tier": "mid",
+      "tasks_good": ["extract", "summarize", "draft", "review-draft", "code-write", "code-review", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 200000,
+      "cost_class": "mid",
+      "status": "available"
+    },
+    "fable": {
+      "vendor": "anthropic",
+      "provider": "claude",
+      "tier": "frontier",
+      "tasks_good": ["extract", "summarize", "draft", "review-draft", "review-of-record", "code-write", "code-review", "orchestrate", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 200000,
+      "cost_class": "premium",
+      "status": "available"
+    },
+    "gpt-5.4-mini": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify", "summarize"],
+      "tasks_bad": ["review-of-record", "code-review", "orchestrate"],
+      "ctx_hint": 128000,
+      "cost_class": "cheap",
+      "status": "available"
+    },
+    "gpt-5.6-luna": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "mid",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "code-review", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 128000,
+      "cost_class": "mid",
+      "status": "available"
+    },
+    "sol": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "mid",
+      "tasks_good": ["code-write"],
+      "tasks_bad": [],
+      "ctx_hint": 128000,
+      "cost_class": "mid",
+      "status": "unprobed"
+    },
+    "gpt-6-astra": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "frontier",
+      "tasks_good": ["extract", "summarize", "draft", "review-draft", "review-of-record", "code-write", "code-review", "orchestrate", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 200000,
+      "cost_class": "premium",
+      "status": "available"
+    },
+    "gemini-2.5-flash": {
+      "vendor": "google",
+      "provider": "gemini",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify", "summarize"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 100000,
+      "cost_class": "cheap",
+      "status": "available"
+    },
+    "gemini-flash-lite": {
+      "vendor": "google",
+      "provider": "gemini",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify"],
+      "tasks_bad": ["review-of-record", "code-review", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "cheap",
+      "status": "available"
+    },
+    "mistral-small-latest": {
+      "vendor": "mistral",
+      "provider": "mistral",
+      "tier": "cheap",
+      "tasks_good": [],
+      "tasks_bad": ["extract", "summarize", "draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "cheap",
+      "status": "unavailable"
+    },
+    "openrouter/auto:free": {
+      "vendor": null,
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract"],
+      "tasks_bad": ["review-of-record", "code-review", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "inclusionai/ling-3.0-flash-sante:free": {
+      "vendor": "inclusionai",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "classify"],
+      "tasks_bad": ["draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 16000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "inclusionai/ling-3.0-flash-fin:free": {
+      "vendor": "inclusionai",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify", "summarize"],
+      "tasks_bad": ["draft", "review-draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 16000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "dots-studio/dots-3-note-preview:free": {
+      "vendor": "dots-studio",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize"],
+      "tasks_bad": ["draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 8000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "liquid/lfm-2.5-2.6b:free": {
+      "vendor": "liquid",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["classify", "extract"],
+      "tasks_bad": ["draft", "review-draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 4000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "nvidia/nemotron-3.5-lightning:free": {
+      "vendor": "nvidia",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "classify", "summarize"],
+      "tasks_bad": ["review-of-record", "code-review", "orchestrate", "code-write"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "thinkingmachines/inkling-small:free": {
+      "vendor": "thinkingmachines",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["classify"],
+      "tasks_bad": ["draft", "review-draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 4000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "poolside/laguna-s-2.1:free": {
+      "vendor": "poolside",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["code-write", "draft"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "thinkingmachines/inkling:free": {
+      "vendor": "thinkingmachines",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "classify"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "poolside/laguna-xs-2.1:free": {
+      "vendor": "poolside",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["code-write"],
+      "tasks_bad": ["review-of-record", "code-review", "orchestrate"],
+      "ctx_hint": 8000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "cohere/north-mini-code:free": {
+      "vendor": "cohere",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["code-write", "draft"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 16000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "z-ai/glm-5.2:free": {
+      "vendor": "z-ai",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "classify"],
+      "tasks_bad": ["review-of-record", "orchestrate", "code-write"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "nvidia/nemotron-3.5-content-safety:free": {
+      "vendor": "nvidia",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["classify"],
+      "tasks_bad": ["draft", "code-write", "code-review", "orchestrate"],
+      "ctx_hint": 4000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "vendor": "nvidia",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify"],
+      "tasks_bad": ["review-of-record"],
+      "ctx_hint": 128000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "minimax/minimax-m3:free": {
+      "vendor": "minimax",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify", "orchestrate"],
+      "tasks_bad": [],
+      "ctx_hint": 64000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+      "vendor": "nvidia",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "classify"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 64000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "google/gemma-4-26b-a4b-it:free": {
+      "vendor": "google",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "classify"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 16000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "google/gemma-4-31b-it:free": {
+      "vendor": "google",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify"],
+      "tasks_bad": ["review-of-record", "orchestrate"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "google/lyria-3-pro-preview": {
+      "vendor": "google",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": [],
+      "tasks_bad": ["extract", "summarize", "draft", "review-draft", "code-write", "code-review", "orchestrate", "classify"],
+      "ctx_hint": 0,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "google/lyria-3-clip-preview": {
+      "vendor": "google",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": [],
+      "tasks_bad": ["extract", "summarize", "draft", "review-draft", "code-write", "code-review", "orchestrate", "classify"],
+      "ctx_hint": 0,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "minimax/minimax-m2.7:free": {
+      "vendor": "minimax",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 64000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "nvidia/nemotron-3-super-120b-a12b:free": {
+      "vendor": "nvidia",
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 64000,
+      "cost_class": "free",
+      "status": "unprobed"
+    },
+    "openrouter/free": {
+      "vendor": null,
+      "provider": "openrouter",
+      "tier": "cheap",
+      "tasks_good": [],
+      "tasks_bad": ["extract", "summarize", "draft", "review-draft", "review-of-record", "code-write", "code-review", "orchestrate", "classify"],
+      "ctx_hint": 32000,
+      "cost_class": "free",
+      "status": "unprobed"
+    }
+  }
+}
