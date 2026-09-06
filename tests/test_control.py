@@ -1,5 +1,6 @@
 import unittest
 import tempfile
+import threading
 import sqlite3
 import json
 from pathlib import Path
@@ -106,27 +107,41 @@ class TestControlReservations(unittest.TestCase):
         self.assertEqual(used["calls"], 0)
         self.assertEqual(used["seconds"], 0.0)
 
-    def test_multiple_reservations_sum(self):
-        """Test that multiple reservations sum correctly."""
+    def test_reservations_serialize_per_run(self):
         self.control.reserve("run-001", "node-001", calls=3, seconds=5.0)
-        self.control.reserve("run-001", "node-002", calls=2, seconds=3.0)
+        self.assertFalse(self.control.reserve("run-001", "node-002", calls=2, seconds=3.0))
 
         used = self.control.used("run-001")
-        self.assertEqual(used["calls"], 5)
-        self.assertEqual(used["seconds"], 8.0)
+        self.assertEqual(used["calls"], 3)
+        self.assertEqual(used["seconds"], 5.0)
 
         # Release one
         self.control.release("run-001", "node-001")
 
         used = self.control.used("run-001")
-        self.assertEqual(used["calls"], 2)
-        self.assertEqual(used["seconds"], 3.0)
+        self.assertEqual(used["calls"], 0)
+        self.assertEqual(used["seconds"], 0.0)
 
     def test_used_empty_run(self):
         """Test used() on run with no reservations."""
         used = self.control.used("run-nonexistent")
         self.assertEqual(used["calls"], 0)
         self.assertEqual(used["seconds"], 0.0)
+
+    def test_concurrent_same_run_one_denied_run_busy(self):
+        barrier = threading.Barrier(2)
+        results = []
+        def attempt(node_id):
+            control = Control(self.workspace)
+            barrier.wait()
+            results.append(control.reserve("run-thread", node_id))
+        threads = [threading.Thread(target=attempt, args=(f"node-{i}",)) for i in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertEqual(sorted(results), [False, True])
+        with self.control._conn() as c:
+            audit = c.execute("SELECT allowed,reason_code FROM decisions WHERE run_id='run-thread'").fetchall()
+        self.assertEqual([tuple(row) for row in audit], [(0, "run_busy")])
 
 
 class TestControlReplay(unittest.TestCase):
