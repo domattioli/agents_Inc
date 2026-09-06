@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # codex-bridge oask: Send a prompt to OpenRouter API (free tier only)
-# Usage: oask.sh [--model M] [--file PATH]... [--glob PATTERN] [--raw] ["prompt"]
+# Usage: oask.sh [--file PATH]... [--glob PATTERN] [--raw] ["prompt"]
+
+if [[ "${WORKERBEES_GOVERNANCE:-off}" != "off" ]]; then
+  echo "oask: REFUSED — legacy wrappers are disabled in governed lanes" >&2
+  exit 3
+fi
 
 # Check required tools
 command -v jq >/dev/null || { echo "error: jq required" >&2; exit 1; }
@@ -13,7 +18,7 @@ USAGE_LOG="$KEY_DIR/usage.jsonl"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Defaults
-MODEL="${OR_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}"
+MODEL="nvidia/nemotron-3-ultra-550b-a55b:free"
 RAW=false
 OASK_TIMEOUT="${OASK_TIMEOUT:-180}"
 OASK_CONNECT_TIMEOUT="${OASK_CONNECT_TIMEOUT:-10}"
@@ -24,18 +29,13 @@ RESOLVED_FILES=()
 
 # SPEND GUARD: operator rule is spend nothing on OpenRouter.
 # Only ":free" models are permitted. Paid model IDs are refused outright.
-# Deliberate override requires OR_ALLOW_PAID=1 (which the routine never sets).
 check_spend_guard() {
   case "$MODEL" in
     *:free) ;;
     *)
-      if [ "${OR_ALLOW_PAID:-0}" != "1" ]; then
-        echo "oask: REFUSED — '$MODEL' is not a ':free' model." >&2
-        echo "oask: operator rule is spend nothing on OpenRouter." >&2
-        echo "oask: run --list to see free models." >&2
-        exit 3
-      fi
-      echo "oask: WARNING paid model '$MODEL' via OR_ALLOW_PAID=1" >&2
+      echo "oask: REFUSED — '$MODEL' is not a ':free' model." >&2
+      echo "oask: operator rule is spend nothing on OpenRouter." >&2
+      exit 3
       ;;
   esac
 }
@@ -69,10 +69,6 @@ fi
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model)
-      MODEL="$2"
-      shift 2
-      ;;
     --file)
       DECLARE_FILES+=("$2")
       shift 2
@@ -122,9 +118,9 @@ check_spend_guard
 # Expand --glob patterns
 RESOLVED_FILES=("${DECLARE_FILES[@]:-}")
 for pattern in "${DECLARE_GLOBS[@]:-}"; do
-  # shellcheck disable=SC2086
-  expanded=$(eval echo "$pattern" 2>/dev/null || true)
-  [[ -n "$expanded" ]] && RESOLVED_FILES+=("$expanded")
+  while IFS= read -r match; do
+    RESOLVED_FILES+=("$match")
+  done < <(compgen -G "$pattern" || true)
 done
 
 # Build request body with python3
@@ -292,4 +288,3 @@ try:
 except Exception:
     pass
 PYTHON_LOG
-

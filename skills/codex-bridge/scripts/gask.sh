@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # codex-bridge gask: Send a prompt to Gemini API
-# Usage: gask.sh [--model M] [--tier digest|cheap|deep] [--file PATH]... [--glob PATTERN] [--raw] ["prompt"]
+# Usage: gask.sh [--tier digest|cheap|deep] [--file PATH]... [--glob PATTERN] [--raw] ["prompt"]
+
+if [[ "${WORKERBEES_GOVERNANCE:-off}" != "off" ]]; then
+  echo "gask: REFUSED — legacy wrappers are disabled in governed lanes" >&2
+  exit 3
+fi
 
 # Check required tools
 command -v jq >/dev/null || { echo "error: jq required" >&2; exit 1; }
@@ -61,10 +66,6 @@ fi
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model)
-      MODEL="$2"
-      shift 2
-      ;;
     --tier)
       TIER="$2"
       shift 2
@@ -99,16 +100,14 @@ if [[ -z "$PROMPT" ]]; then
   exit 1
 fi
 
-# Resolve --model override, else use tier
-if [[ -z "$MODEL" ]]; then
-  MODEL=$(tier_to_model "$TIER")
-fi
+MODEL=$(tier_to_model "$TIER")
 
 # Expand --glob patterns
 RESOLVED_FILES=("${DECLARE_FILES[@]:-}")
 for pattern in "${DECLARE_GLOBS[@]:-}"; do
-  # shellcheck disable=SC2086
-  RESOLVED_FILES+=($(eval echo "$pattern" 2>/dev/null || true))
+  while IFS= read -r match; do
+    RESOLVED_FILES+=("$match")
+  done < <(compgen -G "$pattern" || true)
 done
 
 # Build request body with python3
