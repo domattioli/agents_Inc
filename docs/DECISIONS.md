@@ -248,3 +248,15 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - T15 result: 40 rows, 59 calls. Off vs enforce status parity 20/20. Quality gate not measured: Codex quota exhausted mid-day, every Codex call paused. BENCH.md carries the reading of record above sol's FAIL line.
 - PLAN-BUILD-2 status: S1–S7 all landed. Open: T9 OpenRouter probes rerun after daily reset; T15 quality rerun after Codex quota reset; DomI statusline commits unpushed.
 - Next phase: measured pilot tim+dom vs all-frontier (D5/D10), once both quotas reset.
+
+## D27 — Run tree, families, ladder (CEO grill, 2026-09-06)
+
+- Run tree: each run is one rooted tree. Root = the orchestrating act. Every orchestrator is its own node (task `orchestrate`).
+- Family (fam) = orchestrator node + descendants. Families nest.
+- Lead / Second: CEO picks the Lead (fable or astra) per ask. The other is Second: child of root with edge `seconds`, real authority (veto, own sub-family), yields to Lead on conflict. Tree preserved.
+- Rungs: Supervisor fable↔astra; Orchestrator opus↔sol; Workhorse sonnet↔terra; Grunt haiku↔luna. Escalate one rung up; second opinion across the pair, blind. Table: docs/governance/ROUTING-RANKING.md.
+- Promotion: (a) worker spinning wheels, two failed checks, or Codex usage-limit pause counts as a failed attempt; (c) Lead assigns with gate reason. Sonnet/terra build only via promotion.
+- routing.json sanctioned edit: codex cheap = luna, codex mid = [terra, sol], codex frontier = astra. gpt-5.4-mini and all other GPT models = free grunts, OpenRouter only, $0. Terra to be probed before it becomes mid default.
+- Run spec: CEO names Supervisor + Orchestrator; rest derived. Only those two rungs have children.
+- Derivation: Second = Supervisor's pair; Orchestrator reviewed by its pair; workhorse/grunt = Orchestrator's vendor, reviewed by pairs; reviewer = fallback at every rung.
+- Modalities: ideal (full ladder) vs budget (free grunts fill workhorse/grunt, ladder kept for supervise/orchestrate/review/fallback).
