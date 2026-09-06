@@ -166,7 +166,7 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
         data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z")
     result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
         "parent_id": parent_id, "edge_type": edge_type}, runner=runner, route=route)
-    if mode == "enforce" and result.status != "allowed":
+    if result.status != "allowed" or result.worker_result is None:
         d = result.decision
         return None, result.node_id, False, False, {"reason": d.reason_code if d else "unknown", "governance": {"decision_id": d.decision_id if d else "", "reason": d.reason if d else "", "status": result.status}}
     return result.worker_result, result.node_id, True, True, None

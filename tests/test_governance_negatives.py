@@ -68,7 +68,7 @@ class TestReplayDuplication(unittest.TestCase):
         )
 
         env_hash = canonical_hash(env)
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -134,7 +134,7 @@ class TestReplayDuplication(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -286,7 +286,7 @@ class TestCancelRun(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -421,7 +421,7 @@ class TestApprovalGating(unittest.TestCase):
             security={"approval_required": True}  # Requires approval, no approved field
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -445,8 +445,8 @@ class TestApprovalGating(unittest.TestCase):
         self.assertEqual(call_count[0], 0,
                         f"Runner should not be called on approval denial, was called {call_count[0]} times")
 
-    def test_n5_approval_granted_allowed(self):
-        """N5: Envelope with approval_required=True AND approved=True -> policy allows."""
+    def test_n5_caller_approval_boolean_is_not_trusted(self):
+        """N5: Caller-controlled approval state cannot bypass durable approval."""
         registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
@@ -467,20 +467,16 @@ class TestApprovalGating(unittest.TestCase):
             security={"approval_required": True, "approved": True}  # Requires AND has approval
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
 
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": "run-002"}, runner=runner, route=route)
 
-        # Assert: status is "allowed" (worker was called)
-        self.assertEqual(result.status, "allowed",
-                        f"Approved envelope should be allowed, got status={result.status}")
-
-        # Assert: runner was called
-        self.assertGreater(call_count[0], 0,
-                          f"Runner should be called for approved envelope, was called {call_count[0]} times")
+        self.assertEqual(result.status, "denied")
+        self.assertEqual(result.decision.reason_code, "APPROVAL_REQUIRED")
+        self.assertEqual(call_count[0], 0)
 
     def test_n5_approval_binding_hash_mismatch(self):
         """N5: approval_binds validates that approval is bound to exact artifact hash.
@@ -721,7 +717,7 @@ class TestSenderSpoofing(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -784,7 +780,7 @@ class TestSenderSpoofing(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="claude-3-5-sonnet", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)

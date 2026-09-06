@@ -4,7 +4,7 @@ import os, uuid, hashlib, json, logging
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from workerbees.envelope import Envelope, Decision, validate, canonical_hash
 from workerbees.registry import Registry, RegistryError
@@ -44,6 +44,9 @@ class Gateway:
 
         self.registry = registry
         self.control = control or Control(self.workspace)
+        base_dir = Path(__file__).resolve().parent
+        self.protocols = {"v1": {}, "workerbees": {}}
+        self.catalog = json.loads((base_dir / "models.json").read_text()).get("models", {})
 
         if self.mode == "enforce" and not self.registry:
             raise GatewayError("enforce mode requires registry")
@@ -57,7 +60,7 @@ class Gateway:
         # Step 1: Sender check
         auth_sender = context.get("authenticated_sender")
         if auth_sender is not None and auth_sender != envelope.sender:
-            decision = Decision(False, node_id, "SENDER_MISMATCH", "Authenticated sender != envelope sender", "1.0", [])
+            decision = Decision(False, uuid.uuid4().hex, "SENDER_MISMATCH", "Authenticated sender != envelope sender", "1.0", [])
             # Compute envelope hash defensively (envelope not yet fully validated)
             try:
                 envelope_hash = canonical_hash(envelope)
@@ -66,32 +69,49 @@ class Gateway:
             # Record decision in shadow/enforce modes, fail closed
             if self.mode in ("shadow", "enforce"):
                 try:
-                    self.control.record_decision(decision, run_id, node_id, envelope_hash)
+                    recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
                 except ControlError:
-                    pass  # Fail closed: never let recording failure turn denial into allow
-            return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=False)
+                    recorded = False
+            else:
+                recorded = False
+            return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=recorded)
 
         # Step 2: Validate envelope
-        errors = validate(envelope, {})
+        errors = validate(envelope, self.protocols)
+        if envelope.protocol not in self.protocols:
+            errors.append(f"Unknown protocol '{envelope.protocol}'")
+        expected_schema = f"{envelope.operation}_v1"
+        if envelope.schema != expected_schema:
+            errors.append(f"Schema '{envelope.schema}' does not match operation '{envelope.operation}'")
+        if envelope.operation == "request" and not isinstance(envelope.payload.get("prompt"), str):
+            errors.append("request_v1 payload requires string prompt")
         if errors:
-            return GatewayResult(status="envelope_invalid", decision=Decision(False, node_id, "ENVELOPE_INVALID", errors[0], "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
+            decision = Decision(False, uuid.uuid4().hex, "ENVELOPE_INVALID", errors[0], "1.0", [])
+            recorded = False
+            if self.mode in ("shadow", "enforce"):
+                try:
+                    recorded = self.control.record_decision(decision, run_id, node_id, "", envelope.sender, envelope.recipient, envelope.operation)
+                except ControlError:
+                    pass
+            return GatewayResult(status="envelope_invalid", decision=decision, worker_result=None, node_id=node_id, decision_recorded=recorded)
 
         envelope_hash = canonical_hash(envelope)
 
         # Step 3: Replay check
         if self.mode in ("shadow", "enforce"):
             try:
-                replay_result = self.control.check_replay(envelope.message_id, envelope_hash)
+                replay_result = self.control.claim_replay(envelope.message_id, envelope_hash)
+                if getattr(replay_result, "state", None) not in {"new", "error", "duplicate", "conflict"}:
+                    replay_result = self.control.check_replay(envelope.message_id, envelope_hash)
                 if replay_result.state == "error":
                     if self.mode == "enforce":
                         return GatewayResult(status="blocked", decision=Decision(False, node_id, "AUDIT_UNAVAILABLE", "Control layer unavailable", "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
                 elif replay_result.state == "duplicate":
                     return GatewayResult(status="duplicate", decision=Decision(True, node_id, "DUPLICATE", "Same message ID and hash", "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
                 elif replay_result.state == "conflict":
-                    decision = Decision(False, node_id, "REPLAY_CONFLICT", f"Message ID exists with different hash: {replay_result.reason}", "1.0", ["replay_check"])
-                    if self.mode == "enforce":
-                        self.control.record_decision(decision, run_id, node_id, envelope_hash)
-                    return GatewayResult(status="conflict", decision=decision, worker_result=None, node_id=node_id, decision_recorded=self.mode == "enforce")
+                    decision = Decision(False, uuid.uuid4().hex, "REPLAY_CONFLICT", f"Message ID exists with different hash: {replay_result.reason}", "1.0", ["replay_check"])
+                    recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
+                    return GatewayResult(status="conflict", decision=decision, worker_result=None, node_id=node_id, decision_recorded=recorded)
             except ControlError:
                 if self.mode == "enforce":
                     return GatewayResult(status="blocked", decision=Decision(False, node_id, "AUDIT_UNAVAILABLE", "Control layer unavailable", "1.0", []), worker_result=None, node_id=node_id, decision_recorded=False)
@@ -102,7 +122,15 @@ class Gateway:
             if not self.registry:
                 decision = Decision(False, node_id, "NO_REGISTRY", "Registry required", "1.0", [])
             else:
-                decision = evaluate(context, envelope, self.registry)
+                trusted_context = dict(context)
+                trusted_context["now"] = datetime.now(timezone.utc)
+                durable_used = self.control.used(run_id)
+                trusted_context["budget_used"] = durable_used if isinstance(durable_used, dict) else context.get("budget_used", {})
+                approval_id = envelope.security.get("approval_id")
+                trusted_context["approval_valid"] = bool(approval_id) and self.control.approval_binds(
+                    approval_id, envelope.intent, envelope.security.get("resource", ""),
+                    envelope.security.get("artifact_hash", ""), datetime.now(timezone.utc).isoformat())
+                decision = evaluate(trusted_context, envelope, self.registry)
         else:
             decision = Decision(True, node_id, "ALLOWED", "Off mode", "1.0", [])
 
@@ -113,7 +141,7 @@ class Gateway:
         decision_recorded = False
         if self.mode in ("shadow", "enforce"):
             try:
-                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash)
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
                 if self.mode == "enforce" and not decision_recorded:
                     return GatewayResult(status="blocked", decision=decision, worker_result=None, node_id=node_id, decision_recorded=False)
             except ControlError:
@@ -129,16 +157,44 @@ class Gateway:
         if self.registry and route:
             prov = self.registry.provider_for(envelope.recipient)
             if prov is not None and prov != route.provider:
-                decision = Decision(False, node_id, "ROUTE_PROVIDER_MISMATCH", f"Provider mismatch: registry {prov} vs route {route.provider}", "1.0", decision.checked_rules if decision else [])
-                if self.mode == "enforce" and not decision_recorded:
-                    decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash)
+                decision.allowed = False
+                decision.reason_code = "ROUTE_PROVIDER_MISMATCH"
+                decision.reason = f"Provider mismatch: registry {prov} vs route {route.provider}"
+                if self.mode in ("shadow", "enforce"):
+                    decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
                 return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
+
+        # Provider executability precedes catalog resolution.
+        if route.provider not in ("claude", "codex"):
+            decision.allowed = False
+            decision.reason_code = "PROVIDER_NOT_EXECUTABLE"
+            decision.reason = f"Provider {route.provider} not executable"
+            if self.mode in ("shadow", "enforce"):
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
+            return GatewayResult("denied", decision, None, node_id, decision_recorded)
+
+        # Route identity comes from the immutable catalog in governed lanes.
+        profile = self.catalog.get(route.model)
+        if self.mode in ("shadow", "enforce") and (not profile or profile.get("provider") != route.provider or profile.get("tier") != route.tier):
+            decision.allowed = False
+            decision.reason_code = "ROUTE_NOT_CATALOGED"
+            decision.reason = "Route model/provider/tier does not match trusted catalog"
+            if self.mode in ("shadow", "enforce"):
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
+            return GatewayResult("denied", decision, None, node_id, decision_recorded)
+        if self.mode in ("shadow", "enforce") and route.tier == "frontier" and not context.get("gate_reason"):
+            decision.allowed = False
+            decision.reason_code = "FRONTIER_GATE_REQUIRED"
+            decision.reason = "Frontier route requires trusted gate reason"
+            if self.mode in ("shadow", "enforce"):
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
+            return GatewayResult("denied", decision, None, node_id, decision_recorded)
 
         # Step 8: Provider validation
         if route.provider not in ("claude", "codex"):
             decision = Decision(False, node_id, "PROVIDER_NOT_EXECUTABLE", f"Provider {route.provider} not executable", "1.0", decision.checked_rules if decision else [])
-            if self.mode == "enforce" and not decision_recorded:
-                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash)
+            if self.mode in ("shadow", "enforce"):
+                decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
             return GatewayResult(status="denied", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
 
         # Step 9: Check cancellation before reserve
@@ -152,8 +208,9 @@ class Gateway:
         # Step 10: Reserve budget
         if self.mode in ("shadow", "enforce"):
             try:
-                reserved = self.control.reserve(run_id, node_id, calls=1, seconds=0.0)
-                if not reserved and self.mode == "enforce":
+                reserved = self.control.reserve_bounded(run_id, node_id, calls=1, seconds=0.0,
+                    max_calls=envelope.budget.get("max_calls"), max_seconds=envelope.budget.get("max_seconds"))
+                if not reserved:
                     return GatewayResult(status="blocked", decision=decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
             except ControlError:
                 if self.mode == "enforce":
@@ -175,8 +232,10 @@ class Gateway:
         timeout_arg = None
         if envelope.deadline:
             try:
-                deadline_dt = datetime.fromisoformat(envelope.deadline.replace('Z', '+00:00')).replace(tzinfo=None)
-                now_dt = context.get("now")
+                deadline_dt = datetime.fromisoformat(envelope.deadline.replace('Z', '+00:00'))
+                if deadline_dt.tzinfo is None:
+                    deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
                 if now_dt:
                     rem = (deadline_dt - now_dt).total_seconds()
                     if rem <= 0:
@@ -185,12 +244,20 @@ class Gateway:
                                 self.control.release(run_id, node_id)
                             except ControlError:
                                 pass
-                        expired_decision = Decision(False, node_id, "EXPIRED", "Envelope deadline expired", "1.0", decision.checked_rules if decision else [])
+                        decision.allowed = False
+                        decision.reason_code = "EXPIRED"
+                        decision.reason = "Envelope deadline expired"
+                        expired_decision = decision
+                        if self.mode in ("shadow", "enforce"):
+                            decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
                         return GatewayResult(status="denied", decision=expired_decision, worker_result=None, node_id=node_id, decision_recorded=decision_recorded)
                     max_sec = envelope.budget.get("max_seconds", 300) if envelope.budget else 300
                     timeout_arg = int(min(rem, max_sec))
-            except Exception:
-                pass
+            except (ValueError, TypeError, AttributeError):
+                invalid = Decision(False, decision.decision_id, "INVALID_DEADLINE", "Deadline is invalid", "1.0", decision.checked_rules)
+                if self.mode in ("shadow", "enforce"):
+                    decision_recorded = self.control.record_decision(invalid, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
+                return GatewayResult("denied", invalid, None, node_id, decision_recorded)
 
         # Step 13: Record dispatch to ledger
         try:
@@ -213,12 +280,6 @@ class Gateway:
                 worker_result = runner(cmd, envelope.payload.get("prompt", ""), cwd=context.get("cwd"))
         except Exception as e:
             worker_result = base.WorkerResult("failed", "", str(e), 1)
-        finally:
-            if self.mode in ("shadow", "enforce"):
-                try:
-                    self.control.release(run_id, node_id)
-                except ControlError:
-                    pass
 
         # Step 15: Record return to ledger
         try:

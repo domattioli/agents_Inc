@@ -48,22 +48,27 @@ class Control:
     def _ensure_tables(self) -> None:
         try:
             with self._conn() as c:
-                c.execute("CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY,run_id TEXT,node_id TEXT,envelope_hash TEXT,allowed INT,reason_code TEXT,policy_version TEXT,checked_rules TEXT,created_at TEXT)")
+                c.execute("CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY,run_id TEXT,node_id TEXT,envelope_hash TEXT,allowed INT,reason_code TEXT,policy_version TEXT,checked_rules TEXT,created_at TEXT,sender TEXT,recipient TEXT,operation TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS reservations (run_id TEXT,node_id TEXT,calls INT,seconds REAL,released INT DEFAULT 0,created_at TEXT,PRIMARY KEY(run_id,node_id))")
                 c.execute("CREATE TABLE IF NOT EXISTS replay_keys (message_id TEXT PRIMARY KEY,envelope_hash TEXT,artifact_ref TEXT,created_at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS cancellations (run_id TEXT PRIMARY KEY,at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS run_lease (workspace_key TEXT PRIMARY KEY,run_id TEXT,acquired_at TEXT)")
                 c.execute("CREATE TABLE IF NOT EXISTS approvals (approval_id TEXT PRIMARY KEY,run_id TEXT,requester TEXT,action TEXT,resource TEXT,artifact_hash TEXT,risk TEXT,rule_ids TEXT,expires_at TEXT,approver TEXT,decision TEXT,decided_at TEXT)")
+                cols = {r[1] for r in c.execute("PRAGMA table_info(decisions)")}
+                for name in ("sender", "recipient", "operation"):
+                    if name not in cols:
+                        c.execute(f"ALTER TABLE decisions ADD COLUMN {name} TEXT")
         except sqlite3.Error:
             pass
 
-    def record_decision(self, decision: Decision, run_id: str, node_id: str, envelope_hash: str) -> bool:
+    def record_decision(self, decision: Decision, run_id: str, node_id: str, envelope_hash: str,
+                        sender: str = "", recipient: str = "", operation: str = "") -> bool:
         try:
             rules = decision.checked_rules[:64] if decision.checked_rules else []
             rules = [r[:64] for r in rules]
             with self._conn() as c:
-                c.execute("INSERT INTO decisions (decision_id,run_id,node_id,envelope_hash,allowed,reason_code,policy_version,checked_rules,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                         (decision.decision_id, run_id, node_id, envelope_hash, int(decision.allowed), decision.reason_code, decision.policy_version, json.dumps(rules), datetime.utcnow().isoformat() + "Z"))
+                c.execute("INSERT OR REPLACE INTO decisions (decision_id,run_id,node_id,envelope_hash,allowed,reason_code,policy_version,checked_rules,created_at,sender,recipient,operation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (decision.decision_id, run_id, node_id, envelope_hash, int(decision.allowed), decision.reason_code, decision.policy_version, json.dumps(rules), datetime.utcnow().isoformat() + "Z", sender, recipient, operation))
 
             # Dual-write to normalized schema
             store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
@@ -140,10 +145,46 @@ class Control:
                 return ReplayResult(state="error", reason="Database error")
             raise ControlError(f"Failed to check replay: {e}")
 
+    def claim_replay(self, message_id: str, envelope_hash: str) -> ReplayResult:
+        """Atomically claim a message before invocation."""
+        try:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute("SELECT envelope_hash,artifact_ref FROM replay_keys WHERE message_id=?", (message_id,)).fetchone()
+                if row:
+                    state = "duplicate" if row["envelope_hash"] == envelope_hash else "conflict"
+                    return ReplayResult(state, row["artifact_ref"], "Message already claimed")
+                c.execute("INSERT INTO replay_keys(message_id,envelope_hash,artifact_ref,created_at) VALUES (?,?,?,?)",
+                          (message_id, envelope_hash, None, datetime.utcnow().isoformat() + "Z"))
+            return ReplayResult("new")
+        except sqlite3.Error as e:
+            if self._is_readonly_error(e):
+                return ReplayResult("error", reason="Database error")
+            raise ControlError(f"Failed to claim replay key: {e}")
+
+    def reserve_bounded(self, run_id: str, node_id: str, calls: int, seconds: float,
+                        max_calls: Optional[int], max_seconds: Optional[float]) -> bool:
+        try:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute("SELECT COALESCE(SUM(calls),0),COALESCE(SUM(seconds),0) FROM reservations WHERE run_id=? AND released=0", (run_id,)).fetchone()
+                if max_calls is not None and row[0] + calls > max_calls:
+                    return False
+                if max_seconds is not None and row[1] + seconds > max_seconds:
+                    return False
+                c.execute("INSERT INTO reservations(run_id,node_id,calls,seconds,created_at) VALUES (?,?,?,?,?)",
+                          (run_id, node_id, calls, seconds, datetime.utcnow().isoformat() + "Z"))
+            return True
+        except sqlite3.Error as e:
+            raise ControlError(f"Failed bounded reservation: {e}")
+
     def store_artifact(self, message_id: str, envelope_hash: str, artifact_ref: str) -> bool:
         try:
             with self._conn() as c:
-                c.execute("INSERT OR REPLACE INTO replay_keys (message_id,envelope_hash,artifact_ref,created_at) VALUES (?,?,?,?)", (message_id, envelope_hash, artifact_ref, datetime.utcnow().isoformat() + "Z"))
+                c.execute("INSERT INTO replay_keys(message_id,envelope_hash,artifact_ref,created_at) VALUES (?,?,?,?) "
+                          "ON CONFLICT(message_id) DO UPDATE SET artifact_ref=excluded.artifact_ref "
+                          "WHERE replay_keys.envelope_hash=excluded.envelope_hash",
+                          (message_id, envelope_hash, artifact_ref, datetime.utcnow().isoformat() + "Z"))
 
             # Dual-write to normalized schema
             store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
