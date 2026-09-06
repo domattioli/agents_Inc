@@ -164,3 +164,9 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Independently found by fable same day, T4 migrate WIP (uncommitted, parked `.scratch/t4_wip`): `usage` table never written → seconds/calls lost; `test_gate_c_rollup_parity` loads JSONL twice, never reads store (vacuous); wrong workspace path → silent 0 rows, no `import_issue`. Matches astra #20/#24 pattern: parity claimed, never compared.
 - CEO questions (astra): (1) must enforce cover legacy wrappers gask/mask/oask, or disable them in governed lanes? (2) prohibit paid overrides + non-$0 creds outright (D9)? (3) release blocked until audit parity + both-host isolation have retained proof?
 - Disposition: no fixes applied (CEO said report only). Next: CEO rules on Q1–Q3; then Opus resumes with astra table as T0 fix list before T4–T15.
+
+## CEO rulings on astra review 2 (2026-09-06)
+- D16: legacy wrappers gask/mask/oask are disabled in governed lanes. No gateway bypass survives. Fix = wrappers refuse to run when `WORKERBEES_GOVERNANCE != off`, or route through gateway; disabling preferred.
+- D17: $0 spend stands. Remove `OR_ALLOW_PAID` and any paid/model override escape in gask/mask/oask. Non-$0 creds never used by delegates.
+- D18: release blocked until (a) audit parity JSONL↔sqlite and (b) both-host isolation each have retained, rerunnable proof artifacts (test files + saved output), not doc claims.
+- D19: sol (codex) orchestrates the astra fix list; fable dispatches without operator. Sol fixes directly inside codex sandbox when delegation unavailable.
