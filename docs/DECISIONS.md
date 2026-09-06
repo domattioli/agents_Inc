@@ -201,3 +201,15 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
   - The operating guide no longer implies every decision has complete reconstructable identity/operation data or that decision rows reconstruct provider execution and cost.
 - Mutation evidence: each guarded implementation was temporarily broken; its targeted test failed; implementation restored; final full suite passed.
 - Not reproduced: none in this group.
+
+## D23 — D18 proof artifacts and T4 migration closure (2026-09-06)
+
+- D18 retained proof is now rerunnable and saved with date plus source HEAD.
+  - Audit parity: Tim and Dom fixtures ran through the pipeline with `WORKERBEES_STORE=both`; JSONL rollups matched canonical q5 node, call, and missing counts. Result: PASS for both.
+  - Isolation: Claude returned 3/3 CLEAN. Codex returned 3/3 INCONCLUSIVE because the CLI could not complete the probes. D18 remains release-blocking until Codex produces 3/3 CLEAN retained evidence.
+- T4 migration moved from scratch into `tools/` and `tests/`.
+  - Imported terminal events now retain seconds and subscription calls in `usage`.
+  - Gate C selects SQLite before loading the migrated ledger; it no longer reads JSONL twice.
+  - A nonexistent source workspace supplied with an explicit destination DB records `workspace_not_found` in `import_issue`.
+- Evidence: migration suite 8/8 passes; full repository gate 412 tests passes. Proof outputs: `docs/governance/proof/audit_parity.txt` and `docs/governance/proof/isolation.txt`.
+- Not reproduced: Codex isolation cleanliness. Probe execution was inconclusive; no clean claim made.
