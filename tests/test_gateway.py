@@ -136,7 +136,7 @@ class GatewayTest(unittest.TestCase):
         env = make_envelope()
         # Manually corrupt the envelope to have an invalid operation
         env.operation = "invalid_operation"
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -150,7 +150,7 @@ class GatewayTest(unittest.TestCase):
         """Allowed request → 1 call, decision recorded, node_id set."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {
             "authenticated_sender": "supervisor",
             "run_id": "run-1",
@@ -170,7 +170,7 @@ class GatewayTest(unittest.TestCase):
         """Unknown recipient denied in enforce → 0 calls, decision recorded."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope(recipient="unknown_agent")
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -185,7 +185,7 @@ class GatewayTest(unittest.TestCase):
         """Unknown recipient in shadow → 1 call + recorded decision."""
         gw = Gateway(self.workspace, registry=self.registry, mode="shadow")
         env = make_envelope(recipient="unknown_agent")
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -198,7 +198,7 @@ class GatewayTest(unittest.TestCase):
         """Off mode → no policy call side effects but still runs."""
         gw = Gateway(self.workspace, registry=self.registry, mode="off")
         env = make_envelope(recipient="unknown_agent")  # Would fail in enforce
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -211,7 +211,7 @@ class GatewayTest(unittest.TestCase):
         """Duplicate message_id same hash → 0 calls, status duplicate."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope(message_id="msg-1", payload={"prompt": "test prompt"})
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         # First call: allowed
@@ -229,7 +229,7 @@ class GatewayTest(unittest.TestCase):
         """Conflict (same message_id, different hash) → denied, 0 calls."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env1 = make_envelope(message_id="msg-1")
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         # First call
@@ -253,7 +253,7 @@ class GatewayTest(unittest.TestCase):
 
         gw = Gateway(self.workspace, registry=self.registry, control=mock_control, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -265,7 +265,7 @@ class GatewayTest(unittest.TestCase):
         """Non-claude/codex provider → PROVIDER_NOT_EXECUTABLE, 0 calls."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope()
-        route = Route("gemini", "gemini-pro", "cheap", "http")
+        route = Route("gemini", "gemini-pro", "grunt", "http")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -278,7 +278,7 @@ class GatewayTest(unittest.TestCase):
         """Decision includes reason_code and checked_rules."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope(recipient="unknown_agent")
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -292,7 +292,7 @@ class GatewayTest(unittest.TestCase):
         env = make_envelope()
         # Missing authenticated_sender (would fail policy)
         context = {"run_id": "run-1"}
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
 
@@ -303,7 +303,7 @@ class GatewayTest(unittest.TestCase):
         """Result includes unique node_id."""
         gw = Gateway(self.workspace, registry=self.registry, mode="off")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -318,7 +318,7 @@ class GatewayTest(unittest.TestCase):
 
             gw = Gateway(self.workspace, registry=self.registry, mode="off")
             env = make_envelope()
-            route = Route("claude", "haiku", "cheap", "cli")
+            route = Route("claude", "haiku", "grunt", "cli")
             context = {}
 
             gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -332,7 +332,7 @@ class GatewayTest(unittest.TestCase):
 
             gw = Gateway(self.workspace, registry=self.registry, mode="off")
             env = make_envelope()
-            route = Route("codex", "gpt-5.4-mini", "mid", "cli")
+            route = Route("codex", "gpt-5.4-mini", "grunt", "cli")
             context = {"cwd": "/tmp"}
 
             gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -343,7 +343,7 @@ class GatewayTest(unittest.TestCase):
         """Successful run returns worker_result."""
         gw = Gateway(self.workspace, registry=self.registry, mode="off")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -356,7 +356,7 @@ class GatewayTest(unittest.TestCase):
         """decision_recorded flag reflects control.record_decision success."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {
             "authenticated_sender": "supervisor",
             "run_id": "run-1",
@@ -372,7 +372,7 @@ class GatewayTest(unittest.TestCase):
         """Decision includes decision_id."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -385,7 +385,7 @@ class GatewayTest(unittest.TestCase):
         """Decision in result includes decision_id for audit logging."""
         gw = Gateway(self.workspace, registry=self.registry, mode="off")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -403,7 +403,7 @@ class GatewayTest(unittest.TestCase):
 
         gw = Gateway(self.workspace, registry=self.registry, control=mock_control, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -423,7 +423,7 @@ class GatewayTest(unittest.TestCase):
 
         gw = Gateway(self.workspace, registry=self.registry, control=mock_control, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -439,7 +439,7 @@ class GatewayTest(unittest.TestCase):
         now = datetime.now(timezone.utc)
         past_time = (now - timedelta(minutes=1)).replace(tzinfo=None).isoformat() + "Z"
         env = make_envelope(deadline=past_time)
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1", "now": now.replace(tzinfo=None)}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -455,7 +455,7 @@ class GatewayTest(unittest.TestCase):
         now = datetime.now(timezone.utc)
         future_time = (now + timedelta(seconds=30)).replace(tzinfo=None).isoformat() + "Z"
         env = make_envelope(deadline=future_time, budget={"max_seconds": 60})
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"now": now.replace(tzinfo=None)}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -468,7 +468,7 @@ class GatewayTest(unittest.TestCase):
         """context[authenticated_sender] != envelope.sender → SENDER_MISMATCH, 0 calls."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope(sender="supervisor")
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "different_agent", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -481,7 +481,7 @@ class GatewayTest(unittest.TestCase):
         """Decision id should be uuid.uuid4().hex (32 hex chars)."""
         gw = Gateway(self.workspace, registry=self.registry, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -498,7 +498,7 @@ class GatewayTest(unittest.TestCase):
 
         gw = Gateway(self.workspace, registry=registry, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")  # route provider is "claude", mismatch
+        route = Route("claude", "haiku", "grunt", "cli")  # route provider is "claude", mismatch
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)
@@ -522,7 +522,7 @@ class GatewayTest(unittest.TestCase):
 
         gw = Gateway(self.workspace, registry=self.registry, control=mock_control, mode="enforce")
         env = make_envelope()
-        route = Route("claude", "haiku", "cheap", "cli")
+        route = Route("claude", "haiku", "grunt", "cli")
         context = {"authenticated_sender": "supervisor", "run_id": "run-1"}
 
         result = gw.dispatch(env, context=context, runner=fake_runner, route=route)

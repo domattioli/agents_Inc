@@ -189,7 +189,7 @@ class Gateway:
             if self.mode in ("shadow", "enforce"):
                 decision_recorded = self.control.record_decision(decision, run_id, node_id, envelope_hash, envelope.sender, envelope.recipient, envelope.operation)
             return GatewayResult("denied", decision, None, node_id, decision_recorded)
-        if self.mode in ("shadow", "enforce") and route.tier == "frontier" and not context.get("gate_reason"):
+        if self.mode in ("shadow", "enforce") and route.tier == "executive" and not context.get("gate_reason"):
             decision.allowed = False
             decision.reason_code = "FRONTIER_GATE_REQUIRED"
             decision.reason = "Frontier route requires trusted gate reason"

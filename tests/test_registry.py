@@ -57,11 +57,11 @@ class TestRegistry(unittest.TestCase):
             "required": ["claude"],
             "optional": [],
             "tiers": {
-                "cheap": {"claude": "haiku"},
-                "mid": {"claude": "sonnet"},
-                "frontier": {"claude": "fable"}
+                "grunt": {"claude": "haiku"},
+                "workhorse": {"claude": "sonnet"},
+                "executive": {"claude": "fable"}
             },
-            "task_tier": {"extract": "cheap"},
+            "task_tier": {"extract": "grunt"},
             "optional_allowed_tasks": []
         }
 

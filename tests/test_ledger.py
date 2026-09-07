@@ -23,7 +23,7 @@ class LedgerFoundationTest(unittest.TestCase):
             id="n1",
             run_id="r1",
             model="haiku",
-            tier="cheap",
+            tier="grunt",
             task="extract",
             provider="claude",
             parent_id=None,
@@ -36,16 +36,16 @@ class LedgerFoundationTest(unittest.TestCase):
         )
         self.assertEqual(node.id, "n1")
         self.assertEqual(node.model, "haiku")
-        self.assertEqual(node.tier, "cheap")
+        self.assertEqual(node.tier, "grunt")
         self.assertEqual(node.status, "dispatched")
         self.assertIsNone(node.seconds)
 
     def test_idempotent_append_by_node_id(self):
         """T005: Same node written twice collapses to one on load."""
         # Write node twice with same id
-        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id=None, edge_type=None)
-        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id=None, edge_type=None)
         # Load and verify dedup
         ledger = load(self.ws)
@@ -57,7 +57,7 @@ class LedgerFoundationTest(unittest.TestCase):
         # This test asserts a JSONL-specific artifact, so set the mode explicitly
         os.environ["WORKERBEES_STORE"] = "jsonl"
         try:
-            record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+            record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="grunt",
                            task="extract", provider="claude", parent_id=None, edge_type=None)
             ledger_file = self.ws / ".workerbees" / "ledger.jsonl"
             self.assertTrue(ledger_file.exists())
@@ -66,7 +66,7 @@ class LedgerFoundationTest(unittest.TestCase):
 
     def test_record_return_updates_node(self):
         """T002: record_return updates status/seconds/calls."""
-        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="n1", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id=None, edge_type=None)
         record_return(self.ws, node_id="n1", status="returned", seconds=1.5, subscription_calls=1)
         ledger = load(self.ws)
@@ -98,14 +98,14 @@ class LedgerFoundationTest(unittest.TestCase):
         ledger_file = d / "ledger.jsonl"
         # Write two lines with same id, different timestamps/status
         line1 = json.dumps({
-            "id": "n1", "run_id": "r1", "model": "haiku", "tier": "cheap",
+            "id": "n1", "run_id": "r1", "model": "haiku", "tier": "grunt",
             "task": "extract", "provider": "claude", "parent_id": None,
             "edge_type": None, "status": "dispatched", "seconds": None,
             "subscription_calls": None, "gate_reason": None,
             "timestamp": "2026-09-05T12:00:00Z"
         })
         line2 = json.dumps({
-            "id": "n1", "run_id": "r1", "model": "haiku", "tier": "cheap",
+            "id": "n1", "run_id": "r1", "model": "haiku", "tier": "grunt",
             "task": "extract", "provider": "claude", "parent_id": None,
             "edge_type": None, "status": "returned", "seconds": 1.5,
             "subscription_calls": 1, "gate_reason": None,
@@ -127,11 +127,11 @@ class LedgerUserStory1Test(unittest.TestCase):
     def test_worker_and_reviewer_create_2_nodes_with_reviews_edge(self):
         """T006: Worker + reviewer produces 2 nodes + 1 'reviews' edge."""
         # Record worker
-        record_dispatch(self.ws, node_id="worker1", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="worker1", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id=None, edge_type=None)
         record_return(self.ws, node_id="worker1", status="returned", seconds=2.0, subscription_calls=1)
         # Record reviewer
-        record_dispatch(self.ws, node_id="reviewer1", run_id="r1", model="gpt-5-mini", tier="cheap",
+        record_dispatch(self.ws, node_id="reviewer1", run_id="r1", model="gpt-5-mini", tier="grunt",
                        task="review", provider="codex", parent_id="worker1", edge_type="reviews")
         record_return(self.ws, node_id="reviewer1", status="returned", seconds=1.5, subscription_calls=1)
 
@@ -153,11 +153,11 @@ class LedgerUserStory2Test(unittest.TestCase):
     def test_lint_depth_rule(self):
         """T009: Depth > 1 triggers finding."""
         # Create 3-level hierarchy: grandparent -> parent -> child
-        grandparent = Node("gp", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        grandparent = Node("gp", "r1", "haiku", "grunt", "extract", "claude", None, None,
                           "returned", 1.0, 1, None, "2026-09-05T12:00:00Z")
-        parent = Node("p", "r1", "haiku", "cheap", "extract", "claude", "gp", "reviews",
+        parent = Node("p", "r1", "haiku", "grunt", "extract", "claude", "gp", "reviews",
                      "returned", 1.0, 1, None, "2026-09-05T12:00:01Z")
-        child = Node("c", "r1", "haiku", "cheap", "extract", "claude", "p", "reviews",
+        child = Node("c", "r1", "haiku", "grunt", "extract", "claude", "p", "reviews",
                     "returned", 1.0, 1, None, "2026-09-05T12:00:02Z")
         ledger = Ledger(nodes={"gp": grandparent, "p": parent, "c": child}, warnings=[])
 
@@ -168,9 +168,9 @@ class LedgerUserStory2Test(unittest.TestCase):
 
     def test_lint_same_vendor_review_rule(self):
         """T010: Same vendor review triggers finding."""
-        worker = Node("w", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        worker = Node("w", "r1", "haiku", "grunt", "extract", "claude", None, None,
                      "returned", 1.0, 1, None, "2026-09-05T12:00:00Z")
-        reviewer = Node("rv", "r1", "haiku", "cheap", "review", "claude", "w", "reviews",
+        reviewer = Node("rv", "r1", "haiku", "grunt", "review", "claude", "w", "reviews",
                        "returned", 1.0, 1, None, "2026-09-05T12:00:01Z")
         ledger = Ledger(nodes={"w": worker, "rv": reviewer}, warnings=[])
 
@@ -182,7 +182,7 @@ class LedgerUserStory2Test(unittest.TestCase):
 
     def test_lint_frontier_without_gate_rule(self):
         """T011: Frontier tier without gate_reason triggers finding."""
-        frontier_node = Node("f", "r1", "gpt-6-astra", "frontier", "extract", "codex", None, None,
+        frontier_node = Node("f", "r1", "gpt-6-astra", "executive", "extract", "codex", None, None,
                            "returned", 1.0, 1, None, "2026-09-05T12:00:00Z")
         ledger = Ledger(nodes={"f": frontier_node}, warnings=[])
 
@@ -193,7 +193,7 @@ class LedgerUserStory2Test(unittest.TestCase):
 
     def test_lint_frontier_with_gate_passes(self):
         """T011: Frontier tier WITH gate_reason passes."""
-        frontier_node = Node("f", "r1", "gpt-6-astra", "frontier", "extract", "codex", None, None,
+        frontier_node = Node("f", "r1", "gpt-6-astra", "executive", "extract", "codex", None, None,
                            "returned", 1.0, 1, "user requested escalation", "2026-09-05T12:00:00Z")
         ledger = Ledger(nodes={"f": frontier_node}, warnings=[])
 
@@ -203,9 +203,9 @@ class LedgerUserStory2Test(unittest.TestCase):
 
     def test_lint_clean_ledger_no_findings(self):
         """Clean ledger produces zero findings."""
-        worker = Node("w", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        worker = Node("w", "r1", "haiku", "grunt", "extract", "claude", None, None,
                      "returned", 1.0, 1, None, "2026-09-05T12:00:00Z")
-        reviewer = Node("rv", "r1", "gpt-5-mini", "cheap", "review", "codex", "w", "reviews",
+        reviewer = Node("rv", "r1", "gpt-5-mini", "grunt", "review", "codex", "w", "reviews",
                        "returned", 1.0, 1, None, "2026-09-05T12:00:01Z")
         ledger = Ledger(nodes={"w": worker, "rv": reviewer}, warnings=[])
 
@@ -221,9 +221,9 @@ class LedgerUserStory3Test(unittest.TestCase):
 
     def test_json_export_round_trip(self):
         """T014: JSON export and round-trip preserves all fields."""
-        node1 = Node("n1", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        node1 = Node("n1", "r1", "haiku", "grunt", "extract", "claude", None, None,
                     "returned", 2.0, 1, None, "2026-09-05T12:00:00Z")
-        node2 = Node("n2", "r1", "gpt-5-mini", "cheap", "review", "codex", "n1", "reviews",
+        node2 = Node("n2", "r1", "gpt-5-mini", "grunt", "review", "codex", "n1", "reviews",
                     "returned", 1.5, 1, None, "2026-09-05T12:00:01Z")
         original_ledger = Ledger(nodes={"n1": node1, "n2": node2}, warnings=[])
 
@@ -241,9 +241,9 @@ class LedgerUserStory3Test(unittest.TestCase):
 
     def test_mermaid_export(self):
         """T016: Mermaid export has nodes and edges."""
-        node1 = Node("n1", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        node1 = Node("n1", "r1", "haiku", "grunt", "extract", "claude", None, None,
                     "returned", 2.0, 1, None, "2026-09-05T12:00:00Z")
-        node2 = Node("n2", "r1", "gpt-5-mini", "cheap", "review", "codex", "n1", "reviews",
+        node2 = Node("n2", "r1", "gpt-5-mini", "grunt", "review", "codex", "n1", "reviews",
                     "returned", 1.5, 1, None, "2026-09-05T12:00:01Z")
         ledger = Ledger(nodes={"n1": node1, "n2": node2}, warnings=[])
 
@@ -255,10 +255,10 @@ class LedgerUserStory3Test(unittest.TestCase):
     def test_rollup_cost_per_root(self):
         """T017: Rollup computes per-root subtree sums."""
         # Root worker
-        worker = Node("w", "r1", "haiku", "cheap", "extract", "claude", None, None,
+        worker = Node("w", "r1", "haiku", "grunt", "extract", "claude", None, None,
                      "returned", 2.0, 2, None, "2026-09-05T12:00:00Z")
         # Reviewer child
-        reviewer = Node("rv", "r1", "gpt-5-mini", "cheap", "review", "codex", "w", "reviews",
+        reviewer = Node("rv", "r1", "gpt-5-mini", "grunt", "review", "codex", "w", "reviews",
                        "returned", 1.5, 1, None, "2026-09-05T12:00:01Z")
         ledger = Ledger(nodes={"w": worker, "rv": reviewer}, warnings=[])
 
@@ -290,7 +290,7 @@ class LedgerEdgeCasesTest(unittest.TestCase):
         readonly.mkdir(parents=True, exist_ok=True)
         # record_dispatch should not raise even with permission issues
         try:
-            record_dispatch(readonly, node_id="n1", run_id="r1", model="haiku", tier="cheap",
+            record_dispatch(readonly, node_id="n1", run_id="r1", model="haiku", tier="grunt",
                            task="extract", provider="claude", parent_id=None, edge_type=None)
         except Exception as e:
             self.fail(f"record_dispatch raised {type(e).__name__}: {e}")
@@ -298,13 +298,13 @@ class LedgerEdgeCasesTest(unittest.TestCase):
     def test_lint_true_depth_chain(self):
         """Test: lint flags nodes at depth > 1 (b and c), not a."""
         # Build chain: root -> a -> b -> c
-        record_dispatch(self.ws, node_id="root", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="root", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id=None, edge_type=None)
-        record_dispatch(self.ws, node_id="a", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="a", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id="root", edge_type="corrects")
-        record_dispatch(self.ws, node_id="b", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="b", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id="a", edge_type="corrects")
-        record_dispatch(self.ws, node_id="c", run_id="r1", model="haiku", tier="cheap",
+        record_dispatch(self.ws, node_id="c", run_id="r1", model="haiku", tier="grunt",
                        task="extract", provider="claude", parent_id="b", edge_type="corrects")
 
         ledger = load(self.ws)

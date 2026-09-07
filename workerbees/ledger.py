@@ -523,7 +523,7 @@ def lint(ledger: Ledger | None = None, *, source: str = "jsonl",
 
     # Rule 3: frontier_without_gate
     for node in ledger.nodes.values():
-        if node.tier == "frontier":
+        if node.tier == "executive":
             if not node.gate_reason or not node.gate_reason.strip():
                 findings.append(Finding(
                     rule="frontier_without_gate",

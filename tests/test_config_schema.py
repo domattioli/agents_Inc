@@ -37,7 +37,7 @@ class TestConfigSchema(unittest.TestCase):
 
     def test_malformed_routing_raises(self):
         data = json.loads((ROOT / "workerbees" / "routing.json").read_text())
-        del data["tiers"]["cheap"]["codex"]
+        del data["tiers"]["grunt"]["codex"]
         with self.assertRaises(ValueError):
             cs.RoutingSchema.validate(data)
 

@@ -46,19 +46,19 @@ class AstraGroup3Tests(unittest.TestCase):
         self.assertTrue(control.decide_approval(approval, "bob", "approved", "2026-01-01T00:00:00Z"))
         self.assertTrue(control.acquire_lease("run1"))
         self.assertTrue(control.release_lease("run1"))
-        self.assertTrue(ledger.record_dispatch(self.workspace, node_id="frontier", run_id="run1", model="m", tier="frontier", task="review", provider="p", parent_id=None, edge_type=None, gate_reason="quality gate"))
+        self.assertTrue(ledger.record_dispatch(self.workspace, node_id="executive", run_id="run1", model="m", tier="executive", task="review", provider="p", parent_id=None, edge_type=None, gate_reason="quality gate"))
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT released FROM reservation WHERE request_id='node1'").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT approver,decision FROM approval WHERE approval_id=?", (approval,)).fetchone(), ("bob", "approved"))
             self.assertEqual(conn.execute("SELECT count(*) FROM approval_rule WHERE approval_id=?", (approval,)).fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT count(*) FROM lease").fetchone()[0], 0)
-            self.assertEqual(conn.execute("SELECT reason FROM frontier_gate WHERE node_id='frontier'").fetchone()[0], "quality gate")
+            self.assertEqual(conn.execute("SELECT reason FROM frontier_gate WHERE node_id='executive'").fetchone()[0], "quality gate")
 
     def test_row14_sqlite_mode_ignores_stale_jsonl(self):
         os.environ["WORKERBEES_STORE"] = "jsonl"
-        ledger.record_dispatch(self.workspace, node_id="old", run_id="r", model="m", tier="cheap", task="t", provider="p", parent_id=None, edge_type=None)
+        ledger.record_dispatch(self.workspace, node_id="old", run_id="r", model="m", tier="grunt", task="t", provider="p", parent_id=None, edge_type=None)
         os.environ["WORKERBEES_STORE"] = "sqlite"
-        ledger.record_dispatch(self.workspace, node_id="new", run_id="r", model="m", tier="cheap", task="t", provider="p", parent_id=None, edge_type=None)
+        ledger.record_dispatch(self.workspace, node_id="new", run_id="r", model="m", tier="grunt", task="t", provider="p", parent_id=None, edge_type=None)
         self.assertEqual(set(ledger.load(self.workspace).nodes), {"new"})
 
     def test_row15_null_model_route_is_idempotent(self):
@@ -71,8 +71,8 @@ class AstraGroup3Tests(unittest.TestCase):
 
     def test_row16_review_is_graph_edge_not_spawn_and_binds_artifact(self):
         os.environ["WORKERBEES_STORE"] = "sqlite"
-        ledger.record_dispatch(self.workspace, node_id="worker", run_id="r", model="m1", tier="cheap", task="extract", provider="p1", parent_id=None, edge_type=None)
-        ledger.record_dispatch(self.workspace, node_id="review", run_id="r", model="m2", tier="mid", task="review", provider="p2", parent_id="worker", edge_type="reviews", artifact_hash="a" * 64, artifact_size=12)
+        ledger.record_dispatch(self.workspace, node_id="worker", run_id="r", model="m1", tier="grunt", task="extract", provider="p1", parent_id=None, edge_type=None)
+        ledger.record_dispatch(self.workspace, node_id="review", run_id="r", model="m2", tier="workhorse", task="review", provider="p2", parent_id="worker", edge_type="reviews", artifact_hash="a" * 64, artifact_size=12)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM lineage WHERE child_id='review'").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT edge_type FROM graph_edge WHERE source_id='review'").fetchone()[0], "reviews")
