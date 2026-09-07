@@ -320,3 +320,15 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Updated: `CLAUDE.md` labor-rule table, `CONTEXT.md` (Rung/Run spec/Derivation), `docs/governance/ROUTING-RANKING.md` (table of record), `.specify/memory/constitution.md` P2/P3/P10 (v1.6.0 -> v1.7.0, MINOR — renamed principle content, no meaning reversed), `skills/workerbee/SKILL.md` Step 11/relay-chain text.
 - Left untouched, out of scope: historical entries in this file (D25-D33) and past `specs/*/` artifacts, which record rulings made under the old naming and are not retroactively rewritten (append-only); `docs/PLAN-MVP.md`, `.claude/permissions.md`, `skills/codex-bridge/reference/routing-policy.md`/`budget-mode.md`, `docs/governance/FREEZE-002.md` — each either uses "supervisor"/"orchestrator" as generic English or as an unrelated code/loop term, not the ladder rung name.
 - Source: operator ruling 2026-09-07 (chat instruction, AskUserQuestion-confirmed: top rung -> "Executive"; second rung -> "orchestrator and supervisor are synonymous, both applied to second rung").
+
+## D35 — Temporary fork of DomI's speckit-pipeline v1.5 into this repo (2026-09-07)
+
+- `skills/speckit-pipeline/` (v1.5, forked from `DomI@476e141`, `feat/pipeline-model-classes`, PR domattioli/DomI#466, unmerged at fork time) now lives in this repo's tree.
+- **This is a deliberate, explicit exception to DomI's own binding rule** (`DomI/CLAUDE.md` "Never vendor DomI skills into consumer trees" — the exact incident class that produced DomI #326, a vendored copy silently drifting from canon and breaking a release gate ~3 days undetected). Recommended alternative (session-scope install from the branch, no repo copy) was offered and explicitly declined by the operator in favor of the in-repo fork.
+- Rationale: PR #466 has zero test coverage of its new v1.5 class-dispatch logic (no CI lane exercises it, the PR's own compliance-lane checkbox is unchecked) and sets new mode as **default** — merging as-is would ship untested default behavior to every DomI consumer on next sync, not just this repo. Forking here lets it be fleshed out and tested against this repo's real `docs/governance/ROUTING-RANKING.md` before that happens.
+- Exit criteria (one of):
+  1. Fork proven out here (real pipeline runs, new-mode class dispatch verified against this repo's rung table) -> changes relayed upstream to PR #466 -> PR merges to DomI `development` -> this repo's fork is deleted, reverting to the normal DomI-sync path (`~/.claude/skills/speckit-pipeline` at user scope, not a repo copy).
+  2. Fork abandoned -> deleted, no upstream relay.
+  3. Neither happens within a reasonable window -> `LESSON-CANDIDATE`-tag it at next relay-up as stale exception needing operator re-ruling.
+- Until one of those fires: this repo's `skills/speckit-pipeline/SKILL.md` carries an explicit fork-provenance banner (source commit, PR link, this D-number) so it is never mistaken for original canon or silently treated as authoritative.
+- Source: operator ruling 2026-09-07 (chat instruction + AskUserQuestion, explicitly chose "fork into this repo's tree anyway" over the session-scope-install alternative).
