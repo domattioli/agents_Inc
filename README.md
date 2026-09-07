@@ -1,95 +1,162 @@
 # agents_Inc
 
-**Pool free Gemini, Mistral, and OpenRouter capacity with already-paid Claude and Codex subscriptions in one governed delegation pipeline. The objective is more accepted work per dollar, without accepting lower-quality work as a cost-saving measure.**
+Pool free model capacity with existing Claude and Codex subscriptions to increase accepted work per dollar without lowering the verification standard.
 
-An accepted task is one that passes the required verification and review gates. The project defines cost as dollars per accepted task against an all-frontier baseline, with seeded faults as the quality floor. Savings and quality outcomes have not yet been measured; [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) explicitly prohibits reporting a savings percentage before both target workflows are measured.
+![Status: pre-MVP / WIP](https://img.shields.io/badge/status-pre--MVP%20%2F%20WIP-orange)
+![Tests: 462 passing locally](https://img.shields.io/badge/tests-462%20passing%20locally-brightgreen)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-blue)](https://github.com/domattioli/agents_Inc/issues)
 
-Formerly `agents_for_dummies`. Renamed 2026-09-07; the repository history is unchanged.
+- [Why pool model capacity](#why-pool-model-capacity)
+- [How the governed pool works](#how-the-governed-pool-works)
+- [Project status](#project-status)
+- [Where it fits](#where-it-fits)
+- [Getting started](#getting-started)
+- [Appendix: HTTP bridge](#appendix-http-bridge)
 
-## Pool capacity before buying more
+## Why pool model capacity
 
-The routing system separates routine work from expensive supervision:
+Delegated work can look successful while being wrong. In this project's own build history, two defects (a wrong `resume` argument order, a missing `--skip-git-repo-check`) passed a subagent's own smoke tests and were only caught when a supervisor read the code directly ([specs/001-codex-delegation-regime/tasks.md](specs/001-codex-delegation-regime/tasks.md)).
 
-- The four-rung ladder—Grunt, Workhorse, Orchestrator, and Executive—pairs a Claude model with a Codex model at each rung. [`docs/governance/ROUTING-RANKING.md`](docs/governance/ROUTING-RANKING.md) is the table of record.
-- Claude and Codex are the required providers. Gemini, Mistral, and OpenRouter are optional capacity sources (`workerbees/routing.json`).
-- In the current router, optional providers appear only at the Grunt tier and are permitted only for `extract` and `summarize`. This boundary is enforced by `workerbees/router.py`, not merely documented as policy.
-- The broader budget modality keeps ladder models for supervision, orchestration, review, and fallback while assigning eligible routine work to free grunts. Free-grunt review must come from a different upstream vendor (`docs/DECISIONS.md` D27 and `CONTEXT.md`). The current router implements only the narrower optional-provider path described above.
+`agents_Inc` pools free Gemini, Mistral, and OpenRouter capacity with already-paid Claude and Codex subscriptions. The goal is more accepted work per dollar. Cheap models handle eligible routine work. Costlier models supervise, review, and take over only when evidence justifies escalation.
 
-Promotion to a more expensive rung requires a recorded gate reason, repeated failed checks, or a provider quota pause. Worker confidence alone is not a promotion reason (`CLAUDE.md`, `docs/DECISIONS.md` D27).
+An accepted task must pass independent checks. Savings and accuracy have not yet been measured, so the project does not claim a savings percentage or quality improvement ([docs/PLAN-MVP.md](docs/PLAN-MVP.md)).
 
-## What makes the pool trustworthy
+Formerly `agents_for_dummies`. The repository was renamed on 2026-09-07 without rewriting its history.
 
-Cheap capacity is useful only if its output can be accepted on evidence rather than self-report.
+## How the governed pool works
 
-- **Deterministic verification.** `workerbees/verifier.py` checks source-bound claims before semantic review.
-- **Cross-vendor review.** `workerbees/reviewer.py` excludes the worker’s provider when selecting a reviewer and returns `same_vendor` without making a model call if a caller supplies a same-provider route.
-- **Audit ledger.** `workerbees/ledger.py` records dispatch and return events, lineage, review relationships, gate reasons, and cost rollups. Storage is selectable as JSONL, normalized SQLite, or both through `WORKERBEES_STORE`; the default is `both`.
-- **Artifact binding.** `workerbees/artifacts.py` stores deliverables by SHA-256 so a review can remain tied to the exact bytes examined. The ledger owns what happened; the artifact store owns what was produced. Local artifact storage is enabled by default through `WORKERBEES_ARTIFACTS=local`, with manual retention and purge rules documented in `docs/DECISIONS.md` D37/D38.
+Routing uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `workerbees/router.py` enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)).
 
-The mechanism does not treat a worker’s PASS or FAIL as the final verdict. Acceptance follows verifier and reviewer results (`CONTEXT.md`, `workerbees/pipeline.py`).
+Moving to a costlier rung requires a recorded reason: repeated failed checks or a provider quota pause. Worker confidence is not an escalation reason.
 
-## Relationship to vendor-native tooling
+Verification runs in this order:
 
-This project is positioned as an integration layer above vendor-native orchestration tools, not as a competing subagent framework. Claude subagents, skills, hooks, and Agent SDK components—and the corresponding OpenAI tools—can remain the execution primitives. `agents_Inc` adds routing across provider boundaries, pools third-party free capacity with subscription-backed models, and enforces reviewer independence at the provider boundary. That differentiation is architectural reasoning based on `workerbees/routing.json` and `workerbees/reviewer.py`, not a measured comparison with vendor-native products.
+1. `workerbees/verifier.py` checks cited claims against source text without calling a model.
+2. `workerbees/reviewer.py` performs semantic review using a different provider. It returns `same_vendor` without making a model call when reviewer and worker providers match.
+3. `workerbees/ledger.py` records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite.
 
-## Status
+A worker's own PASS or FAIL is never the final verdict. Acceptance follows verifier and reviewer results recorded in the ledger ([workerbees/pipeline.py](workerbees/pipeline.py)).
 
-**Pre-MVP and under active development.** The build plan and cut line live in [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md).
+Today's schema still requires a Claude model name and a Codex model name at every tier; allowing either subscription to be optional is a goal of the pooling design, not current behavior ([workerbees/config_schema.py](workerbees/config_schema.py), [workerbees/keys.py](workerbees/keys.py)).
 
-The work is moving toward more deterministic routing, acceptance, budgeting, and recovery, together with human-factors usability: guided setup, explicit and resumable human intervention, bounded receipts, and clear separation between verified output and decisions that still require a person. These are plan targets, not completed usability or performance claims (`docs/PLAN-MVP.md`).
+## Project status
 
-Implemented and tested today:
+**Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md).
 
-- The delegation mechanism, routing ladder, and supervision discipline (`skills/workerbee/`, `workerbees/`).
-- The governed dispatch gateway with envelope, policy, registry, and budget checks in `off`, `shadow`, or `enforce` mode. `WORKERBEES_GOVERNANCE` still defaults to `off`, so the governed path is not exercised by default (`workerbees/gateway.py`, `docs/DECISIONS.md` D37).
-- The local content-addressed artifact store, enabled by default with `WORKERBEES_ARTIFACTS=local` (`workerbees/artifacts.py`, `docs/DECISIONS.md` D38).
-- 462 automated tests, passing (`python3 -m unittest discover -s tests`; recorded in `docs/DECISIONS.md` D38).
+Built and tested today:
 
-Not yet built are the Bindle registry and distribution backend, signing, and most later phases in [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md). Measured savings and accuracy results are also pending. This README distinguishes implemented behavior from planned behavior.
+- The four-rung router and optional-provider restrictions.
+- Deterministic citation verification and enforced cross-vendor semantic review.
+- An append-only JSONL and SQLite ledger.
+- A local SHA-256 content-addressed artifact store.
+- The governed dispatch gateway, including envelope, policy, registry, and budget checks.
+- The live `agent.sh`/`agent_runner.py` dispatch path (shells out to the Codex CLI directly; `bridge.py` is a separate HTTP path for a second device, see appendix).
+- 462 automated tests passing locally with `python3 -m unittest discover -s tests`.
 
-## Two halves
+`WORKERBEES_GOVERNANCE` still defaults to `off`. The governed path therefore exists but is not enabled by default ([workerbees/gateway.py](workerbees/gateway.py)).
 
-| Layer | Owns | Contains |
-|---|---|---|
-| **Mechanism** (`skills/codex-bridge/`, `workerbees/gateway.py`, `workerbees/router.py`) | Transport, retries, cost logging, model selection | Code, no judgment |
-| **Judgment** (`skills/workerbee/`) | Tier choice, trust, verification discipline | Prose instructions, no transport code |
+The `gask.sh`, `mask.sh`, and `oask.sh` scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
 
-The split permits transport changes without rewriting the supervision rules, and supervision changes without replacing the transport layer.
+Bindle sibling-artifact-store integration, using the `deislabs/bindle-format` content-addressed storage backend, is the next planned priority after this README pass. Work has not started.
 
-## Who this is for
+## Where it fits
 
-This repository is for developers combining Claude, Codex, Gemini, Mistral, or OpenRouter capacity who need to control incremental model spend and verify delegated work independently. The relevant implementation is inspectable in `workerbees/router.py`, `workerbees/policy.py`, `workerbees/reviewer.py`, `workerbees/ledger.py`, and `skills/workerbee/SKILL.md`.
+`agents_Inc` is an integration and governance layer above provider tools. It does not replace their CLIs or instruction formats.
 
-## Documentation
+| Provider tool | Used here | Changed | Notes |
+|---|---|---|---|
+| Claude Skills (SKILL.md format) | Yes | No — standard frontmatter | Packages routing and verification judgment as reusable prose (`skills/workerbee`, `skills/codex-bridge`) |
+| Claude subagents / Agent tool | No | — | Single-vendor; cannot enforce cross-vendor review by itself |
+| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard `routing.json` changes |
+| Model Context Protocol (MCP) | No | — | Dispatch uses an HTTP bridge and CLI wrapper |
+| OpenAI Codex CLI | Yes | Wrapped | `bridge.py` adds a persistent-thread HTTP session; `agent.sh` and `agent_runner.py` add a governed asynchronous job queue bound to the ledger |
+| OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
+| Built here, no vendor equivalent | — | — | `ledger.py` (audit trail), `reviewer.py` (cross-vendor enforcement), `verifier.py` (deterministic pre-check), `artifacts.py` (content-addressed store), `router.py`/`routing.json` (tier and vendor routing) |
+
+The project has not yet measured cost savings or accuracy against its baseline. Local passing tests establish implementation behavior, not production reliability. Governance also remains off by default.
+
+This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
+
+## Getting started
+
+### Install and configure providers
+
+Run the project from the repository root. Its Python code uses the standard library, so there is no Python package-install step.
+
+1. Install the Claude Code CLI, run `claude`, and log in with an Anthropic subscription.
+2. Install the Codex CLI and run `codex login` with a ChatGPT/OpenAI account.
+3. Optionally configure free-tier providers:
+
+```bash
+python3 -m workerbees.keys gemini
+python3 -m workerbees.keys mistral
+python3 -m workerbees.keys openrouter
+```
+
+Each optional-provider command opens the provider's key page and requests a hidden paste. Press Enter to skip that provider. Stored keys go to `~/.config/workerbees/.env` with mode `0600`; the agent does not receive the raw key.
+
+Never place a key in a command argument or model prompt. Skipping an optional key is not an error. It simply removes that provider from the available pool. Current routing can dispatch optional providers only for Grunt-tier `extract` and `summarize` tasks.
+
+### Quick start
+
+1. Exercise governed routing, policy checks, and ledger recording without provider keys:
+
+```bash
+PYTHONPATH=. python3 tools/governance_demo.py --fake
+```
+
+The demo runs a fake worker and prints the resulting decision records.
+
+2. After configuring the provider CLIs, submit a real Codex job:
+
+```bash
+skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
+```
+
+### How it feels to use
+
+**Current behavior**
+
+```bash
+skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
+```
+
+You receive raw output and decide whether to trust it or invoke the reviewer path manually. Both Claude and Codex logins must exist even when this call uses only Codex.
+
+**Future beta goal — not yet built**
+
+```text
+submit task → choose cheapest eligible provider → independent review → verified result + ledger entry
+```
+
+The planned interface will work with whichever paid provider is available, use a second paid or free vendor when eligible for review, and remove the manual acceptance step.
+
+### Requirements
+
+- Python 3.9 or later. The test suite also runs on Python 3.14 ([specs/001-codex-delegation-regime/plan.md](specs/001-codex-delegation-regime/plan.md), [specs/002-dispatch-graph-ledger/plan.md](specs/002-dispatch-graph-ledger/plan.md)).
+- Bash 3.2 or later. The lifecycle and client scripts support macOS system Bash.
+- Claude Code CLI, authenticated through an Anthropic subscription.
+- Codex CLI, authenticated through a ChatGPT/OpenAI account.
+- Optional: Gemini, Mistral, or OpenRouter API credentials. A missing optional key skips that provider rather than blocking the system.
+
+No LICENSE file exists yet.
+
+### Documentation map
 
 | File | Reader |
 |---|---|
-| [`docs/START-HERE.md`](docs/START-HERE.md) | New to the system, plain language |
-| [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) | Operator or agent, dense reference |
-| [`docs/EXTENDING.md`](docs/EXTENDING.md) | Adding a vendor, model, task class, or domain |
-| [`docs/PLAN-MVP.md`](docs/PLAN-MVP.md) | Build plan, cut line, architecture, and phases |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Binding rulings, rationale, and evidence |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Continuing the work in a fresh session |
-| [`skills/workerbee/SKILL.md`](skills/workerbee/SKILL.md) | Full supervision discipline |
+| [docs/START-HERE.md](docs/START-HERE.md) | New to the system, plain language |
+| [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | Operator or agent, dense reference |
+| [docs/EXTENDING.md](docs/EXTENDING.md) | Adding a vendor, model, task class, or domain |
+| [docs/PLAN-MVP.md](docs/PLAN-MVP.md) | Build plan, cut line, architecture, and phases |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Binding rulings, rationale, and evidence |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | Continuing the work in a fresh session |
+| [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) | Full supervision discipline |
 
-## Quick start
+## Appendix: HTTP bridge
 
-```bash
-# submit one Codex job, wait for it, and print the answer
-skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
-
-# watch a running job in another pane
-skills/codex-bridge/scripts/watch.sh <logfile>
-
-# poll a job's state without reading its output
-skills/codex-bridge/scripts/poll.sh --once --pid-match <pat> --log <log> --out <out>
-```
-
-Provider credentials belong in credential files, not command arguments or model prompts. See the scripts under `skills/codex-bridge/scripts/` for the supported provider paths.
-
-## HTTP bridge
-
-`bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests (`bridge.py`).
+`bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests ([bridge.py](bridge.py)).
 
 <details>
 <summary>Bridge API reference</summary>
@@ -101,7 +168,7 @@ export CODEX_BRIDGE_TOKEN=$(openssl rand -hex 32)
 python3 bridge.py --port 8787
 ```
 
-`--workdir DIR` sets the Codex working directory; the default is the current directory. The directory need not be a Git repository because the bridge passes `--skip-git-repo-check`. The default bind address is `127.0.0.1`, the default execution timeout is 60 seconds, and the default Codex sandbox is `workspace-write` (`bridge.py`).
+`--workdir DIR` sets the Codex working directory; the default is the current directory. The directory need not be a Git repository because the bridge passes `--skip-git-repo-check`. The default bind address is `127.0.0.1`, the default execution timeout is 60 seconds, and the default Codex sandbox is `workspace-write`.
 
 ### Persistent sessions
 
@@ -141,7 +208,7 @@ curl -X POST http://127.0.0.1:8787/prompt \
   -d '{"prompt":"explain currying in Haskell","model":"gpt-5-codex"}'
 ```
 
-The request body accepts `prompt` (required string), `model` (optional), and `reset` (optional boolean). A successful response contains `response`, `thread_id`, `usage`, and session-restart metadata where applicable (`bridge.py`).
+The request body accepts `prompt` (required string), `model` (optional), and `reset` (optional boolean). A successful response contains `response`, `thread_id`, `usage`, and session-restart metadata where applicable.
 
 ### Status codes
 
@@ -163,12 +230,6 @@ A private network or authenticated tunnel can carry the bridge to another device
 
 ### Security
 
-The bearer token is the bridge’s authentication gate, and successful requests can direct a Codex process in the configured working directory and sandbox. Protect the token as a secret, rotate it when exposed, and retain the default `127.0.0.1` binding unless an authenticated network layer is in place (`bridge.py`).
+The bearer token is the bridge's authentication gate. Successful requests can direct a Codex process in the configured working directory and sandbox. Protect the token as a secret, rotate it when exposed, and retain the default `127.0.0.1` binding unless an authenticated network layer is in place.
 
 </details>
-
-## Requirements
-
-- Python 3.9 or later (`specs/001-codex-delegation-regime/plan.md`).
-- Claude Code and Codex CLIs installed and authenticated for the required providers (`workerbees/routing.json`, `CONTEXT.md`).
-- Optional Gemini, Mistral, or OpenRouter credentials when using those free-tier routes. Missing optional credentials skip those providers; confidential inputs require explicit workspace authorization (`CONTEXT.md`, `workerbees/router.py`).
