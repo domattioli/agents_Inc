@@ -13,6 +13,23 @@ from .verifier import Report, verify, passed, paragraphs, check_draft
 from .keys import available_providers
 from . import doctor
 from . import ledger
+from . import artifacts
+
+
+def _bind_output(workspace: Path, node_id: str | None, draft: str, receipt: dict) -> None:
+    """C1 (specs/006 S5.1): bind worker/correction output to its node. Mode-independent --
+    called after every _process_worker_result, regardless of governance mode or outcome.
+    Never raises (inherits capture()/record_output() fail-open posture)."""
+    a = receipt.setdefault("artifacts", {"stored": 0, "unstored": 0, "backend": "off"})
+    if not draft or not node_id:
+        return
+    mode = os.environ.get("WORKERBEES_ARTIFACTS", "off")
+    a["backend"] = mode
+    if mode != "local":
+        return
+    cap = artifacts.capture(workspace, draft.encode())
+    ledger.record_output(workspace, node_id=node_id, sha256=cap.sha256, size=cap.size, role="output")
+    a["stored" if cap.stored else "unstored"] += 1
 
 EXTRACT_PROMPT = (
     "You are a {mode} document analyst. Source id: {source_id}. Paragraphs are numbered p1..pN, "
@@ -211,6 +228,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     if not dispatch_ok or not return_ok:
         receipt["ledger_error"] = "write_failed"
     receipt.update(worker_receipt)
+    _bind_output(workspace, worker_node_id, draft, receipt)
     if status != "needs-review":
         return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
     if not review_enabled:
@@ -222,6 +240,12 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         from .reviewer import review
         reviewer_route = pick_model("review", "workhorse", avail, is_authorized(workspace), exclude_provider=route.provider)
 
+        # C2 (specs/006 S5.1): hash the review candidate once, share it across the
+        # off-mode ledger write and the review() call in every governance mode --
+        # replaces the duplicated hashlib.sha256 calls this used to make independently.
+        draft_hash = hashlib.sha256(draft.encode()).hexdigest()
+        draft_size = len(draft.encode())
+
         # Record reviewer dispatch and return (T019) only in off mode; gateway owns ledger in shadow/enforce
         reviewer_node_id = None
         if reviewer_route and gov_mode == "off":
@@ -229,19 +253,19 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
             dispatch_ok = ledger.record_dispatch(workspace, node_id=reviewer_node_id, run_id=run_id, model=reviewer_route.model,
                                   tier=reviewer_route.tier, task="review", provider=reviewer_route.provider,
                                   parent_id=worker_node_id, edge_type="reviews", gate_reason=None,
-                                  artifact_hash=hashlib.sha256(draft.encode()).hexdigest(),
-                                  artifact_size=len(draft.encode()))
+                                  artifact_hash=draft_hash,
+                                  artifact_size=draft_size)
             if not dispatch_ok:
                 receipt["ledger_error"] = "write_failed"
             start_time = time.monotonic()
 
         if gov_mode == "off":
             rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
-                       governance_mode="off")
+                       governance_mode="off", artifact_hash=draft_hash, artifact_size=draft_size)
         else:
             rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
                        governance_mode=gov_mode, gateway=_gateway, registry=_registry, workspace=workspace, run_id=run_id, parent_id=worker_node_id, confidential=confidential,
-                       run_budget=run_budget)
+                       run_budget=run_budget, artifact_hash=draft_hash, artifact_size=draft_size)
 
         if reviewer_node_id:
             elapsed = time.monotonic() - start_time
@@ -291,6 +315,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         receipt.pop("uncited_sentences", None)
         receipt.pop("uncited", None)
         receipt.update(worker_receipt)
+        _bind_output(workspace, worker_node_id, draft, receipt)
         if status != "needs-review":
             if status in {"paused", "failed"}:
                 return BriefResult(status, draft=prior_draft, report=prior_rep, route=route, receipt=receipt)

@@ -300,6 +300,37 @@ def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: floa
         store.conn.commit()
 
 
+def record_output(workspace: Path, *, node_id: str, sha256: str, size: int,
+                  role: str = "output") -> bool:
+    """Bind a produced artifact to its node (FR-010). sqlite-only fact -- node_artifact
+    has no JSONL projection. Idempotent (duplicate insert swallowed). Never raises (FR-008).
+    First caller of Store.insert_node_artifact (previously dead code)."""
+    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
+    if store_mode not in ("jsonl", "sqlite", "both"):
+        raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+    if store_mode == "jsonl":
+        return True  # nothing to do; node_artifact is sqlite-only
+
+    try:
+        from workerbees.store import Store
+        import sqlite3
+
+        d = workspace / ".workerbees"
+        d.mkdir(parents=True, exist_ok=True)
+        db_path = d / "workerbees.db"
+
+        with Store(db_path) as store:
+            store.ensure_artifact(sha256, size)
+            try:
+                store.insert_node_artifact(node_id, sha256, role)
+            except sqlite3.IntegrityError:
+                pass  # already bound (idempotent)
+            store.conn.commit()
+        return True
+    except Exception:
+        return False  # Swallow all errors per FR-008
+
+
 def load(workspace: Path) -> Ledger:
     """Load ledger from JSONL file or sqlite DB; dedupe by node id.
 

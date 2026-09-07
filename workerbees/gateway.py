@@ -10,7 +10,8 @@ from workerbees.envelope import Envelope, Decision, validate, canonical_hash
 from workerbees.registry import Registry, RegistryError
 from workerbees.policy import evaluate, PolicyError
 from workerbees.control import Control, ControlError
-from workerbees.ledger import record_dispatch, record_return
+from workerbees.ledger import record_dispatch, record_return, record_output
+from workerbees import artifacts as _artifacts
 from workerbees.router import Route
 from workerbees.adapters import base, claude, codex
 
@@ -303,7 +304,15 @@ class Gateway:
 
         # Step 16: Store artifact only if output non-empty
         if worker_result.status in ("returned", "paused") and worker_result.output:
-            output_hash = hashlib.sha256(worker_result.output.encode("utf-8")).hexdigest()
+            # C3 (specs/006 S5.1): capture bytes when WORKERBEES_ARTIFACTS=local, always
+            # bind the hash to the node (node_artifact); unchanged replay-key path below.
+            output_bytes = worker_result.output.encode("utf-8")
+            if os.environ.get("WORKERBEES_ARTIFACTS", "off") == "local":
+                cap = _artifacts.capture(self.workspace, output_bytes)
+                output_hash = cap.sha256
+            else:
+                output_hash = hashlib.sha256(output_bytes).hexdigest()
+            record_output(self.workspace, node_id=node_id, sha256=output_hash, size=len(output_bytes), role="output")
             try:
                 self.control.store_artifact(envelope.message_id, envelope_hash, output_hash)
             except ControlError:
