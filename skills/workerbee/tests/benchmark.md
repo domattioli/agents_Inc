@@ -1,4 +1,4 @@
-# Benchmark — `budget-mode-fleet`
+# Benchmark — `workerbee`
 
 > Generated from `templates/benchmark.md.tmpl` (mandate per DomI #21, 2026-05-18).
 > Every version bump in `MANIFEST.md` must add a row here justifying the bump with a measured delta.
@@ -56,4 +56,4 @@ marker count equal to item count per row).
 
 ---
 
-_Benchmark for skill `budget-mode-fleet`. SKILL.md: `../SKILL.md`. Issue: #21._
+_Benchmark for skill `workerbee`. SKILL.md: `../SKILL.md`. Issue: #21._
