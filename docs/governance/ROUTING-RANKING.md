@@ -15,10 +15,12 @@ Working routing ranking, not a universal benchmark ranking. 1 = best fit for tha
 
 ## Rungs
 
+Renamed 2026-09-07 (operator ruling, D34): top rung Supervisor -> Executive. Orchestrator gained "Supervisor" as a synonym/invocation keyword for the same rung, same role — not a new rung, not a name swap with Orchestrator.
+
 | Rung | Default | Escalate to | Second opinion when |
 |---|---|---|---|
-| Supervisor | Fable 5 or Astra | the other frontier model | final decisions, conflicting results, high-risk actions |
-| Orchestrator | Opus 5 or Sol | Fable 5 or Astra | task decomposition ambiguous, dependencies complex |
+| Executive | Fable 5 or Astra | the other frontier model | final decisions, conflicting results, high-risk actions |
+| Orchestrator / Supervisor | Opus 5 or Sol | Fable 5 or Astra | task decomposition ambiguous, dependencies complex |
 | Workhorse | Sonnet 5 or Terra | Opus 5 or Sol | coding, research, or synthesis has meaningful uncertainty |
 | Grunt | Haiku 4.5 or Luna | the other cheap model | outputs anomalous or validation cheap |
 

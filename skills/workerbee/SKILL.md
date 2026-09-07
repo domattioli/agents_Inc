@@ -425,7 +425,7 @@ Agent-facing text = `caveman ultra`. Reader is a model.
     Promotion/escalation triggers: (a) 2 failed checks, same (task, delegate);
     (b) provider quota pause = 1 failed attempt; (c) Lead assigns w/ recorded
     gate reason. Second opinion (same rung, the pair, blind — not promotion):
-    Supervisor reason = conflicting results | irreversible act | risk eval.
+    Executive reason = conflicting results | irreversible act | risk eval.
     **Free-tier vendors** (openrouter free, gemini free, mistral free,
     `gpt-5.4-mini` free routes) need none — no cost to justify against.
     No trigger applies → `SECOND-OPINION JUSTIFICATION: not applicable —
@@ -451,14 +451,14 @@ Agent-facing text = `caveman ultra`. Reader is a model.
     surfacing a finding w/ canon-doc implications (`CLAUDE.md`/`CONTEXT.md`/
     `docs/DECISIONS.md`/any `SKILL.md`/constitution) tags it
     `LESSON-CANDIDATE` in its report, not buried in prose. Relays exactly one
-    rung up (Grunt→Workhorse→Orchestrator→Supervisor), never skipping. Each
+    rung up (Grunt→Workhorse→Orchestrator→Executive), never skipping. Each
     receiving rung either drops it (state why) or relays further. Before it
-    reaches Supervisor, a scout check (Step 1 Scout mode) must confirm it
+    reaches Executive, a scout check (Step 1 Scout mode) must confirm it
     doesn't already exist in canon + doesn't contradict canon — whoever
     relays is responsible for that check having happened somewhere in the
-    chain. **Only Supervisor (fable/astra) presents a survivor to the
+    chain. **Only Executive (fable/astra) presents a survivor to the
     operator** — one concise paragraph: lesson, evidence, scout's
-    dedup/contradiction result, target canon file. Supervisor may land
+    dedup/contradiction result, target canon file. Executive may land
     small/minor doc fixes itself; anything material needs operator sign-off,
     same bar as amending `CLAUDE.md` or the constitution. Not a GitHub issue —
     relay up the rung chain, not file sideways (operator ruling 2026-09-06).
@@ -487,7 +487,7 @@ Include, roughly this order:
 14. PLAN CONTRACT (MUST 11), if deliverable is a delegation-capable plan —
     model + gates per task
 15. LESSON-CANDIDATE tag (MUST 14), if applicable — one rung up, never
-    sideways; only Supervisor presents to operator
+    sideways; only Executive presents to operator
 16. OUTPUT SHAPE — fenced template
 
 Token-vigilance clauses that measurably help on expensive tiers: cap tool
