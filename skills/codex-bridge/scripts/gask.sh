@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # codex-bridge gask: Send a prompt to Gemini API
-# Usage: gask.sh [--tier digest|cheap|deep] [--file PATH]... [--glob PATTERN] [--raw] ["prompt"]
+# Usage: gask.sh [--tier digest|cheap|deep] [--file PATH]... [--glob PATTERN] [--raw] [--plain] ["prompt"]
 
 if [[ "${WORKERBEES_GOVERNANCE:-off}" != "off" ]]; then
   echo "gask: REFUSED — legacy wrappers are disabled in governed lanes" >&2
@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODEL=""
 TIER="digest"
 RAW=false
+PLAIN=false
 GASK_TIMEOUT="${GASK_TIMEOUT:-900}"
 GASK_CONNECT_TIMEOUT="${GASK_CONNECT_TIMEOUT:-10}"
 PROMPT=""
@@ -82,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       RAW=true
       shift
       ;;
+    --plain)
+      PLAIN=true
+      shift
+      ;;
     *)
       # Positional: prompt text
       PROMPT="$1"
@@ -101,6 +106,13 @@ if [[ -z "$PROMPT" ]]; then
 fi
 
 MODEL=$(tier_to_model "$TIER")
+
+# Wrap prompt with plain-language instruction if --plain is set
+if [[ "$PLAIN" == true ]]; then
+  PROMPT="Rewrite the following text in plain, clear language. Preserve every fact, number, and code block exactly. Do not add filler, hedging, or exclamation points. Keep it concise.
+
+$PROMPT"
+fi
 
 # Expand --glob patterns
 RESOLVED_FILES=("${DECLARE_FILES[@]:-}")

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
-readonly CODESPACE_NAME="super-duper-fortnight-6r44v6jwxjrhr5x5"
-readonly STATE_DIR="$HOME/.codespace-exec"
+CODESPACE_NAME="${CODESPACE_NAME:-super-duper-fortnight-6r44v6jwxjrhr5x5}"
+# STATE_DIR intentionally outside repo: this is cross-project tool state
+# (one codespace-exec connection cache shared across many repos), not
+# repo-scoped data. Override per-repo via CODESPACE_EXEC_STATE_DIR to avoid
+# stale-cache collisions when using this tool against multiple repos/codespaces.
+STATE_DIR="${CODESPACE_EXEC_STATE_DIR:-$HOME/.codespace-exec}"
 readonly STATE_FILE="$STATE_DIR/state"
 readonly CODESPACE_TIMEOUT_STATUS=124
 CODESPACE_CONNECT_TIMEOUT="${CODESPACE_CONNECT_TIMEOUT:-120}"
