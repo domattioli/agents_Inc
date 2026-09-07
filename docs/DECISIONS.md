@@ -310,3 +310,13 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Delegate holding it must still: re-run the suite pre-push, review `git diff --stat`, never `--force`, never rewrite history, halt and report on any conflict rather than resolving it unilaterally.
 - Default when the operator is silent remains element 7: run root only.
 - Source: operator ruling 2026-09-06.
+
+## D34 — Ladder rung rename: Supervisor -> Executive; Orchestrator gains Supervisor as synonym (2026-09-07)
+
+- Top rung renamed: **Supervisor -> Executive** (fable↔astra). Role, responsibilities, escalation targets unchanged — name and invocation keyword only.
+- Second rung: **Orchestrator** keeps its name; **Supervisor** is now also a valid invocation keyword for this same rung (opus↔sol) — a synonym, not a separate role. Choosing either name dispatches the same rung.
+- Workhorse and Grunt rungs, and the "free" budget modality, are unaffected — names and roles unchanged.
+- Rationale: operator naming preference; the prior scheme had "Supervisor" doing double duty as a top-rung proper noun and as generic English for "whoever verifies a delegate's claim" (constitution P3, CLAUDE.md "Failed check" definition) — those generic lowercase uses are unaffected by this rename and remain generic.
+- Updated: `CLAUDE.md` labor-rule table, `CONTEXT.md` (Rung/Run spec/Derivation), `docs/governance/ROUTING-RANKING.md` (table of record), `.specify/memory/constitution.md` P2/P3/P10 (v1.6.0 -> v1.7.0, MINOR — renamed principle content, no meaning reversed), `skills/workerbee/SKILL.md` Step 11/relay-chain text.
+- Left untouched, out of scope: historical entries in this file (D25-D33) and past `specs/*/` artifacts, which record rulings made under the old naming and are not retroactively rewritten (append-only); `docs/PLAN-MVP.md`, `.claude/permissions.md`, `skills/codex-bridge/reference/routing-policy.md`/`budget-mode.md`, `docs/governance/FREEZE-002.md` — each either uses "supervisor"/"orchestrator" as generic English or as an unrelated code/loop term, not the ladder rung name.
+- Source: operator ruling 2026-09-07 (chat instruction, AskUserQuestion-confirmed: top rung -> "Executive"; second rung -> "orchestrator and supervisor are synonymous, both applied to second rung").

@@ -1,9 +1,9 @@
 ---
 description: "Project constitution — agents_for_dummies"
-version: 1.6.0
+version: 1.7.0
 status: proposed
 ratified: false
-last_amended: 2026-09-06
+last_amended: 2026-09-07
 ---
 
 # Constitution: agents_for_dummies
@@ -24,11 +24,11 @@ Delegates (any rung, any vendor, incl. free grunts) write only inside dispatchin
 
 ## P2 — Labor ladder (MUST)
 
-4 rungs, claude↔codex pairs: Supervisor fable↔astra; Orchestrator opus↔sol; Workhorse sonnet↔terra; Grunt haiku↔luna. Escalate one rung up same vendor; second opinion across the pair, blind; reviewer at a rung = that rung's pair = that rung's fallback. Sonnet/terra build only via promotion. Promotion triggers: two failed checks ("failed check" defined once in `CLAUDE.md` labor rule), provider quota pause, or Lead assigns w/ gate reason — never worker confidence. Only Supervisor + Orchestrator rungs have children. Canon: `CLAUDE.md` "Coding dispatch — labor rule" + `docs/DECISIONS.md` D27 + `docs/governance/ROUTING-RANKING.md` + `CONTEXT.md` (Rung / Run spec / Derivation / Modality). Operator instruction overrides.
+4 rungs, claude↔codex pairs: Executive fable↔astra; Orchestrator (aka Supervisor) opus↔sol; Workhorse sonnet↔terra; Grunt haiku↔luna. Renamed 2026-09-07 (D34): top rung was Supervisor, now Executive; Orchestrator gained Supervisor as a synonym, same rung. Escalate one rung up same vendor; second opinion across the pair, blind; reviewer at a rung = that rung's pair = that rung's fallback. Sonnet/terra build only via promotion. Promotion triggers: two failed checks ("failed check" defined once in `CLAUDE.md` labor rule), provider quota pause, or Lead assigns w/ gate reason — never worker confidence. Only Executive + Orchestrator rungs have children. Canon: `CLAUDE.md` "Coding dispatch — labor rule" + `docs/DECISIONS.md` D27 + `docs/governance/ROUTING-RANKING.md` + `CONTEXT.md` (Rung / Run spec / Derivation / Modality). Operator instruction overrides.
 
 ## P3 — No self-graded gates (MUST)
 
-Delegate's own GREEN/PASS/LGTM is not evidence. Supervisor re-runs the check itself before accepting. Procedure of record: `skills/workerbee/SKILL.md` Step 2. Corollary from CEO-BRIEF: gateway permission is never a claim about output quality; `verified` requires verifier + reviewer gates (`CONTEXT.md`). No self-approval.
+Delegate's own GREEN/PASS/LGTM is not evidence. Executive re-runs the check itself before accepting. Procedure of record: `skills/workerbee/SKILL.md` Step 2. Corollary from CEO-BRIEF: gateway permission is never a claim about output quality; `verified` requires verifier + reviewer gates (`CONTEXT.md`). No self-approval.
 
 ## P4 — Deterministic policy over prompt (MUST)
 
@@ -56,7 +56,7 @@ Minimize tokens spent editing files, all else equal. Default to a surgical/targe
 
 ## P10 — Lesson-learned handling: relay up, never sideways (MUST)
 
-A delegate finding with canon-doc implications is tagged `LESSON-CANDIDATE`, relayed exactly one rung up at a time (never skipped, never filed sideways as an issue), scout-checked for duplication/contradiction before it reaches Supervisor, and only Supervisor presents a survivor to the operator — concise, evidenced, one target canon file named. Supervisor may land small/minor fixes itself; material changes need operator sign-off (same bar as amending `CLAUDE.md`/this file). Supervisor MAY delete a prose rule once a landed test enforces the same rule, and MUST cite that specific test plus its green result when doing so — authority without the evidence cite does not satisfy this clause. Canon + exact template: `CLAUDE.md` "Delegation prompt contract" MUST 14; `skills/workerbee/SKILL.md` Step 11. Authority: `docs/DECISIONS.md` D31 (lesson-routing half: explicitly rejected a GitHub-issue-intake alternative); delete-on-test-coverage clause authorized by D32 (2026-09-06); D31 covers only the lesson-relay half.
+A delegate finding with canon-doc implications is tagged `LESSON-CANDIDATE`, relayed exactly one rung up at a time (never skipped, never filed sideways as an issue), scout-checked for duplication/contradiction before it reaches Executive, and only Executive presents a survivor to the operator — concise, evidenced, one target canon file named. Executive may land small/minor fixes itself; material changes need operator sign-off (same bar as amending `CLAUDE.md`/this file). Executive MAY delete a prose rule once a landed test enforces the same rule, and MUST cite that specific test plus its green result when doing so — authority without the evidence cite does not satisfy this clause. Canon + exact template: `CLAUDE.md` "Delegation prompt contract" MUST 14; `skills/workerbee/SKILL.md` Step 11. Authority: `docs/DECISIONS.md` D31 (lesson-routing half: explicitly rejected a GitHub-issue-intake alternative); delete-on-test-coverage clause authorized by D32 (2026-09-06); D31 covers only the lesson-relay half.
 
 ## Enforcement
 
