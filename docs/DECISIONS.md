@@ -261,3 +261,52 @@ Enforcement: human docs go through nested-notes + caveman lite + write-like-scie
 - Derivation: Second = Supervisor's pair; Orchestrator reviewed by its pair; workhorse/grunt = Orchestrator's vendor, reviewed by pairs; reviewer = fallback at every rung.
 - Modalities: ideal (full ladder) vs budget (free grunts fill workhorse/grunt, ladder kept for supervise/orchestrate/review/fallback).
 - Budget review: free grunt reviewed by cross-upstream-vendor free grunt (OpenRouter + Gemini + Mistral pooled); quota-paused → ladder grunt fallback.
+
+## D28 — Scouts (2026-09-06)
+
+- Scout = cheap bounded recon dispatched before committing real work. Answers exists / what shape / worth pursuing. Finding only, never a deliverable; no repo writes.
+- Scouting is a **mode**, not a fifth rung. The four rungs of D27 are unchanged.
+- Who may scout: free grunts by default (OpenRouter free, Gemini free, Mistral free, gpt-5.4-mini) for text-in/text-out recon over a supplied blob. Grunt rung (haiku or luna) when the recon needs tools — walking a repo, reading a tree, running a command — because free grunts are text-only per the Worker definition. Never Workhorse or above; the sole exception is a Lead assignment with a recorded gate reason (D27 promotion (c)).
+- Cost is not the discriminator: subscription Grunt calls are also $0 incremental. The discriminator is tool access.
+- Trigger: feasibility, existence, or scope is unknown and the alternative is committing a Workhorse-or-above dispatch on a guess. Not for work already scoped — that is a real dispatch under the run spec.
+- Ledger: a scout is recorded as a node with edge type `probes`, reusing the doctor-preflight precedent (root, `parent_id` None, projected through `legacy_parent`). It takes no `lineage` row, so a scout is never a spawn ancestor of the work it informed. No schema change: `probes` and parentless-probe projection already exist in SCHEMA-3NF.md.
+- Honesty: a scout report is an unverified delegate report. Whoever acts on it re-derives the finding.
+
+## D29 — Effort default (2026-09-06)
+
+- Every dispatch prompt must state an explicit effort level. Default is **medium for every vendor** unless the operator names a different level for that dispatch.
+- Anthropic/Claude: `low|medium|high|xhigh|max` (no `ultra` tier on this vendor).
+- Codex: `low|medium|high|xhigh|max|ultra` per `workerbee` Step 1c. `ultra` is Codex-only, self-delegates, opt-in only, never default.
+- Agent-tool transport: no per-dispatch effort parameter available. Prompt states `effort control unavailable on this transport; intended level = medium (or <operator-named level>)` so the delegate self-calibrates depth. Never silently omitted.
+- Source: CLAUDE.md "Delegation prompt contract" element (9), operator ruling 2026-09-06.
+
+## D30 — Edit hygiene (2026-09-06)
+
+- Delegates default to surgical/targeted edits over full-file rewrites whenever the end result is identical either way. This minimizes tokens spent in editing.
+- Full rewrite is acceptable only when it genuinely is the smaller or clearer diff.
+- Source: CLAUDE.md "Delegation prompt contract" element (13), operator ruling 2026-09-06.
+
+## D31 — Lesson-learned routing (2026-09-06)
+
+- A delegate surfacing a finding with canon implications tags it `LESSON-CANDIDATE` in its report (not buried in prose).
+- Relay chain: exactly one rung up (Grunt→Workhorse→Orchestrator→Supervisor), never skipping a rung. Each rung either drops it (states why) or relays further.
+- Before reaching Supervisor, a scout check confirms the finding doesn't already exist in canon and doesn't contradict canon. The rung relaying is responsible for this check.
+- Only Supervisor (fable/astra) presents a surviving candidate to the operator, concisely, with evidence + scout's dedup/contradiction result + target canon file.
+- Supervisor may land small/minor doc fixes unilaterally; anything material still needs operator sign-off.
+- Source: CLAUDE.md "Delegation prompt contract" element (14), operator ruling 2026-09-06.
+
+## D32 — Prose deletion on test coverage (2026-09-06)
+
+- Supervisor MAY delete a prose rule from canon once a landed test enforces the same rule. Deletion MUST cite the specific enforcing test and that test's green result. Authority without the cite is non-compliant.
+- Rationale: a rule an automated check enforces is stronger, not weaker, for losing its prose restatement. Operator-in-loop per prune was the friction that let canon grow unchecked.
+- Bar unchanged for everything else: material canon changes still need operator sign-off (D31, constitution P10 first half).
+- Authorizes: `.specify/memory/constitution.md` P10 delete-on-test-coverage clause (v1.6.0). Closes the gap flagged by the T001 delegate, which correctly refused to cite D31 for a clause D31 does not cover.
+- Source: operator ruling 2026-09-06 (speckit-clarify Q2, feature 007).
+
+## D33 — Push authority may be delegated per-dispatch (2026-09-06)
+
+- Standing rule (`CLAUDE.md` "Delegation prompt contract" element 7, `docs/governance/ORCHESTRATION-HANDOFF.md`): commit/push authority stays with the run root and is never inherited downward.
+- Amendment: the operator MAY delegate commit/push authority to a named delegate for a specific dispatch. Explicit, per-dispatch, never inferred, never standing consent for the next one.
+- Delegate holding it must still: re-run the suite pre-push, review `git diff --stat`, never `--force`, never rewrite history, halt and report on any conflict rather than resolving it unilaterally.
+- Default when the operator is silent remains element 7: run root only.
+- Source: operator ruling 2026-09-06.
