@@ -307,7 +307,7 @@ class Gateway:
             # C3 (specs/006 S5.1): capture bytes when WORKERBEES_ARTIFACTS=local, always
             # bind the hash to the node (node_artifact); unchanged replay-key path below.
             output_bytes = worker_result.output.encode("utf-8")
-            if os.environ.get("WORKERBEES_ARTIFACTS", "off") == "local":
+            if os.environ.get("WORKERBEES_ARTIFACTS", "local") == "local":
                 cap = _artifacts.capture(self.workspace, output_bytes)
                 output_hash = cap.sha256
             else:

@@ -385,3 +385,19 @@ The operator's question ("is this over-engineered or required for the mission?")
 - Deliberately **not done**: no removal of the envelope/policy/registry/control-plane machinery, no change to `WORKERBEES_GOVERNANCE`'s default, no consolidation of `workerbees/` modules. The apparatus-vs-usage gap is real but is a scope/roadmap question (is the governed dispatch path meant to see real traffic, or is `off` the permanent steady state for a single-operator repo?) that the operator has not ruled on; guessing a rewrite here would repeat 005's original over-reach, not fix it.
 
 Verification: `python3 -m unittest discover -s tests` — Ran 458 tests, OK (455 prior + 3 net-new test modules covering the above; no existing test's expected behavior changed).
+
+## D38 — `WORKERBEES_ARTIFACTS` default flipped `off` -> `local`; manual purge, no encryption, no backup exclusion (2026-09-07)
+
+Source: operator instruction 2026-09-07 ("default on"), resolving the NEEDS-OPERATOR flag D37/spec 006 §7 explicitly deferred. Given the instruction's terseness and the real policy weight of what it triggers (confidential draft bytes now persist as plaintext on disk by default), asked three narrow follow-ups via AskUserQuestion before flipping the switch rather than guessing all three:
+
+- **Retention/GC** — **manual purge script**, not auto-GC. `workerbees/artifacts.py:purge(workspace, *, older_than_days, dry_run=False)` walks `.workerbees/cas/`, deletes blob+meta pairs whose blob mtime is past the cutoff, returns the removed sha256 list; never raises, dry-run supported. CLI: `python3 -m workerbees.artifacts --older-than-days N [--dry-run] [--workspace PATH]`. Nothing calls this automatically — the operator (or their own cron, outside this repo) runs it by hand.
+- **Encryption at rest** — **no**. Plaintext, existing 0600 (file) / 0700 (dir) permissions from D37 are the only protection. Single-operator machine; encryption would add a key-management dependency out of proportion to the actual threat model here.
+- **Backup scope** — **no special handling**. `.workerbees/cas/` is backed up by whatever already backs up the repo/machine; no exclude-list entry added.
+
+**Code:** `workerbees/pipeline.py`'s `_bind_output` and `workerbees/gateway.py`'s C3 site both changed `os.environ.get("WORKERBEES_ARTIFACTS", "off")` -> `os.environ.get("WORKERBEES_ARTIFACTS", "local")`. `WORKERBEES_ARTIFACTS=off` still works for anyone who sets it explicitly (test coverage: `test_explicit_off_stores_nothing`). `workerbees/artifacts.py` gained `purge()` and a `__main__` CLI entrypoint.
+
+**Tests:** `tests/test_artifacts.py` renamed/added 3 purge tests (removes-only-stale, dry-run-deletes-nothing, empty-workspace-no-op — 19 total in that module now). `tests/test_artifacts_capture_matrix.py`'s `test_default_off_stores_nothing` renamed to `test_default_unset_stores_output` (asserts the new default behavior) and a new `test_explicit_off_stores_nothing` preserves the old assertion under the now-non-default opt-out path.
+
+**Docs:** `specs/006-bindle-sibling-integration/spec.md` §5.4 and §7 updated in place (NEEDS-OPERATOR marked RESOLVED, default corrected); header status line updated. Not touched: `WORKERBEES_GOVERNANCE`'s own default (`off`, unrelated env var, no ruling sought or needed here).
+
+Verification: `python3 -m unittest discover -s tests` — Ran 462 tests, OK (458 prior + 4 net-new purge/default-flip tests; no other test's expected behavior changed).

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `006-bindle-sibling-integration`
 **Created**: 2026-09-06
-**Status**: Backend A implemented (D37, 2026-09-07) — `workerbees/artifacts.py`, capture points C1/C2/C3 wired, `WORKERBEES_ARTIFACTS=off` default unchanged. Backend B (real Bindle CLI/server) remains design-only per S6.
+**Status**: Backend A implemented (D37, 2026-09-07) — `workerbees/artifacts.py`, capture points C1/C2/C3 wired. Default flipped `off` -> `local` (D38, 2026-09-07, operator ruling — see S5.4/S7). Backend B (real Bindle CLI/server) remains design-only per S6.
 **Input**: Operator override of 005 (2026-09-06): "i think bindle does it better almost certainly. i think this repo works in conjunction w bindle functionality like they will be siblings." Design the sibling split, do not re-litigate adoption.
 **Supersedes-in-part**: `specs/005-bindle-integration/spec.md` (its no-duplicate-authority reasoning is retained; its "do not integrate" verdict is not).
 
@@ -142,9 +142,9 @@ Backend B's assembler later reads occurrence metadata **from the ledger** (`node
 
 `capture()` returns `stored=False` on any write failure or when the backend is `off`. It never raises. The caller passes `sha256` to the ledger regardless (FR-007 preserved) and surfaces `stored` into the brief receipt as `receipt["artifacts"] = {"stored": n, "unstored": m, "backend": …}`. Recording a hash is therefore never a claim of retrievability; retrievability is asserted only by a successful verified `get`.
 
-### 5.4 Default is `off`
+### 5.4 Default is `local` (D38, 2026-09-07 — supersedes this section's original default-off)
 
-`WORKERBEES_ARTIFACTS` ∈ `off` (**default**) | `local` | `bindle` (not implemented). Default-off ships the seam and the tests without silently beginning to persist confidential draft bytes in plaintext — see §7 and NEEDS-OPERATOR.
+`WORKERBEES_ARTIFACTS` ∈ `off` | `local` (**default**) | `bindle` (not implemented). Operator ruling 2026-09-07 (D38) resolved §7's NEEDS-OPERATOR: manual purge script (no auto-GC), no encryption at rest, no backup exclusion. `workerbees/artifacts.py`'s `purge(workspace, older_than_days, dry_run=False)` / `python3 -m workerbees.artifacts --older-than-days N` is the operator-run cleanup path — nothing calls it automatically. Confidential draft bytes now persist as plaintext at `.workerbees/cas/` (mode 0600/0700) on any brief unless `WORKERBEES_ARTIFACTS=off` is set explicitly.
 
 ## 6. Deferred
 
@@ -159,8 +159,8 @@ Backend B's assembler later reads occurrence metadata **from the ledger** (`node
 
 - **`bindle` CLI is not installed** (`which bindle` → not found). This is a **need-to-install item, not a hard blocker**: MVP Backend A is pure stdlib and requires nothing. Only Backend B needs the CLI.
 - **Real risk, not a blocker: upstream is archived** (deislabs/bindle, 2025-02-11; Fermyon moved to OCI). Mitigation is the two-backend design — the repo depends on the *format*, which is frozen and specified, not on a maintained binary. If Bindle ever needs replacing, Backend A's CAS is untouched and only the assembly step changes (OCI is the natural successor).
-- **Confidential plaintext persistence is an unresolved policy question — NEEDS-OPERATOR.** `brief(confidential=True)` is the default and drafts are classified `confidential` at `pipeline.py:174`. Today the ledger persists a task *label* (`"extract"`/`"review"`) and a hash — never content. Turning capture on by default would newly persist confidential draft bytes as plaintext files with no retention, GC, or encryption policy. This spec therefore defaults `WORKERBEES_ARTIFACTS=off`; flipping the default to `local` requires an operator ruling on (a) retention/GC, (b) whether confidential-classified content may be persisted unencrypted at all, (c) backup scope. Not guessed here.
-- **No hard technical blocker remains** once §5.1's capture points replace the single-site claim. The remaining gate is the operator ruling above and the Backend-B prerequisites (`finish_run`, validated invoice mapping).
+- **Confidential plaintext persistence — RESOLVED (D38, 2026-09-07).** `brief(confidential=True)` is the default and drafts are classified `confidential` at `pipeline.py:174`; capture now persists those bytes as plaintext by default. Operator ruling: (a) retention/GC = manual purge script, no auto-GC (`workerbees/artifacts.py:purge`); (b) unencrypted persistence = accepted for MVP (0600/0700 perms, single-operator machine); (c) backup scope = no special handling, inherits whatever backs up the repo.
+- **No hard technical blocker remains.** §5.1's capture points are wired; the operator ruling above closed the last gate. Backend B (`finish_run`, validated invoice mapping) remains a separate, still-deferred prerequisite (§6).
 
 ## 8. Requirements
 

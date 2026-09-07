@@ -1,5 +1,8 @@
 """SC-005 (specs/006-bindle-sibling-integration): capture must fire identically
-under off/shadow/enforce, and default WORKERBEES_ARTIFACTS=off must store nothing."""
+under off/shadow/enforce. WORKERBEES_ARTIFACTS default flipped off -> local by
+operator ruling (D38, 2026-09-07: manual purge, no encryption, no backup
+exclusion) -- unset now stores; WORKERBEES_ARTIFACTS=off is still honored
+explicitly for anyone who opts out."""
 import json
 import os
 import sqlite3
@@ -41,8 +44,18 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
             else:
                 os.environ[k] = v
 
-    def test_default_off_stores_nothing(self):
+    def test_default_unset_stores_output(self):
         os.environ.pop("WORKERBEES_ARTIFACTS", None)
+        ws = Path(tempfile.mkdtemp())
+        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
+                  runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="off")
+        rows = _node_artifact_rows(ws)
+        self.assertGreaterEqual(len(rows), 1)
+        self.assertEqual(r.receipt.get("artifacts", {}).get("backend"), "local")
+        self.assertTrue((ws / ".workerbees" / "cas").exists())
+
+    def test_explicit_off_stores_nothing(self):
+        os.environ["WORKERBEES_ARTIFACTS"] = "off"
         ws = Path(tempfile.mkdtemp())
         r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="off")
