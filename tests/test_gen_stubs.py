@@ -2,14 +2,14 @@ import tempfile, unittest
 from pathlib import Path
 from workerbees.hosts.gen_stubs import generate
 
-CANON = Path(__file__).resolve().parent.parent / "skills" / "workerbees" / "SKILL.md"
+CANON = Path(__file__).resolve().parent.parent / "skills" / "doc-analysis" / "SKILL.md"
 
 class StubTest(unittest.TestCase):
     def test_both_hosts_get_identical_body(self):
         root = Path(tempfile.mkdtemp())
         out = generate(CANON, root)
         self.assertEqual({p.relative_to(root).as_posix() for p in out},
-                         {".claude/skills/workerbees/SKILL.md", ".agents/skills/workerbees/SKILL.md"})
+                         {".claude/skills/doc-analysis/SKILL.md", ".agents/skills/doc-analysis/SKILL.md"})
         bodies = [p.read_text().split("---", 2)[2] for p in out]
         self.assertEqual(bodies[0], bodies[1])
 
