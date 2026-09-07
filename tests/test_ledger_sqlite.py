@@ -30,14 +30,14 @@ class SQLiteLintTest(unittest.TestCase):
         os.environ["WORKERBEES_STORE"] = "jsonl"
         try:
             if name == "tim":
-                self._node("tim-root", "tim-run", "opus", "cheap", "anthropic", None, None)
-                self._node("tim-review", "tim-run", "sonnet", "mid", "anthropic",
+                self._node("tim-root", "tim-run", "opus", "grunt", "anthropic", None, None)
+                self._node("tim-review", "tim-run", "sonnet", "workhorse", "anthropic",
                            "tim-root", "reviews")
             else:
-                self._node("dom-root", "dom-run", "opus", "mid", "anthropic", None, None)
-                self._node("dom-correct", "dom-run", "sonnet", "mid", "anthropic",
+                self._node("dom-root", "dom-run", "opus", "orchestrator", "anthropic", None, None)
+                self._node("dom-correct", "dom-run", "sonnet", "workhorse", "anthropic",
                            "dom-root", "corrects")
-                self._node("dom-review", "dom-run", "haiku", "cheap", "anthropic",
+                self._node("dom-review", "dom-run", "haiku", "grunt", "anthropic",
                            "dom-correct", "reviews")
         finally:
             os.environ.pop("WORKERBEES_STORE", None)
@@ -61,9 +61,9 @@ class SQLiteLintTest(unittest.TestCase):
                 self.setUp()
 
     def test_jsonl_depth_cycle_terminates_and_fails(self):
-        a = ledger.Node("a", "r", "m", "cheap", "t", "p", "b", "corrects",
+        a = ledger.Node("a", "r", "m", "grunt", "t", "p", "b", "corrects",
                         "returned", 1, 1, None, "t")
-        b = ledger.Node("b", "r", "m", "cheap", "t", "p", "a", "corrects",
+        b = ledger.Node("b", "r", "m", "grunt", "t", "p", "a", "corrects",
                         "returned", 1, 1, None, "t")
         findings = ledger.lint(ledger.Ledger({"a": a, "b": b}, []))
         self.assertEqual(["depth", "depth"], [f.rule for f in findings])

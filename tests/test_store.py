@@ -433,7 +433,7 @@ class TestStoreComplexScenarios(unittest.TestCase):
         self.store.ensure_model("model1")
         route_id = self.store.ensure_route("provider1", "route1", "model1")
 
-        self.store.insert_node(node_id, route_id=route_id, tier="cheap", task="eval",
+        self.store.insert_node(node_id, route_id=route_id, tier="grunt", task="eval",
                                created_at="2026-01-01T00:00:00Z")
 
         # Add events

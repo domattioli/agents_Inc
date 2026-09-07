@@ -1,4 +1,4 @@
-"""Measured pilot: cheap-tier pipeline vs all-frontier single-model baseline. Reports counts, never percentages (D10)."""
+"""Measured pilot: grunt-tier pipeline vs all-executive single-model baseline. Reports counts, never percentages (D10)."""
 from __future__ import annotations
 import argparse, json, os, time
 from collections import defaultdict
@@ -9,8 +9,8 @@ from .router import _TABLE
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
 CASES = [("tim", "matter.md", "lawyer"), ("dom", "design.md", "engineer")]
-CONFIGS = [("claude", "cheap"), ("codex", "cheap"), ("claude", "frontier"), ("codex", "frontier")]
-T15_CONFIGS = [("claude", "cheap"), ("codex", "cheap")]
+CONFIGS = [("claude", "grunt"), ("codex", "grunt"), ("claude", "executive"), ("codex", "executive")]
+T15_CONFIGS = [("claude", "grunt"), ("codex", "grunt")]
 
 def run_case(fixture, source_file, mode, worker_provider, worker_tier, workspace,
              runner=run_worker, governance_mode=None) -> dict:
@@ -22,7 +22,7 @@ def run_case(fixture, source_file, mode, worker_provider, worker_tier, workspace
     t0 = time.time()
     r = brief(FIX / fixture / source_file, fixture, mode, workspace, available={"claude", "codex"},
               worker_provider=worker_provider, runner=counted_runner, worker_tier=worker_tier,
-              review_enabled=(worker_tier != "frontier"), governance_mode=governance_mode)
+              review_enabled=(worker_tier != "executive"), governance_mode=governance_mode)
     rc = r.receipt
     verifier_pass = rc.get("source_integrity") == "pass"
     accepted = r.status in {"verified", "needs-review"} and verifier_pass
@@ -46,7 +46,7 @@ def summarize(rows: list[dict]) -> str:
             k += f" ({r['governance']})"
         agg[k]["n"] += 1; agg[k]["acc"] += int(r["accepted"]); agg[k]["vp"] += int(r.get("verifier_pass", False)); agg[k]["sec"] += r["seconds"]
         agg[k]["statuses"][r["status"]] += 1; agg[k]["corrections"] += r.get("corrections", 0)
-        agg[k]["calls"] += r.get("subscription_calls", 1 if r["tier"] == "frontier" else 2 + 2 * r.get("corrections", 0))
+        agg[k]["calls"] += r.get("subscription_calls", 1 if r["tier"] == "executive" else 2 + 2 * r.get("corrections", 0))
     out += ["", "Frontier baseline runs without a Reviewer, so it cannot reach accepted; compare on verifier_pass and seconds.", "", "## Per configuration"]
     for k, v in agg.items():
         statuses_str = ", ".join(f"{s}: {c}" for s, c in sorted(v["statuses"].items()))

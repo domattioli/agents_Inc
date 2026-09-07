@@ -31,7 +31,7 @@ class RunBudgetTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.registry = Registry.load(str(ROOT / "workerbees"))
-        self.route = Route("claude", "haiku", "cheap", "cli")
+        self.route = Route("claude", "haiku", "grunt", "cli")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -103,7 +103,7 @@ class ExplicitOffOverridesEnv(unittest.TestCase):
             calls.append(cmd); return WorkerResult("returned", "NO DEFECTS", "", 0)
         with mock.patch.dict(os.environ, {"WORKERBEES_GOVERNANCE": "enforce"}):
             rv = reviewer.review("src", "s", [], "draft", "claude", {"claude", "codex"}, True,
-                                 runner=runner, route=Route("codex", "gpt-5.4-mini", "mid", "cli"),
+                                 runner=runner, route=Route("codex", "gpt-5.4-mini", "grunt", "cli"),
                                  governance_mode="off")
         self.assertEqual(len(calls), 1)
         self.assertNotEqual(rv.status, "error")

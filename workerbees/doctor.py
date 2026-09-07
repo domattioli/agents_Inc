@@ -22,7 +22,7 @@ def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, r
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
 
-    model = _TABLE["tiers"]["cheap"][provider]
+    model = _TABLE["tiers"]["grunt"][provider]
 
     if gov_mode == "off":
         # Original behavior: direct run with ledger calls by doctor
@@ -32,7 +32,7 @@ def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, r
         if workspace and run_id:
             probe_node_id = uuid.uuid4().hex
             ledger.record_dispatch(workspace, node_id=probe_node_id, run_id=run_id, model=model,
-                                  tier="cheap", task="probe", provider=provider,
+                                  tier="grunt", task="probe", provider=provider,
                                   parent_id=None, edge_type="probes")
         res = runner(cmd, "reply exactly PONG")
         if probe_node_id and workspace and run_id:
@@ -56,7 +56,7 @@ def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, r
             sender="agent-supervisor-01", recipient="agent-doctor-01", intent="probe", operation="request",
             protocol="v1", schema="request_v1", payload={"prompt": "reply exactly PONG"},
             data_classification="public", created_at=datetime.utcnow().isoformat()+"Z")
-        route = pick_model("probe", "cheap", {provider}, False)
+        route = pick_model("probe", "grunt", {provider}, False)
         if route is None:
             return {"provider": provider, "status": "WB_NO_ELIGIBLE_ROUTE",
                    "detail": "no eligible route for probe", "at": _now()}
