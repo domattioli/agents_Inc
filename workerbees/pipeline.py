@@ -23,7 +23,7 @@ def _bind_output(workspace: Path, node_id: str | None, draft: str, receipt: dict
     a = receipt.setdefault("artifacts", {"stored": 0, "unstored": 0, "backend": "off"})
     if not draft or not node_id:
         return
-    mode = os.environ.get("WORKERBEES_ARTIFACTS", "off")
+    mode = os.environ.get("WORKERBEES_ARTIFACTS", "local")
     a["backend"] = mode
     if mode != "local":
         return
