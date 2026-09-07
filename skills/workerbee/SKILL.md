@@ -68,7 +68,9 @@ Two vendors, one ladder. Pick the tier the task needs.
 | flagship | opus | sol | orchestration, adversarial review, gates |
 | workhorse | sonnet | terra | implementation, supervising a pair |
 | flash | haiku | luna | triage, mechanical edits, high volume |
-| bottom rung | — | oss / free | one-shot text, drafts, sounding boards |
+| bottom rung | — | oss / free | one-shot text, drafts, sounding boards, well-scoped small coding (high volume of small diffs, never a large or architecturally significant change) |
+
+Coding at flash/bottom-rung is scope-gated, not banned: small, narrow, high-volume jobs only. A task needing scope/design judgment is workhorse+, dispatch it there.
 
 **Scout = mode, not tier.** Recon before real dispatch (does X exist / what
 shape / worth it). Text-only recon -> free grunt (OpenRouter free, gemini
