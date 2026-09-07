@@ -9,12 +9,5 @@ When `CODEX_BRIDGE_MODE=ultra`:
 
 ## Documentation style (binding)
 
-CEO 2026-09-05 rule — embedded from CLAUDE.md:
-
-| Surface | Reader | Wording | Structure |
-|---|---|---|---|
-| Repo README, START-HERE, HOW-IT-WORKS, EXTENDING, HANDOFF, DECISIONS, BENCH, governance/CEO-BRIEF | human, live + async | caveman lite (trim, stay readable) | nested-notes (outline → scannable) + write-like-scientist pass (precise, concise) |
-| Agent prompts, skills/*/SKILL.md bodies, dispatch specs, PLAN-MVP, routing.json comments, governance/ASSESSMENT.md, workerbees/*.json | agent/model/builder | caveman ultra (max compress) | prose (no structure overhead) |
-
-Enforcement: human docs nested-notes + caveman lite + write-like-scientist before commit. Machine docs = caveman ultra, no override. Upstream this table in every agent prompt.
+CEO 2026-09-05 rule — see `CLAUDE.md` "Documentation audience rule" for the full surface/reader/wording/structure table.
 

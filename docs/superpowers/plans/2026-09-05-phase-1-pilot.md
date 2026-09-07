@@ -68,7 +68,7 @@ workerbees/
   pipeline.py           # brief(sources: list[Path], mode, workspace) -> BriefResult
   hosts/
     gen_stubs.py        # one canonical SKILL body → .claude/skills + .agents/skills
-skills/workerbees/SKILL.md   # canonical skill body (entry contract, ≤180 tokens)
+skills/doc-analysis/SKILL.md   # canonical skill body (entry contract, ≤180 tokens)
 fixtures/
   tim/matter.md  tim/expected.json  tim/faults.json
   dom/design.md  dom/expected.json  dom/faults.json
@@ -804,11 +804,11 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
 ### Task 8: Dual-host skill stubs from one canonical source
 
 **Files:**
-- Create: `skills/workerbees/SKILL.md`, `workerbees/hosts/__init__.py`, `workerbees/hosts/gen_stubs.py`
+- Create: `skills/doc-analysis/SKILL.md`, `workerbees/hosts/__init__.py`, `workerbees/hosts/gen_stubs.py`
 - Test: `tests/test_gen_stubs.py`
 
 **Interfaces:**
-- Produces: `generate(canonical: Path, root: Path) -> list[Path]` writing `root/.claude/skills/workerbees/SKILL.md` and `root/.agents/skills/workerbees/SKILL.md`; bodies identical after frontmatter; frontmatter has `name` + `description` (Claude) and `name` + `description` (Codex) — same keys, so identical files in Phase 1; generator exists so client-specific fields can diverge later.
+- Produces: `generate(canonical: Path, root: Path) -> list[Path]` writing `root/.claude/skills/doc-analysis/SKILL.md` and `root/.agents/skills/doc-analysis/SKILL.md`; bodies identical after frontmatter; frontmatter has `name` + `description` (Claude) and `name` + `description` (Codex) — same keys, so identical files in Phase 1; generator exists so client-specific fields can diverge later.
 
 - [ ] **Step 1: Failing test**
 
@@ -818,14 +818,14 @@ import tempfile, unittest
 from pathlib import Path
 from workerbees.hosts.gen_stubs import generate
 
-CANON = Path(__file__).resolve().parent.parent / "skills" / "workerbees" / "SKILL.md"
+CANON = Path(__file__).resolve().parent.parent / "skills" / "doc-analysis" / "SKILL.md"
 
 class StubTest(unittest.TestCase):
     def test_both_hosts_get_identical_body(self):
         root = Path(tempfile.mkdtemp())
         out = generate(CANON, root)
         self.assertEqual({p.relative_to(root).as_posix() for p in out},
-                         {".claude/skills/workerbees/SKILL.md", ".agents/skills/workerbees/SKILL.md"})
+                         {".claude/skills/doc-analysis/SKILL.md", ".agents/skills/doc-analysis/SKILL.md"})
         bodies = [p.read_text().split("---", 2)[2] for p in out]
         self.assertEqual(bodies[0], bodies[1])
 
@@ -839,7 +839,7 @@ class StubTest(unittest.TestCase):
 
 ```markdown
 ---
-name: workerbees
+name: doc-analysis
 description: Delegate document analysis to cheap tool-free Workers with deterministic quote checks and a hard $0 spend cap. Triggers: "analyze these documents", "cited brief", "workerbees".
 ---
 # workerbees — entry contract
