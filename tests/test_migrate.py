@@ -47,7 +47,7 @@ class TestMigration(unittest.TestCase):
             # Tim fixture: root + reviewer edge + probe node
             ledger_module.record_dispatch(
                 workspace, node_id="tim-root-001", run_id="tim-run-01",
-                model="claude-opus", tier="cheap", task="extract",
+                model="claude-opus", tier="grunt", task="extract",
                 provider="anthropic", parent_id=None, edge_type=None
             )
             ledger_module.record_return(
@@ -58,7 +58,7 @@ class TestMigration(unittest.TestCase):
             # Reviewer node (child of root, edge_type=reviews)
             ledger_module.record_dispatch(
                 workspace, node_id="tim-review-002", run_id="tim-run-01",
-                model="claude-sonnet", tier="mid", task="review",
+                model="claude-sonnet", tier="workhorse", task="review",
                 provider="anthropic", parent_id="tim-root-001", edge_type="reviews"
             )
             ledger_module.record_return(
@@ -69,7 +69,7 @@ class TestMigration(unittest.TestCase):
             # Probe node (parentless, edge_type=probes)
             ledger_module.record_dispatch(
                 workspace, node_id="tim-probe-003", run_id="tim-run-01",
-                model="claude-haiku", tier="cheap", task="probe",
+                model="claude-haiku", tier="grunt", task="probe",
                 provider="anthropic", parent_id=None, edge_type="probes"
             )
             ledger_module.record_return(
@@ -81,7 +81,7 @@ class TestMigration(unittest.TestCase):
             # Dom fixture: root + corrector + reviewer
             ledger_module.record_dispatch(
                 workspace, node_id="dom-root-001", run_id="dom-run-01",
-                model="claude-opus", tier="mid", task="reason",
+                model="claude-opus", tier="orchestrator", task="reason",
                 provider="anthropic", parent_id=None, edge_type=None
             )
             ledger_module.record_return(
@@ -92,7 +92,7 @@ class TestMigration(unittest.TestCase):
             # Corrector node (child of root, edge_type=corrects)
             ledger_module.record_dispatch(
                 workspace, node_id="dom-correct-002", run_id="dom-run-01",
-                model="claude-sonnet", tier="mid", task="correct",
+                model="claude-sonnet", tier="workhorse", task="correct",
                 provider="anthropic", parent_id="dom-root-001", edge_type="corrects"
             )
             ledger_module.record_return(
@@ -103,7 +103,7 @@ class TestMigration(unittest.TestCase):
             # Reviewer node (child of corrector, edge_type=reviews)
             ledger_module.record_dispatch(
                 workspace, node_id="dom-review-003", run_id="dom-run-01",
-                model="claude-haiku", tier="cheap", task="review",
+                model="claude-haiku", tier="grunt", task="review",
                 provider="anthropic", parent_id="dom-correct-002", edge_type="reviews"
             )
             ledger_module.record_return(

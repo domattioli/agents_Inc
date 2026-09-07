@@ -263,7 +263,7 @@ CREATE TABLE request (
 );
 CREATE TABLE node (
   node_id TEXT PRIMARY KEY NOT NULL REFERENCES request(request_id), route_id TEXT REFERENCES route(route_id),
-  tier TEXT CHECK (tier IN ('cheap','mid','frontier')), task TEXT, created_at TEXT NOT NULL
+  tier TEXT CHECK (tier IN ('grunt','workhorse','orchestrator','executive')), task TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE node_event (
   event_id INTEGER PRIMARY KEY NOT NULL, node_id TEXT NOT NULL REFERENCES node(node_id),
@@ -419,7 +419,7 @@ SELECT n.node_id,n.tier,fg.reason AS gate_reason,
        WHEN trim(COALESCE(fg.reason,''))='' THEN 'blank_gate_reason' ELSE 'gated' END AS gate_status
 FROM node n JOIN request r ON r.request_id=n.node_id
 LEFT JOIN frontier_gate fg ON fg.node_id=n.node_id
-WHERE r.family_id=:family_id AND n.tier='frontier'
+WHERE r.family_id=:family_id AND n.tier='executive'
   AND (fg.node_id IS NULL OR trim(COALESCE(fg.reason,''))='')
 ORDER BY n.node_id;
 ```

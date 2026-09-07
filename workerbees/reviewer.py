@@ -43,7 +43,7 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
     if route is None:
-        route = pick_model("review", "mid", available, workspace_authorized, exclude_provider=worker_provider)
+        route = pick_model("review", "workhorse", available, workspace_authorized, exclude_provider=worker_provider)
     if route is None:
         return ReviewResult("no_other_vendor")
     # VENDOR RULE: same-vendor route forbidden in all modes

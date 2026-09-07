@@ -172,7 +172,7 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
         return None, result.node_id, False, False, {"reason": d.reason_code if d else "unknown", "governance": {"decision_id": d.decision_id if d else "", "reason": d.reason if d else "", "status": result.status}}
     return result.worker_result, result.node_id, True, True, None
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
-          available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "cheap",
+          available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "grunt",
           worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1,
           gate_reason: str | None = None, run_budget: dict | None = None, *, governance_mode: str | None = None, registry=None, gateway=None) -> BriefResult:
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
@@ -202,7 +202,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         return BriefResult("blocked", route=route, receipt={"reason": str(e)})
     res, worker_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
         workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-        gate_reason if route.tier == "frontier" else None, None, None, run_budget)
+        gate_reason if route.tier == "executive" else None, None, None, run_budget)
     if block_receipt:
         return BriefResult("blocked", route=route, receipt=block_receipt)
 
@@ -220,7 +220,7 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     corrections = 0
     while True:
         from .reviewer import review
-        reviewer_route = pick_model("review", "mid", avail, is_authorized(workspace), exclude_provider=route.provider)
+        reviewer_route = pick_model("review", "workhorse", avail, is_authorized(workspace), exclude_provider=route.provider)
 
         # Record reviewer dispatch and return (T019) only in off mode; gateway owns ledger in shadow/enforce
         reviewer_node_id = None
