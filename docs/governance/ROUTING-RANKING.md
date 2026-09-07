@@ -22,6 +22,10 @@ Working routing ranking, not a universal benchmark ranking. 1 = best fit for tha
 | Workhorse | Sonnet 5 or Terra | Opus 5 or Sol | coding, research, or synthesis has meaningful uncertainty |
 | Grunt | Haiku 4.5 or Luna | the other cheap model | outputs anomalous or validation cheap |
 
+## Scouting
+
+Scouting is a mode, not a rung. Recon sent before committing real work goes to a free grunt when it is text-only, and to the Grunt rung (Haiku 4.5 or Luna) when it needs tools. Never to Workhorse or above. Definition and ledger treatment: CONTEXT.md (Scout, Scout node, Scout roster) and docs/DECISIONS.md D28.
+
 ## Routing rule
 
 ```text

@@ -42,6 +42,7 @@ Small composable interfaces; provider-agnostic; declarative versioned config; de
 Smallest complete vertical slice first: registry → graph edge → policy decision → typed message → dispatcher → one supervisor → one worker → one denied request → one successful request → audit/tracing for both. Then expand only where it fits.
 
 ## Operator constraints for THIS repo (added by CTO)
+*(Cross-reference, 2026-09-06: this section instantiates constitution P2 / `CLAUDE.md` D27 labor ladder under budget modality — it is a runtime-cost filter over the ladder rungs, not a competing rule. See `.specify/memory/constitution.md` P2 and root `CLAUDE.md` "Coding dispatch — labor rule".)*
 - Prompt policy
   - **Agent prompts**
     - Use caveman ultra for every agent prompt.
