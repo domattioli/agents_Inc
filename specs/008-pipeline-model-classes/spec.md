@@ -1,6 +1,6 @@
 # 008 — Provider-agnostic model classes + speckit-pipeline revision
 
-Machine doc. Caveman ultra. Status: specified, not started. Created 2026-09-06 (operator direction).
+Machine doc. Caveman ultra. Status: specified, not started (PR #466 open, unmerged). Created 2026-09-06 (operator direction). **Amended 2026-09-07 (D34):** top rung renamed Supervisor -> Executive; Orchestrator gained Supervisor as a synonym for the same rung. "Supervisor" below is the pre-rename name — read as Executive throughout; DomI PR #466 needs the matching fixup before merge.
 
 ## Intent
 
@@ -18,8 +18,8 @@ Provider-agnostic. Pipeline phases bind to a CLASS; class resolves to a concrete
 
 | Class (= existing rung) | Claude | Codex | Notes |
 |---|---|---|---|
-| Supervisor | fable | astra | final say, risk eval, irreversible acts. No `ultra`/`super` alias — plain rung name only, so the 3-way `ultra` collision (Codex effort level; caveman intensity; class name) never arises. |
-| Orchestrator | opus | sol | decompose, dispatch, complex planning |
+| Executive (was Supervisor, D34 2026-09-07) | fable | astra | final say, risk eval, irreversible acts. No `ultra`/`super` alias — plain rung name only, so the 3-way `ultra` collision (Codex effort level; caveman intensity; class name) never arises. |
+| Orchestrator (aka Supervisor, D34) | opus | sol | decompose, dispatch, complex planning |
 | Workhorse | sonnet | terra | normal coding/research/synthesis |
 | Grunt | haiku | luna | routine writing, classification, summarization |
 | Free grunt | — | — | already-canon term (`CONTEXT.md:36`): OpenRouter `:free`, gemini free, mistral free, `gpt-5.4-mini`. $0, never a subscription call. TEXT-ONLY, no tools. Fills Workhorse/Grunt slots only in **budget modality**; not a 5th rung. |
