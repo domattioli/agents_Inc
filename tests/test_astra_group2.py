@@ -29,7 +29,7 @@ class AstraGroup2Test(unittest.TestCase):
     def dispatch(self, env=None, route=None, mode="enforce", runner=fake_runner, context=None):
         return Gateway(self.ws, self.registry, mode=mode).dispatch(
             env or make_envelope(), context=context or {"authenticated_sender": "supervisor", "run_id": "run"},
-            runner=runner, route=route or Route("claude", "haiku", "cheap", "cli"))
+            runner=runner, route=route or Route("claude", "haiku", "grunt", "cli"))
 
     def registry_with(self, **changes):
         values = {name: getattr(self.registry, name) for name in
@@ -60,7 +60,7 @@ class AstraGroup2Test(unittest.TestCase):
         aid = control.request_approval("run", "requester", "extract", "doc", "abc", "risk", [], expiry)
         self.assertTrue(control.decide_approval(aid, "approver", "approved", datetime.now(timezone.utc).isoformat()))
         env = make_envelope(security={"approval_id": aid, "resource": "doc", "artifact_hash": "abc"})
-        result = Gateway(self.ws, self.registry, control=control, mode="enforce").dispatch(env, context={"authenticated_sender":"supervisor","run_id":"run"}, runner=fake_runner, route=Route("claude","haiku","cheap","cli"))
+        result = Gateway(self.ws, self.registry, control=control, mode="enforce").dispatch(env, context={"authenticated_sender":"supervisor","run_id":"run"}, runner=fake_runner, route=Route("claude","haiku","grunt","cli"))
         self.assertEqual(result.status, "allowed")
 
     def test_04_protocol_and_operation_schema_bound(self):
@@ -68,7 +68,7 @@ class AstraGroup2Test(unittest.TestCase):
         self.assertEqual(self.dispatch(make_envelope(schema="approval_v1")).status, "envelope_invalid")
 
     def test_05_final_denial_and_identity_are_audited(self):
-        result = self.dispatch(route=Route("gemini", "gemini-pro", "cheap", "http"))
+        result = self.dispatch(route=Route("gemini", "gemini-pro", "grunt", "http"))
         with sqlite3.connect(self.ws / ".workerbees/control.sqlite") as c:
             row = c.execute("SELECT allowed,reason_code,sender,recipient,operation FROM decisions WHERE node_id=?", (result.node_id,)).fetchone()
         self.assertEqual(row, (0, "PROVIDER_NOT_EXECUTABLE", "supervisor", "worker", "request"))
@@ -106,16 +106,16 @@ class AstraGroup2Test(unittest.TestCase):
         class DenyingGateway:
             def dispatch(self, *args, **kwargs):
                 return GatewayResult("denied", decision, None, "node", True)
-        result = _dispatch_worker(self.ws, "run", Route("claude", "haiku", "cheap", "cli"),
+        result = _dispatch_worker(self.ws, "run", Route("claude", "haiku", "grunt", "cli"),
             [], "prompt", fake_runner, "shadow", DenyingGateway(), self.registry, False,
             None, None, None)
         self.assertIsNone(result[0])
         self.assertEqual(result[4]["reason"], "PROVIDER_NOT_EXECUTABLE")
 
     def test_17_forged_tier_and_frontier_without_gate_denied(self):
-        forged = self.dispatch(route=Route("claude", "fable", "cheap", "cli"))
+        forged = self.dispatch(route=Route("claude", "fable", "grunt", "cli"))
         self.assertEqual(forged.decision.reason_code, "ROUTE_NOT_CATALOGED")
-        frontier = self.dispatch(make_envelope(message_id="m2"), route=Route("claude", "fable", "frontier", "cli"))
+        frontier = self.dispatch(make_envelope(message_id="m2"), route=Route("claude", "fable", "executive", "cli"))
         self.assertEqual(frontier.decision.reason_code, "FRONTIER_GATE_REQUIRED")
 
 

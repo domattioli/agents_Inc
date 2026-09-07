@@ -23,20 +23,15 @@ Usage:
 Prints the node_id (dispatch) or "ok"/"error" (return) to stdout. Exit 0
 always (fail-open) except on argument-parse errors (exit 2, argparse default).
 
-RUNG-TO-SCHEMA-TIER MAPPING (found and fixed 2026-09-07, see D35 report):
-the ledger's SQLite schema (docs/governance/SCHEMA-3NF.md) hardcodes
-`tier CHECK (tier IN ('cheap','mid','frontier'))` -- the pre-D27 3-tier
-vocabulary, not the D27 4-rung names. Passing a rung name straight into
-`tier` raises sqlite3.IntegrityError inside ledger._dual_write_dispatch,
-silently swallowed by its own bare `except IntegrityError: pass` -- the
-node never persists to SQLite (JSONL still writes fine), while
-record_dispatch still reports success. Verified by direct repro before
-this script existed; not touching the shared schema (used by the whole
-repo's governance slice, higher blast radius than this task warrants).
-Fix: map rung -> schema tier for the actual `tier=` column (this also
-correctly reuses existing frontier-tier lint/gate-reason semantics --
-gateway.py:192, ledger.py:526 both key off tier=="frontier"), and fold
-the precise rung name into `task` so no information is lost:
+RUNG-TO-SCHEMA-TIER (2026-09-07): originally this bridge worked around the
+ledger's SQLite schema hardcoding the pre-D27 `cheap/mid/frontier` vocabulary
+-- a D27 rung name in `tier` raised a silently-swallowed IntegrityError. That
+was fixed at the source the same day: `docs/governance/SCHEMA-3NF.md`,
+`workerbees/routing.json`, and `workerbees/models.json` now natively use
+`grunt/workhorse/orchestrator/executive`. This bridge just normalizes a rung
+name (accepting the D34 `Supervisor` synonym) to that same vocabulary --
+no bucket-mapping, no information loss. The precise rung is still folded
+into `task` too, harmless redundancy that keeps the audit trail readable.
 """
 from __future__ import annotations
 import argparse
@@ -50,23 +45,16 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from workerbees import ledger  # noqa: E402
 
-_RUNG_TO_SCHEMA_TIER = {
-    "executive": "frontier",
-    "orchestrator": "frontier",
-    "supervisor": "frontier",  # D34 synonym for orchestrator
-    "workhorse": "mid",
-    "grunt": "cheap",
-}
+_VALID_RUNGS = {"executive", "orchestrator", "workhorse", "grunt"}
+_SYNONYMS = {"supervisor": "orchestrator"}  # D34
 
 
 def _schema_tier(rung: str) -> str:
     key = rung.strip().lower()
-    if key not in _RUNG_TO_SCHEMA_TIER:
-        raise ValueError(
-            f"unknown rung {rung!r}; expected one of "
-            f"{sorted(set(_RUNG_TO_SCHEMA_TIER) - {'supervisor'})} (or its D34 synonym 'Supervisor')"
-        )
-    return _RUNG_TO_SCHEMA_TIER[key]
+    key = _SYNONYMS.get(key, key)
+    if key not in _VALID_RUNGS:
+        raise ValueError(f"unknown rung {rung!r}; expected one of {sorted(_VALID_RUNGS)} (or its D34 synonym 'Supervisor')")
+    return key
 
 
 def _sha256_file(path: str | None) -> tuple[str | None, int]:

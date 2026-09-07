@@ -105,7 +105,7 @@ class TestModelsCatalog(unittest.TestCase):
 
     def test_tier_values(self):
         """tier must be one of allowed values."""
-        allowed = {"cheap", "mid", "frontier"}
+        allowed = {"grunt", "workhorse", "orchestrator", "executive"}
         for model_id, profile in self.models_data["models"].items():
             self.assertIn(
                 profile["tier"],

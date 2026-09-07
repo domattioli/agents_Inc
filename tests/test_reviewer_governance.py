@@ -32,7 +32,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
 
     def test_supplied_same_vendor_route_off_mode(self):
         """Supplied same-vendor route returns 'same_vendor' in off mode, runner not called."""
-        route = Route(provider="claude", model="claude-opus", tier="frontier", cmd_kind="cli")
+        route = Route(provider="claude", model="claude-opus", tier="executive", cmd_kind="cli")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude"}, False,
                     runner=counter_runner, role="lawyer", route=route, governance_mode="off")
         self.assertEqual(res.status, "same_vendor")
@@ -40,7 +40,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
 
     def test_supplied_same_vendor_route_enforce_mode(self):
         """Supplied same-vendor route returns 'same_vendor' in enforce mode, runner not called."""
-        route = Route(provider="claude", model="claude-opus", tier="frontier", cmd_kind="cli")
+        route = Route(provider="claude", model="claude-opus", tier="executive", cmd_kind="cli")
         registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude"}, False,
@@ -145,7 +145,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
         )
         route = Path(__file__).resolve().parent.parent / "workerbees"
         from workerbees.router import pick_model
-        r = pick_model("review", "mid", {"claude", "codex"}, False)
+        r = pick_model("review", "workhorse", {"claude", "codex"}, False)
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender},
                                  runner=counter_runner, route=r)
         # Policy should deny (NO_EDGE for worker→reviewer)

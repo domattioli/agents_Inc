@@ -68,7 +68,7 @@ class TestReplayDuplication(unittest.TestCase):
         )
 
         env_hash = canonical_hash(env)
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -134,7 +134,7 @@ class TestReplayDuplication(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -286,7 +286,7 @@ class TestCancelRun(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -413,7 +413,7 @@ class TestApprovalGating(unittest.TestCase):
             security={"approval_required": True}  # Requires approval, no approved field
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -459,7 +459,7 @@ class TestApprovalGating(unittest.TestCase):
             security={"approval_required": True, "approved": True}  # Requires AND has approval
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -709,7 +709,7 @@ class TestSenderSpoofing(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)
@@ -772,7 +772,7 @@ class TestSenderSpoofing(unittest.TestCase):
             created_at=datetime.utcnow().isoformat() + "Z"
         )
 
-        route = Route(provider="claude", model="haiku", tier="cheap", cmd_kind="cli")
+        route = Route(provider="claude", model="haiku", tier="grunt", cmd_kind="cli")
 
         call_count = [0]
         runner = fake_runner_factory({"claims": [], "draft": "Summary."}, call_count_list=call_count)

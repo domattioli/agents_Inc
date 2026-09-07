@@ -33,7 +33,7 @@ def run_demo(use_fake=False):
             data_classification="internal", created_at=datetime.utcnow().isoformat()+"Z"
         )
         result_a = gateway.dispatch(env_a, context={"authenticated_sender":env_a.sender},
-                                    runner=runner, route=pick_model("extract","cheap",{"claude"},False))
+                                    runner=runner, route=pick_model("extract","grunt",{"claude"},False))
         results["allowed"] = {
             "decision_id": result_a.decision.decision_id, "allowed": result_a.decision.allowed,
             "reason_code": result_a.decision.reason_code, "reason": result_a.decision.reason,
@@ -53,7 +53,7 @@ def run_demo(use_fake=False):
             data_classification="internal", created_at=datetime.utcnow().isoformat()+"Z"
         )
         result_b = gateway.dispatch(env_b, context={"authenticated_sender":env_b.sender},
-                                    runner=runner, route=pick_model("review","cheap",{"claude"},False))
+                                    runner=runner, route=pick_model("review","grunt",{"claude"},False))
         results["denied"] = {
             "decision_id": result_b.decision.decision_id, "allowed": result_b.decision.allowed,
             "reason_code": result_b.decision.reason_code, "reason": result_b.decision.reason,
