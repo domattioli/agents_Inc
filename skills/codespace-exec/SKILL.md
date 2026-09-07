@@ -43,7 +43,7 @@ skills/codespace-exec/scripts/exec.sh -- rg -n "TODO item" src
 skills/codespace-exec/scripts/exec.sh --dir /workspaces/project -- make lint
 ```
 
-The first successful execution resolves the repository directory under `/workspaces` and caches it in `~/.codespace-exec/state`. If several directories are present, rerun with `--dir PATH`. Invalidate the cached path when the Codespace workspace layout changes:
+The first successful execution resolves the repository directory under `/workspaces` and caches it in `~/.codespace-exec/state` — a machine-scoped cache shared across repos (GH #2), not repo-scoped data. Override the cache location per-repo/session with `CODESPACE_EXEC_STATE_DIR` to avoid stale-cache collisions across multiple repos/codespaces. If several directories are present, rerun with `--dir PATH`. Invalidate the cached path when the Codespace workspace layout changes:
 
 ```bash
 skills/codespace-exec/scripts/exec.sh --invalidate-cache -- npm test
