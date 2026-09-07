@@ -11,11 +11,14 @@ Never raises past capture()/get() (FR-007) -- I/O and validation errors are
 swallowed into Capture(stored=False) or a None return.
 """
 from __future__ import annotations
+import argparse
 import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,3 +119,52 @@ def get(workspace: Path, sha256: str, *, verify: bool = True) -> bytes | None:
         return data
     except Exception:
         return None
+
+
+def purge(workspace: Path, *, older_than_days: int, dry_run: bool = False) -> list[str]:
+    """Manual GC (operator ruling 2026-09-07, D38): deletes blob+meta pairs whose blob
+    mtime is older than older_than_days. Not automatic -- operator runs this by hand
+    (or their own cron) via the CLI below. Never raises; a per-blob failure is skipped
+    and omitted from the returned list. Returns the sha256 list of blobs removed
+    (or, with dry_run, that *would* be removed)."""
+    removed: list[str] = []
+    root = _cas_root(workspace)
+    if not root.is_dir():
+        return removed
+    cutoff = time.time() - older_than_days * 86400
+    for shard in root.iterdir():
+        if not shard.is_dir():
+            continue
+        for blob_path in shard.iterdir():
+            if blob_path.suffix in (".json", ".tampered"):
+                continue
+            try:
+                if blob_path.stat().st_mtime >= cutoff:
+                    continue
+                sha256 = blob_path.name
+                meta_path = shard / f"{sha256}.meta.json"
+                if not dry_run:
+                    blob_path.unlink(missing_ok=True)
+                    meta_path.unlink(missing_ok=True)
+                removed.append(sha256)
+            except OSError:
+                continue
+    return removed
+
+
+def _cli() -> int:
+    ap = argparse.ArgumentParser(description="Manual GC for the Bindle-sibling local CAS (D38).")
+    ap.add_argument("--workspace", default=".", help="repo/workspace root (default: cwd)")
+    ap.add_argument("--older-than-days", type=int, required=True)
+    ap.add_argument("--dry-run", action="store_true", help="list what would be removed, delete nothing")
+    args = ap.parse_args()
+    removed = purge(Path(args.workspace), older_than_days=args.older_than_days, dry_run=args.dry_run)
+    verb = "would remove" if args.dry_run else "removed"
+    print(f"{verb} {len(removed)} blob(s)")
+    for sha in removed:
+        print(f"  {sha}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_cli())

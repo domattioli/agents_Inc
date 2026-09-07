@@ -62,11 +62,39 @@ class ArtifactsTest(unittest.TestCase):
         self.assertEqual(shard.stat().st_mode & 0o777, 0o700)
 
     def test_off_backend_never_writes_to_disk(self):
-        # capture() itself is env-agnostic (always writes); the "off" gate lives in
-        # the callers (pipeline.py/gateway.py). This test locks that contract: a
-        # workspace with WORKERBEES_ARTIFACTS unset/off must see no cas/ dir from
-        # a full record_output-less call path.
+        # capture() itself is env-agnostic (always writes); the on/off gate lives in
+        # the callers (pipeline.py/gateway.py). This test locks that contract: an
+        # untouched workspace has no cas/ dir until something actually calls capture().
         self.assertFalse((self.workspace / ".workerbees" / "cas").exists())
+
+    def test_purge_removes_only_blobs_older_than_cutoff(self):
+        # D38 (operator ruling 2026-09-07): manual purge, no auto-GC.
+        old_cap = artifacts.capture(self.workspace, b"old blob")
+        new_cap = artifacts.capture(self.workspace, b"new blob")
+        root = self.workspace / ".workerbees" / "cas"
+        old_blob = root / old_cap.sha256[:2] / old_cap.sha256
+        old_meta = root / old_cap.sha256[:2] / f"{old_cap.sha256}.meta.json"
+        old_ts = old_blob.stat().st_mtime - (40 * 86400)
+        os.utime(old_blob, (old_ts, old_ts))
+        os.utime(old_meta, (old_ts, old_ts))
+
+        removed = artifacts.purge(self.workspace, older_than_days=30)
+        self.assertEqual(removed, [old_cap.sha256])
+        self.assertIsNone(artifacts.get(self.workspace, old_cap.sha256))
+        self.assertEqual(artifacts.get(self.workspace, new_cap.sha256), b"new blob")
+
+    def test_purge_dry_run_deletes_nothing(self):
+        cap = artifacts.capture(self.workspace, b"dry run me")
+        blob = self.workspace / ".workerbees" / "cas" / cap.sha256[:2] / cap.sha256
+        old_ts = blob.stat().st_mtime - (40 * 86400)
+        os.utime(blob, (old_ts, old_ts))
+
+        removed = artifacts.purge(self.workspace, older_than_days=30, dry_run=True)
+        self.assertEqual(removed, [cap.sha256])
+        self.assertEqual(artifacts.get(self.workspace, cap.sha256), b"dry run me")
+
+    def test_purge_on_empty_workspace_is_noop(self):
+        self.assertEqual(artifacts.purge(self.workspace, older_than_days=30), [])
 
 
 class RecordOutputTest(unittest.TestCase):
