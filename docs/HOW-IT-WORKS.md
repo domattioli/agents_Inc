@@ -2,7 +2,7 @@
 
 - Reader
   - **Audience**
-    - This is for an operator or agent.
+    - Operators and agents.
   - **Prerequisite**
     - Newcomers should read `START-HERE.md` first.
 
@@ -10,11 +10,11 @@
 
 - Delegation system
   - **Work**
-    - Cheap models do the work.
+    - Lower-cost models do the work.
   - **Supervision**
-    - An expensive model supervises.
+    - A higher-cost model supervises.
   - **Purpose**
-    - The repo combines plumbing with discipline for safe delegation.
+    - The repo combines plumbing with controls for delegation.
 
 ## Two halves
 
@@ -52,7 +52,7 @@ you (orchestrator)
 
 - Remote bridge
   - **File**
-    - `bridge.py` is a separate HTTP server with a persistent codex thread for remote clients.
+    - `bridge.py` is a separate HTTP server with a codex thread for remote clients.
   - **Local use**
     - Local delegation does not need it.
   - **Exception**
@@ -134,7 +134,7 @@ scripts/watch.sh <stderr>
   - **Recheck**
     - Re-run the delegate’s own check yourself.
   - **Reference**
-    - Full discipline is in `../skills/workerbee/SKILL.md`.
+    - Discipline is in `../skills/workerbee/SKILL.md`.
 
 ## Sandbox constraints
 
@@ -202,7 +202,7 @@ ask_mistral: API error: Not enough capacity available for this request, please r
 
 ## Legacy wrappers for optional providers
 
-`workerbees/adapters/` ships claude + codex only. Gemini / Mistral / OpenRouter reach the fleet through the older `codex-bridge` shell wrappers, not through an adapter module:
+`workerbees/adapters/` ships claude + codex only. Gemini / Mistral / OpenRouter reach the fleet through `codex-bridge` shell wrappers, not through an adapter module:
 
 | provider | wrapper | key file (or env var) |
 |---|---|---|
