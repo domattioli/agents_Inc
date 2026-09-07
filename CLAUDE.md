@@ -1,4 +1,6 @@
-# agents_for_dummies — agent instructions
+# agents_Inc — agent instructions
+
+Formerly `agents_for_dummies` (renamed 2026-09-07; GitHub remote `github.com/domattioli/agents_Inc`, local dir matches). All prior specs/docs/paths referencing the old name are historical record — not retconned.
 
 ## Documentation audience rule (CEO 2026-09-05, binding)
 
