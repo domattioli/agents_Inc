@@ -35,10 +35,16 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
            available: set[str], workspace_authorized: bool, runner=run_worker, role: str = "document",
            route=None, *, governance_mode: str | None = None, gateway=None, registry=None,
            workspace=None, run_id=None, parent_id=None, confidential: bool = True,
-           run_budget: dict | None = None) -> ReviewResult:
+           run_budget: dict | None = None, artifact_hash: str | None = None,
+           artifact_size: int | None = None) -> ReviewResult:
     import os
     import hashlib
     from pathlib import Path
+    # C2 (specs/006 S5.1): caller computes the hash once and passes it in; only
+    # fall back to computing here for callers that predate that contract.
+    if artifact_hash is None:
+        artifact_hash = hashlib.sha256(draft.encode()).hexdigest()
+        artifact_size = len(draft.encode())
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
@@ -68,8 +74,8 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
             budget=dict(run_budget or {}))
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
             "parent_id": parent_id, "edge_type": "reviews",
-            "artifact_hash": hashlib.sha256(draft.encode()).hexdigest(),
-            "artifact_size": len(draft.encode())}, runner=runner, route=route)
+            "artifact_hash": artifact_hash,
+            "artifact_size": artifact_size}, runner=runner, route=route)
         # Handle non-allowed for ALL governed modes (G1 fix)
         if result.status != "allowed":
             d = result.decision
