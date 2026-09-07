@@ -10,6 +10,7 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 **How to use:** `PYTHONPATH=. python3 tools/governance_demo.py --fake` — exercises governed routing, policy checks, and ledger recording with no provider keys required; see [Getting started](#getting-started) for real-provider setup.
 
 - [Why pool model capacity](#why-pool-model-capacity)
+- [Asking for work in plain language](#asking-for-work-in-plain-language)
 - [How the governed pool works](#how-the-governed-pool-works)
 - [Project status](#project-status)
 - [Where it fits](#where-it-fits)
@@ -25,6 +26,36 @@ Delegated work can look successful while being wrong. In this project's own buil
 An accepted task must pass independent checks. Savings and accuracy have not yet been measured, so the project does not claim a savings percentage or quality improvement ([docs/PLAN-MVP.md](docs/PLAN-MVP.md)).
 
 Formerly `agents_for_dummies`. The repository was renamed on 2026-09-07 without rewriting its history.
+
+## Asking for work in plain language
+
+You don't hand-pick every model or write JSON. Name two rungs in plain English; the rest fills in.
+
+### Worked example: name two, get four
+
+The ladder has four rungs — Executive, Orchestrator (a.k.a. Supervisor), Workhorse, Grunt — each a Claude/Codex model pair ([docs/governance/ROUTING-RANKING.md](docs/governance/ROUTING-RANKING.md)). You typically only need to name the top two:
+
+> "Use Fable 5 as Executive and Opus 5 as Orchestrator for this refactor."
+
+That's enough. Executive owns final say and irreversible calls; Orchestrator decomposes and dispatches. Workhorse and Grunt — the models that do the actual coding, research, and classification — derive from the same rung table, no need to name them by hand.
+
+### Layering on constraints
+
+Real dispatch prompts add more than a model name. The full list is 14 required elements (`CLAUDE.md` "Delegation prompt contract"; enforced under the hood by [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) Step 11) — you don't type all 14 yourself, but three show up often enough to know by name:
+
+- **Success gate / failure gate**, stated separately — what "done" looks like and what counts as a miss, so a delegate's own PASS claim isn't the final word.
+- **Effort level** — `low|medium|high|xhigh|max` (Claude) or the same plus `ultra` (Codex), defaulting to medium if you don't name one.
+- **Scope boilerplate** — repo-scoped writes only, no commit/push, no credential or cross-repo writes; commit/push authority stays with the run root.
+
+Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `CLAUDE.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
+
+## How the speckit pipeline and grilling are adapted here
+
+**Speckit pipeline.** `skills/speckit-pipeline/` is a deliberate, explicit fork of DomI's upstream `speckit-pipeline` v1.5 (from `DomI@476e141`, PR domattioli/DomI#466, unmerged at fork time) — normally this repo's own rule is "never vendor a DomI skill into a consumer tree," and this is a named, logged exception (`docs/DECISIONS.md` D35). Reason: PR #466 shipped a new default dispatch mode with no test coverage; forking let it get fleshed out and proven against this repo's real `docs/governance/ROUTING-RANKING.md` before that risk reached every DomI consumer. Once proven out, the plan is to relay changes upstream to PR #466 and delete this repo's copy (D35 exit criteria).
+
+What got built on top of the fork (D35 addendum, D36): each pipeline phase now resolves its rung name live against `docs/governance/ROUTING-RANKING.md`'s table (`skills/speckit-pipeline/scripts/resolve_rung.py`, fails closed on an unrecognized rung rather than guessing) and records dispatch/return into the append-only ledger (`ledger_bridge.py`) — a passive recorder bolted onto phases that still run unchanged via the `Agent` tool, not a new execution engine. Building this also caught a real bug: the ledger's SQLite schema silently dropped rows tagged with D27 rung names because of a stale `CHECK` constraint — fixed in the bridge's rung-to-schema-tier mapping.
+
+**Grilling.** There's no packaged `grill-me`/`grill-with-docs` skill in this repo. "Grilling" here means the CEO-led interrogation sessions that produce binding rulings in `docs/DECISIONS.md` (e.g. the 2026-09-06 grill session with fable/astra that produced D27's rung ladder, and the 2026-09-07 session behind D35/D36) — plus element 4 of the delegation prompt contract, the "grill clause," which requires every dispatch prompt to surface gaps and ambiguity rather than have the delegate guess. Grilling is a decision-making discipline and a prompt-contract requirement in this repo, not a standalone invocable skill.
 
 ## How the governed pool works
 
