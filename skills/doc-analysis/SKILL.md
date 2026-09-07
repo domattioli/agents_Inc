@@ -1,5 +1,5 @@
 ---
-name: workerbees
+name: doc-analysis
 description: Delegate document analysis to cheap tool-free Workers with deterministic quote checks and a hard $0 spend cap. Triggers: "analyze these documents", "cited brief", "workerbees".
 ---
 # workerbees — entry contract
