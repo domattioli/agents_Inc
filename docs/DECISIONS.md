@@ -401,3 +401,12 @@ Source: operator instruction 2026-09-07 ("default on"), resolving the NEEDS-OPER
 **Docs:** `specs/006-bindle-sibling-integration/spec.md` §5.4 and §7 updated in place (NEEDS-OPERATOR marked RESOLVED, default corrected); header status line updated. Not touched: `WORKERBEES_GOVERNANCE`'s own default (`off`, unrelated env var, no ruling sought or needed here).
 
 Verification: `python3 -m unittest discover -s tests` — Ran 462 tests, OK (458 prior + 4 net-new purge/default-flip tests; no other test's expected behavior changed).
+
+## D39 — Cross-vendor dispatch semantics accepted (2026-09-07)
+
+- Accepted design direction from sol+astra dispatch, 2026-09-07: Task Authority, capability, and rung are separate. Any policy-allowed orchestrator may route across another vendor's whole model list. Pairing gives no special access.
+- Task Authority is policy-granted final say for one task, within saved limits. An untrusted free model can never hold it. Capability Escalation keeps authority with its holder; Authority Reassignment moves it only by an explicit recorded event.
+- Retire Promotion for new decisions. Old D27 uses stay historical. New records use Capability Escalation and/or Authority Reassignment.
+- A valid run saves task/pass rule, authority and move rule, policy version, allowed models, hard limits, budget/deadline, ranking order, retry/fallback rule, model-list snapshot, all candidates with keep/drop reasons, picks, retries, and authority changes. Filter hard-limit failures; rank by stated order; tie-break by model ID. No order means invalid run. This claims policy-choice determinism and replay only, not deterministic model output or live availability.
+- `CONTEXT.md` is updated as glossary canon. `CLAUDE.md` and `docs/governance/ROUTING-RANKING.md` still contain old rung/pair/final-say rules; a later scoped update must align them.
+- LESSON-CANDIDATE: keep authority rules in one canon or add a drift check, so rung wording cannot silently grant final say.
