@@ -2,7 +2,7 @@
 
 **Feature Branch**: `006-bindle-sibling-integration`
 **Created**: 2026-09-06
-**Status**: Design — operator-directed
+**Status**: Backend A implemented (D37, 2026-09-07) — `workerbees/artifacts.py`, capture points C1/C2/C3 wired, `WORKERBEES_ARTIFACTS=off` default unchanged. Backend B (real Bindle CLI/server) remains design-only per S6.
 **Input**: Operator override of 005 (2026-09-06): "i think bindle does it better almost certainly. i think this repo works in conjunction w bindle functionality like they will be siblings." Design the sibling split, do not re-litigate adoption.
 **Supersedes-in-part**: `specs/005-bindle-integration/spec.md` (its no-duplicate-authority reasoning is retained; its "do not integrate" verdict is not).
 
