@@ -7,6 +7,8 @@ benchmark: claude_tokens_saved_per_offloaded_task
 
 # Codex Bridge
 
+Run `skills/codex-bridge/scripts/check_models.sh` for a local-only model/credential availability table.
+
 The Codex Bridge is a local HTTP server that exposes OpenAI's Codex model (GPT-4 or GPT-3.5) as a persistent session with memory. Use it to preserve context across multiple prompts without burning your Claude token budget on bulk file reading, log triage, or debugging second opinions.
 
 ## When to Use
