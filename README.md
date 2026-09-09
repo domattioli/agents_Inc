@@ -98,13 +98,19 @@ Real dispatch prompts add more than a model name. The full list is 14 required e
 - **Effort level** — `low|medium|high|xhigh|max` (Claude) or the same plus `ultra` (Codex), defaulting to medium if you don't name one.
 - **Scope boilerplate** — repo-scoped writes only, no commit/push, no credential or cross-repo writes; commit/push authority stays with the run root.
 
-Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `CLAUDE.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
+Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See [CLAUDE.md](CLAUDE.md) and [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) Step 11 for the complete, current list.
+
+### Patterns and anti-patterns
+
+**Pattern.** Grill first, name rungs second, dispatch third. The Secretary grills the Owner until the request is sharp — see [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md) for the grilling step in the org chart. Only once "this refactor" has a real scope does the Owner name rungs: "Use Fable 5 as Executive and Opus 5 as Orchestrator for this refactor." Only then does work start — Executive interprets the sharpened request, spins up an Orchestrator/Supervisor, and the Supervisor decomposes and dispatches against the rung table above. Each step depends on the one before it; skipping ahead breaks the chain.
+
+**Anti-pattern.** Naming rungs and dispatching on a vague request, with no grilling step. Someone says "fix the export bug," and the session immediately assigns Fable-as-Executive/Opus-as-Orchestrator and starts dispatching — without ever sharpening what "fix" means, what "export bug" refers to, which endpoint is involved, or what counts as done. The delegation prompt contract's success gate and failure gate get set on that same unsharpened request, so they end up vague or wrong. A delegate can then pass its own gate while missing the actual intent — the same failure class Section 1 warns about: delegated work that looks done while being wrong.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
 ## 3. How the speckit pipeline and grilling are adapted here
 
-This repo's custom speckit binding runs an autonomous phase chain: `skills/speckit-pipeline/scripts/resolve_rung.py` resolves each phase's rung name live against `docs/governance/ROUTING-RANKING.md` (fails closed on an unknown rung), and `ledger_bridge.py` passively records every dispatch and return in an append-only ledger; phases themselves still run through the `Agent` tool.
+This repo's custom speckit binding runs an autonomous phase chain: [skills/speckit-pipeline/scripts/resolve_rung.py](skills/speckit-pipeline/scripts/resolve_rung.py) resolves each phase's rung name live against [docs/governance/ROUTING-RANKING.md](docs/governance/ROUTING-RANKING.md) (fails closed on an unknown rung), and [skills/speckit-pipeline/scripts/ledger_bridge.py](skills/speckit-pipeline/scripts/ledger_bridge.py) passively records every dispatch and return in an append-only ledger; phases themselves still run through the `Agent` tool.
 
 Executive decides gates, accepts or rejects results, resolves conflicts, and handles irreversible acts. Workhorse executes coding, research, and synthesis per gate, reports evidence, and never self-accepts. Separation keeps acceptance independent of the worker's own confidence.
 
@@ -112,7 +118,7 @@ Automation can prepare, route, record, verify, and close routine work. Phases ma
 
 Delegation and support flow (Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
 
-**Grilling.** CEO decision sessions only. Their output is a ruling in `docs/DECISIONS.md` or delegation context for the next action. It is not a packaged execution step.
+**Grilling.** CEO decision sessions only. Their output is a ruling in [docs/DECISIONS.md](docs/DECISIONS.md) or delegation context for the next action. It is not a packaged execution step.
 
 **Speckit pipeline phases (five-stage flow with ledger records):**
 
@@ -165,15 +171,15 @@ Phase 5: CLOSURE
 
 ## 4. How the governed pool works
 
-**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `workerbees/router.py` enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in `routing.json` and checked before dispatch.
+**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. [workerbees/router.py](workerbees/router.py) enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in [workerbees/routing.json](workerbees/routing.json) and checked before dispatch.
 
 Moving to a costlier rung requires a recorded reason: repeated failed checks or a provider quota pause. Worker confidence is not an escalation reason.
 
 Verification runs in this order:
 
-1. **Verifier** (deterministic code checks, no model call): `workerbees/verifier.py` checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
-2. **Reviewer** (cross-vendor semantic review, a model-based check): `workerbees/reviewer.py` performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
-3. **Ledger** (append-only audit trail recording every decision): `workerbees/ledger.py` records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
+1. **Verifier** (deterministic code checks, no model call): [workerbees/verifier.py](workerbees/verifier.py) checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
+2. **Reviewer** (cross-vendor semantic review, a model-based check): [workerbees/reviewer.py](workerbees/reviewer.py) performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
+3. **Ledger** (append-only audit trail recording every decision): [workerbees/ledger.py](workerbees/ledger.py) records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
 
 A worker's own PASS or FAIL is never the final verdict. Acceptance follows verifier and reviewer results recorded in the ledger ([workerbees/pipeline.py](workerbees/pipeline.py)).
 
@@ -258,12 +264,12 @@ Built and tested today:
 - An append-only JSONL and SQLite ledger.
 - A local SHA-256 content-addressed artifact store.
 - The governed dispatch gateway, including envelope, policy, registry, and budget checks.
-- The live `agent.sh`/`agent_runner.py` dispatch path (shells out to the Codex CLI directly; `bridge.py` is a separate HTTP path for a second device, see appendix).
+- The live [agent.sh](skills/codex-bridge/scripts/agent.sh)/[agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) dispatch path (shells out to the Codex CLI directly; [bridge.py](bridge.py) is a separate HTTP path for a second device, see appendix).
 - 462 automated tests passing locally with `python3 -m unittest discover -s tests`.
 
 `WORKERBEES_GOVERNANCE` still defaults to `off`. The governed path therefore exists but is not enabled by default ([workerbees/gateway.py](workerbees/gateway.py)).
 
-The `gask.sh`, `mask.sh`, and `oask.sh` scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
+The [gask.sh](skills/codex-bridge/scripts/gask.sh), [mask.sh](skills/codex-bridge/scripts/mask.sh), and [oask.sh](skills/codex-bridge/scripts/oask.sh) scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
 
 Bindle Backend A is built: the local content-addressed artifact store captures and retrieves run output, and `WORKERBEES_ARTIFACTS` defaults to `local`. Backend B remains deferred; it requires an idempotent `finish_run` terminal event and a validated invoice mapping before any real `deislabs/bindle` installation or publication path.
 
@@ -277,11 +283,11 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 |---|---|---|---|
 | Claude Skills (SKILL.md format) | Yes | No — standard frontmatter | Packages routing and verification judgment as reusable prose (`skills/workerbee`, `skills/codex-bridge`) |
 | Claude subagents / Agent tool | No | — | Single-vendor; cannot enforce cross-vendor review by itself |
-| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard `routing.json` changes |
+| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard [routing.json](workerbees/routing.json) changes |
 | Model Context Protocol (MCP) | No | — | Dispatch uses an HTTP bridge and CLI wrapper |
-| OpenAI Codex CLI | Yes | Wrapped | `bridge.py` adds a persistent-thread HTTP session; `agent.sh` and `agent_runner.py` add a governed asynchronous job queue bound to the ledger |
+| OpenAI Codex CLI | Yes | Wrapped | [bridge.py](bridge.py) adds a persistent-thread HTTP session; [agent.sh](skills/codex-bridge/scripts/agent.sh) and [agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) add a governed asynchronous job queue bound to the ledger |
 | OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
-| Built here, no vendor equivalent | — | — | `ledger.py` (audit trail), `reviewer.py` (cross-vendor enforcement), `verifier.py` (deterministic pre-check), `artifacts.py` (content-addressed store), `router.py`/`routing.json` (tier and vendor routing) |
+| Built here, no vendor equivalent | — | — | [ledger.py](workerbees/ledger.py) (audit trail), [reviewer.py](workerbees/reviewer.py) (cross-vendor enforcement), [verifier.py](workerbees/verifier.py) (deterministic pre-check), [artifacts.py](workerbees/artifacts.py) (content-addressed store), [router.py](workerbees/router.py)/[routing.json](workerbees/routing.json) (tier and vendor routing) |
 
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
 
@@ -301,7 +307,7 @@ Tracked as open issues on this repo:
 
 - [#7](https://github.com/domattioli/agents_Inc/issues/7) — a CLI-agnostic dispatch mechanism, the inverse of `codex-bridge`, so Codex can drive the same workflow and call Claude models.
 - [#8](https://github.com/domattioli/agents_Inc/issues/8) — `astra` dispatch with `--approve-for-me` can hit host-classifier blocks that `terra`/`luna` do not.
-- [#6](https://github.com/domattioli/agents_Inc/issues/6) — `codex-bridge`'s `up.sh` hardcodes a stale pre-rename `BASE` path; `--workdir` doesn't override it.
+- [#6](https://github.com/domattioli/agents_Inc/issues/6) — `codex-bridge`'s [up.sh](skills/codex-bridge/scripts/up.sh) hardcodes a stale pre-rename `BASE` path; `--workdir` doesn't override it.
 - [#4](https://github.com/domattioli/agents_Inc/issues/4) — a dispatch-prompt style-compression template, with findings and a validation plan.
 - [#3](https://github.com/domattioli/agents_Inc/issues/3) — brainstorm: mandate the speckit workflow for Supervisor-rung work.
 
@@ -417,7 +423,7 @@ No LICENSE file exists yet.
 
 ## 10. Appendix: HTTP bridge
 
-`bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests ([bridge.py](bridge.py)).
+[bridge.py](bridge.py) exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests.
 
 <details>
 <summary>Bridge API reference</summary>
