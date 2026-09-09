@@ -11,3 +11,7 @@ When `CODEX_BRIDGE_MODE=ultra`:
 
 CEO 2026-09-05 rule — see `CLAUDE.md` "Documentation audience rule" for the full surface/reader/wording/structure table.
 
+## Delegation model
+
+Canon: `docs/governance/DELEGATION-MODEL.md` (5 roles, 9 speckit phases, Mermaid + phase-actor table). Not restated here.
+

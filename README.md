@@ -104,24 +104,26 @@ Add whichever of these you care about; the rest of the contract's elements are f
 
 ## 3. How the speckit pipeline and grilling are adapted here
 
-**Speckit pipeline.** `skills/speckit-pipeline/` is a deliberate, explicit fork of DomI's upstream `speckit-pipeline` v1.5 (from `DomI@476e141`, PR domattioli/DomI#466, unmerged at fork time) — normally this repo's own rule is "never vendor a DomI skill into a consumer tree," and this is a named, logged exception (`docs/DECISIONS.md` D35). Reason: PR #466 shipped a new default dispatch mode with no test coverage; forking let it get fleshed out and proven against this repo's real `docs/governance/ROUTING-RANKING.md` before that risk reached every DomI consumer. Once proven out, the plan is to relay changes upstream to PR #466 and delete this repo's copy (D35 exit criteria).
+This repo's custom speckit binding runs an autonomous phase chain: `skills/speckit-pipeline/scripts/resolve_rung.py` resolves each phase's rung name live against `docs/governance/ROUTING-RANKING.md` (fails closed on an unknown rung), and `ledger_bridge.py` passively records every dispatch and return in an append-only ledger; phases themselves still run through the `Agent` tool.
 
-What got built on top of the fork (D35 addendum, D36): each pipeline phase now resolves its rung name live against `docs/governance/ROUTING-RANKING.md`'s table (`skills/speckit-pipeline/scripts/resolve_rung.py`, fails closed on an unrecognized rung rather than guessing) and records dispatch/return into the append-only ledger (`ledger_bridge.py`) — a passive recorder bolted onto phases that still run unchanged via the `Agent` tool, not a new execution engine. Building this also caught a real bug: the ledger's SQLite schema silently dropped rows tagged with D27 rung names because of a stale `CHECK` constraint — fixed in the bridge's rung-to-schema-tier mapping.
+Executive decides gates, accepts or rejects results, resolves conflicts, and handles irreversible acts. Workhorse executes coding, research, and synthesis per gate, reports evidence, and never self-accepts. Separation keeps acceptance independent of the worker's own confidence.
 
-**Grilling.** There's no packaged `grill-me`/`grill-with-docs` skill in this repo. "Grilling" here means the CEO-led interrogation sessions that produce binding rulings in `docs/DECISIONS.md` (e.g. the 2026-09-06 grill session with fable/astra that produced D27's rung ladder, and the 2026-09-07 session behind D35/D36) — plus element 4 of the delegation prompt contract, the "grill clause," which requires every dispatch prompt to surface gaps and ambiguity rather than have the delegate guess. Grilling is a decision-making discipline and a prompt-contract requirement in this repo, not a standalone invocable skill.
+Automation can prepare, route, record, verify, and close routine work. Phases marked unattended may run without a live operator; Executive gates remain required for authority, ambiguity, risk, and acceptance.
 
-**Speckit pipeline phases (five-stage flow with ledger intercepts):**
+![Delegation and support flow: Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases](docs/assets/delegation-model.png)
+
+Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
+
+**Grilling.** CEO decision sessions only. Their output is a ruling in `docs/DECISIONS.md` or delegation context for the next action. It is not a packaged execution step.
+
+**Speckit pipeline phases (five-stage flow with ledger records):**
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Speckit Pipeline with Ledger Bridge              │
-│                      (skills/speckit-pipeline/)                     │
-└─────────────────────────────────────────────────────────────────────┘
-
 Phase 1: SPECIFICATION
-├─ Task: Author requirements, resolve ambiguity via grill clause
+├─ Task: Author requirements and resolve ambiguity
 ├─ Output: Spec document + verified success/failure gates
-├─ Ledger bridge: Record task + rung choice (resolve_rung.py)
+├─ Ledger: Record task + resolved rung
+├─ Mode: Unattended only after Executive scope gate
 └─ Next: Phase 2
 
       ↓
@@ -129,15 +131,17 @@ Phase 1: SPECIFICATION
 Phase 2: PLAN
 ├─ Task: Decompose into subtasks, assign rungs, set risk gates
 ├─ Output: Step-by-step plan + dispatch matrix
-├─ Ledger bridge: Record plan + each subtask's rung + authority
+├─ Ledger: Record plan, rung, and authority for each subtask
+├─ Mode: Unattended when scope and risk gates are set
 └─ Next: Phase 3
 
       ↓
 
 Phase 3: IMPLEMENTATION
-├─ Task: Execute via Agent tool or dispatch gateway
+├─ Task: Execute through the Agent tool
 ├─ Output: Completed subtasks, worker returns, decision nodes
-├─ Ledger bridge: Record dispatch + return + worker metadata
+├─ Ledger: Record dispatch, return, and worker metadata
+├─ Mode: Workhorse executes; Executive decides exceptions
 └─ Next: Phase 4
 
       ↓
@@ -145,7 +149,8 @@ Phase 3: IMPLEMENTATION
 Phase 4: REVIEW
 ├─ Task: Cross-vendor verifier + reviewer gates (see Section 4)
 ├─ Output: Acceptance decision + rationale
-├─ Ledger bridge: Record verification + reviewer consensus
+├─ Ledger: Record verification and reviewer consensus
+├─ Mode: Unattended checks allowed; Executive owns acceptance
 └─ Next: Phase 5
 
       ↓
@@ -153,24 +158,9 @@ Phase 4: REVIEW
 Phase 5: CLOSURE
 ├─ Task: Integrate verified outputs, mark task done
 ├─ Output: Final deliverable + close ledger run
-├─ Ledger bridge: Record closure + link to PR/commit
+├─ Ledger: Record closure + link to PR/commit
+├─ Mode: Unattended after acceptance gate
 └─ End: Task complete
-
-┌─────────────────────────────────────────────────────────────────────┐
-│ D27 Bug Fix: Rung-name resolution                                  │
-│                                                                      │
-│ Issue: Ledger's SQLite schema had a stale CHECK constraint that    │
-│ silently dropped rows tagged with D27 rung names (Executive,        │
-│ Orchestrator, Workhorse, Grunt). The constraint was checking for    │
-│ old tier names only.                                                │
-│                                                                      │
-│ Fix (ledger_bridge.py): Rung-to-schema-tier mapping resolves each  │
-│ dispatch's rung name live against docs/governance/ROUTING-RANKING  │
-│ and maps it to the correct schema tier before insertion, ensuring   │
-│ rows never drop silently.                                           │
-│                                                                      │
-│ Ref: PR domattioli/DomI#466 (phase 2 goal: merge upstream)         │
-└─────────────────────────────────────────────────────────────────────┘
 ```
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>

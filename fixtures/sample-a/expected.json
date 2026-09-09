@@ -1,0 +1,7 @@
+{"required_claims": [
+  {"quote": "3.5 bar plus or minus 0.2 bar", "anchor": "sample-a#p2"},
+  {"quote": "shall not exceed 50 milliseconds", "anchor": "sample-a#p3"},
+  {"quote": "fail safe to pump off within 200 milliseconds", "anchor": "sample-a#p4"},
+  {"quote": "not verified against site data", "anchor": "sample-a#p5"},
+  {"quote": "unsigned 16-bit value in millibar", "anchor": "sample-a#p6"}
+]}

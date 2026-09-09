@@ -29,7 +29,7 @@ class SQLiteLintTest(unittest.TestCase):
     def _fixture(self, name):
         os.environ["WORKERBEES_STORE"] = "jsonl"
         try:
-            if name == "tim":
+            if name == "sample-b":
                 self._node("tim-root", "tim-run", "opus", "grunt", "anthropic", None, None)
                 self._node("tim-review", "tim-run", "sonnet", "workhorse", "anthropic",
                            "tim-root", "reviews")
@@ -51,7 +51,7 @@ class SQLiteLintTest(unittest.TestCase):
         return sorted((f.rule, tuple(f.node_ids)) for f in findings)
 
     def test_tim_and_dom_jsonl_sqlite_verdicts_match(self):
-        for name in ("tim", "dom"):
+        for name in ("sample-b", "sample-a"):
             with self.subTest(name=name):
                 self._fixture(name)
                 jsonl = ledger.lint(workspace=self.workspace)
@@ -69,7 +69,7 @@ class SQLiteLintTest(unittest.TestCase):
         self.assertEqual(["depth", "depth"], [f.rule for f in findings])
 
     def test_sqlite_depth_cycle_terminates_and_fails(self):
-        self._fixture("dom")
+        self._fixture("sample-a")
         db = self.workspace / ".workerbees" / "workerbees.db"
         with sqlite3.connect(db) as conn:
             conn.execute(

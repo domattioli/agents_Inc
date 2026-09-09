@@ -43,7 +43,7 @@ class TestMigration(unittest.TestCase):
         # Force JSONL-only mode for fixture creation
         os.environ["WORKERBEES_STORE"] = "jsonl"
 
-        if name == "tim":
+        if name == "sample-b":
             # Tim fixture: root + reviewer edge + probe node
             ledger_module.record_dispatch(
                 workspace, node_id="tim-root-001", run_id="tim-run-01",
@@ -77,7 +77,7 @@ class TestMigration(unittest.TestCase):
                 seconds=0.5, subscription_calls=5
             )
 
-        elif name == "dom":
+        elif name == "sample-a":
             # Dom fixture: root + corrector + reviewer
             ledger_module.record_dispatch(
                 workspace, node_id="dom-root-001", run_id="dom-run-01",
@@ -131,7 +131,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_a_roundtrip_tim(self):
         """Gate A: Tim fixture round-trip Mermaid comparison."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         # Load original JSONL ledger
         from workerbees import ledger as ledger_module
@@ -153,7 +153,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_a_roundtrip_dom(self):
         """Gate A: Dom fixture round-trip Mermaid comparison."""
-        workspace = self._create_ledger_fixture("dom")
+        workspace = self._create_ledger_fixture("sample-a")
 
         # Load original JSONL ledger
         from workerbees import ledger as ledger_module
@@ -174,7 +174,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_b_idempotence(self):
         """Gate B: Migration is idempotent. Second run writes 0 new fact rows."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         # First migration
         result1 = self._run_migration(workspace)
@@ -242,7 +242,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_c_rollup_parity(self):
         """Gate C: Rollup from JSONL equals rollup from migrated store."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         from workerbees import ledger as ledger_module
 
@@ -265,7 +265,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_d_probe_survives(self):
         """Gate D: Parentless probe node with edge_type='probes' migrates intact."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         from workerbees import ledger as ledger_module
 
@@ -284,7 +284,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_e_import_metadata(self):
         """Gate E: import_source and import_issue are populated."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         # Migrate
         self._run_migration(workspace)
@@ -310,7 +310,7 @@ class TestMigration(unittest.TestCase):
 
     def test_gate_f_dry_run_writes_nothing(self):
         """Gate F: --dry-run reports without writing."""
-        workspace = self._create_ledger_fixture("tim")
+        workspace = self._create_ledger_fixture("sample-b")
 
         db_path = workspace / ".workerbees" / "workerbees.db"
 
