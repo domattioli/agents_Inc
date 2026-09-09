@@ -13,12 +13,12 @@ def fake_runner_factory(payload: dict, status="returned"):
 class PipelineTest(unittest.TestCase):
     def setUp(self):
         self.ws = Path(tempfile.mkdtemp())
-        self.exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        self.exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
 
     def test_good_worker_output_is_needs_review_not_verified(self):
         # Reviewer gets mismatched JSON → unparsed → status returned.
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload), review_enabled=True)
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.report.matched, 5)
@@ -26,25 +26,25 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(r.receipt["content_review"], "unparsed")
 
     def test_forged_quote_is_returned_with_failures(self):
-        payload = {"claims": [{"text": "t", "quote": "rent weekly", "anchor": "tim#p3"}], "draft": "Brief. (p3)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        payload = {"claims": [{"text": "t", "quote": "rent weekly", "anchor": "sample-b#p3"}], "draft": "Brief. (p3)"}
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["source_integrity"], "fail")
 
     def test_quota_pauses(self):
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory({}, status="paused"))
         self.assertEqual(r.status, "paused")
 
     def test_only_optional_and_unauthorized_is_blocked(self):
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"gemini"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"gemini"},
                   runner=fake_runner_factory({}))
         self.assertEqual(r.status, "blocked")
 
     def test_non_json_worker_output_is_returned(self):
         def runner(cmd, stdin_text, timeout=300): return WorkerResult("returned", "not json", "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"}, runner=runner)
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude"}, runner=runner)
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["source_integrity"], "unparsed")
 
@@ -52,7 +52,7 @@ class PipelineTest(unittest.TestCase):
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         fenced = f"```json\n{json.dumps(payload)}\n```"
         def runner(cmd, stdin_text, timeout=300): return WorkerResult("returned", fenced, "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude","codex"}, runner=runner, max_corrections=0)
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["source_integrity"], "pass")
@@ -64,7 +64,7 @@ class PipelineTest(unittest.TestCase):
         def runner(cmd, stdin_text, timeout=300):
             captured_stdin[0] = stdin_text
             return WorkerResult("returned", json.dumps(payload), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude","codex"}, runner=runner, max_corrections=0)
         self.assertIn("[p1]", captured_stdin[0])
         self.assertIn("[p6]", captured_stdin[0])
@@ -72,7 +72,7 @@ class PipelineTest(unittest.TestCase):
     def test_empty_draft_is_returned(self):
         # Good claims, empty draft → status returned, receipt content_review == "draft_missing"
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": ""}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "draft_missing")
@@ -80,7 +80,7 @@ class PipelineTest(unittest.TestCase):
     def test_empty_claims_is_returned(self):
         # Empty claims list → verifier fails (0 checked), status returned with source_integrity fail
         payload = {"claims": [], "draft": "x (p2)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["source_integrity"], "fail")
@@ -88,7 +88,7 @@ class PipelineTest(unittest.TestCase):
     def test_draft_citing_unanchored_paragraph_is_returned(self):
         # Good 5 claims (p2, p3, p4, p5, p6), draft cites p9 (unanchored)
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Foo (p9)."}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "uncited_draft")
@@ -101,7 +101,7 @@ class PipelineTest(unittest.TestCase):
             if len(calls) == 1:
                 return WorkerResult("returned", json.dumps(good), "", 0)
             return WorkerResult("returned", json.dumps({"verdicts":[{"claim":i,"ok":True,"issue":""} for i in range(5)],"omissions":[]}), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude","codex"}, runner=runner, max_corrections=0)
         self.assertEqual(r.status, "verified")
         self.assertEqual(calls, ["claude", "codex"])
@@ -121,7 +121,7 @@ class PipelineTest(unittest.TestCase):
                 {"claim":3,"ok":True,"issue":""},
                 {"claim":4,"ok":True,"issue":""}
             ],"omissions":[]}), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude","codex"}, runner=runner, max_corrections=0)
         self.assertEqual(r.status, "needs-review")
         self.assertIn("Clause 8", json.dumps(r.receipt))
@@ -134,13 +134,13 @@ class PipelineTest(unittest.TestCase):
             if n["i"] == 1:
                 return WorkerResult("returned", json.dumps(good), "", 0)
             return WorkerResult("returned", json.dumps({"verdicts":[{"claim":2,"ok":False,"issue":"Clause 8"}],"omissions":[]}), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "invalid")
 
     def test_single_vendor_is_returned(self):
         good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"}, runner=fake_runner_factory(good))
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude"}, runner=fake_runner_factory(good))
         self.assertEqual(r.status, "returned")
         self.assertEqual(r.receipt["content_review"], "no_other_vendor")
 
@@ -150,7 +150,7 @@ class PipelineTest(unittest.TestCase):
         def runner(cmd, stdin_text, timeout=300):
             captured_cmd[0] = cmd
             return WorkerResult("returned", json.dumps(good), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude", "codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude", "codex"},
                   worker_provider="codex", review_enabled=False, runner=runner)
         self.assertEqual(r.route.provider, "codex")
         self.assertEqual(captured_cmd[0][0], "codex")
@@ -166,7 +166,7 @@ class PipelineTest(unittest.TestCase):
                 ],"omissions":[]}), "", 0)
             # Worker
             return WorkerResult("returned", json.dumps(good), "", 0)
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"}, runner=runner)
         self.assertEqual(r.status, "needs-review")
         self.assertIn("uncited_sentences", r.receipt)
         self.assertGreater(len(r.receipt.get("uncited_sentences", [])), 0)
@@ -207,7 +207,7 @@ class PipelineTest(unittest.TestCase):
                 "omissions": [],
             }), "", 0)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1)
         self.assertEqual(r.status, "verified")
         self.assertEqual(r.receipt["corrections"], 1)
@@ -242,7 +242,7 @@ class PipelineTest(unittest.TestCase):
                 }), "", 0)
             return WorkerResult("returned", json.dumps(worker_1), "", 0)
 
-        brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
               available={"claude", "codex"}, runner=runner, max_corrections=1)
         prompt = stins[2]
         self.assertIn('"reviewer_issues"', prompt)
@@ -287,7 +287,7 @@ class PipelineTest(unittest.TestCase):
                 "omissions": ["Clause 3 says monthly rent"],
             }), "", 0)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1)
         self.assertEqual(r.status, "needs-review")
         self.assertIn("[UNRESOLVED:", r.draft)
@@ -298,11 +298,11 @@ class PipelineTest(unittest.TestCase):
     def test_zero_padded_anchor_marks_unresolved(self):
         worker_1 = {
             "claims": [
-                {"text": "t", "quote": "Synthetic Matter SYN-001", "anchor": "tim#p01"},
-                {"text": "t", "quote": "runs for twenty-four months", "anchor": "tim#p02"},
-                {"text": "t", "quote": "rent of 2,400 dollars monthly", "anchor": "tim#p03"},
-                {"text": "t", "quote": "Notwithstanding Clause 3, rent shall be paid quarterly", "anchor": "tim#p04"},
-                {"text": "t", "quote": "ninety days written notice", "anchor": "tim#p05"},
+                {"text": "t", "quote": "Synthetic Matter SYN-001", "anchor": "sample-b#p01"},
+                {"text": "t", "quote": "runs for twenty-four months", "anchor": "sample-b#p02"},
+                {"text": "t", "quote": "rent of 2,400 dollars monthly", "anchor": "sample-b#p03"},
+                {"text": "t", "quote": "Notwithstanding Clause 3, rent shall be paid quarterly", "anchor": "sample-b#p04"},
+                {"text": "t", "quote": "ninety days written notice", "anchor": "sample-b#p05"},
             ],
             "draft": "The lease lasts twenty-four months (p1). Rent is paid monthly (p2). Quarterly payment applies (p3)."
         }
@@ -335,7 +335,7 @@ class PipelineTest(unittest.TestCase):
                 "omissions": [],
             }), "", 0)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1)
         self.assertEqual(r.status, "needs-review")
         self.assertIn("[UNRESOLVED: The lease lasts twenty-four months (p1).]", r.draft)
@@ -362,7 +362,7 @@ class PipelineTest(unittest.TestCase):
                 "omissions": ["Clause 3 says monthly rent"],
             }), "", 0)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=0)
         self.assertEqual(r.status, "needs-review")
         self.assertEqual(r.receipt["corrections"], 0)
@@ -391,7 +391,7 @@ class PipelineTest(unittest.TestCase):
                 }), "", 0)
             return WorkerResult("paused", "", "worker stderr line 1\nworker stderr line 2\nRATE_LIMIT_EXHAUSTED", 1)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1)
         self.assertEqual(r.status, "paused")
         self.assertEqual(r.receipt["corrections"], 1)
@@ -412,7 +412,7 @@ class PipelineTest(unittest.TestCase):
                 return WorkerResult("returned", json.dumps(payload), "", 0)
             return WorkerResult("returned", json.dumps({"verdicts":[{"claim":i,"ok":True,"issue":""} for i in range(5)],"omissions":[]}), "", 0)
         
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude","codex"}, runner=runner, max_corrections=0)
         
         # Check ledger exists and has 2 nodes
@@ -438,11 +438,11 @@ class PipelineTest(unittest.TestCase):
             return WorkerResult("returned", json.dumps(payload), "", 0)
         
         # First brief
-        r1 = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r1 = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                    available={"claude","codex"}, runner=runner, max_corrections=0)
         
         # Second brief
-        r2 = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r2 = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                    available={"claude","codex"}, runner=runner, max_corrections=0)
         
         ledger = load(self.ws)
@@ -453,7 +453,7 @@ class PipelineTest(unittest.TestCase):
     def test_ledger_failure_does_not_affect_brief_status(self):
         """T021: Ledger write failure never changes brief status."""
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload), review_enabled=False)
         # Even if ledger has an error, brief should succeed
         self.assertEqual(r.status, "returned")
@@ -495,7 +495,7 @@ class PipelineTest(unittest.TestCase):
                 }), "", 0)
             return WorkerResult("returned", json.dumps(worker_2), "", 0)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1)
 
         ledger = load(self.ws)
@@ -528,7 +528,7 @@ class PipelineTest(unittest.TestCase):
         from workerbees.ledger import load
 
         good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude"},
                   runner=fake_runner_factory(good))
 
         ledger = load(self.ws)
@@ -545,7 +545,7 @@ class PipelineTest(unittest.TestCase):
 
         # First, run a baseline to get the expected status
         good = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
-        r_baseline = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude"},
+        r_baseline = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude"},
                            runner=fake_runner_factory(good), review_enabled=False)
         baseline_status = r_baseline.status
 
@@ -554,7 +554,7 @@ class PipelineTest(unittest.TestCase):
         # Create .workerbees as a regular file to block ledger.jsonl creation
         (ws_fail / ".workerbees").write_text("blocking file")
 
-        r_fail = brief(FIX/"tim"/"matter.md", "tim", "lawyer", ws_fail, available={"claude"},
+        r_fail = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", ws_fail, available={"claude"},
                        runner=fake_runner_factory(good), review_enabled=False)
 
         # Status should be the same despite write failure
