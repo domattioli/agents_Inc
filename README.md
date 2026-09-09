@@ -22,7 +22,7 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 9. [Getting started](#9-getting-started)
 10. [Appendix: HTTP bridge](#10-appendix-http-bridge)
 
-## 1. Why pool model capacity&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 1. Why pool model capacity&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 Delegated work can look successful while being wrong. In this project's own build history, two defects (a wrong `resume` argument order, a missing `--skip-git-repo-check`) passed a subagent's own smoke tests and were only caught when a supervisor read the code directly ([specs/001-codex-delegation-regime/tasks.md](specs/001-codex-delegation-regime/tasks.md)).
 
@@ -32,7 +32,7 @@ An accepted task must pass independent checks. Savings and accuracy have not yet
 
 Formerly `agents_for_dummies`. The repository was renamed on 2026-09-07 without rewriting its history.
 
-## 2. Asking for work in plain language&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 2. Asking for work in plain language&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 You don't hand-pick every model or write JSON. Name two rungs in plain English; the rest fills in.
 
@@ -54,7 +54,7 @@ Real dispatch prompts add more than a model name. The full list is 14 required e
 
 Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `CLAUDE.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
 
-## 3. How the speckit pipeline and grilling are adapted here&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 3. How the speckit pipeline and grilling are adapted here&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 **Speckit pipeline.** `skills/speckit-pipeline/` is a deliberate, explicit fork of DomI's upstream `speckit-pipeline` v1.5 (from `DomI@476e141`, PR domattioli/DomI#466, unmerged at fork time) — normally this repo's own rule is "never vendor a DomI skill into a consumer tree," and this is a named, logged exception (`docs/DECISIONS.md` D35). Reason: PR #466 shipped a new default dispatch mode with no test coverage; forking let it get fleshed out and proven against this repo's real `docs/governance/ROUTING-RANKING.md` before that risk reached every DomI consumer. Once proven out, the plan is to relay changes upstream to PR #466 and delete this repo's copy (D35 exit criteria).
 
@@ -62,7 +62,7 @@ What got built on top of the fork (D35 addendum, D36): each pipeline phase now r
 
 **Grilling.** There's no packaged `grill-me`/`grill-with-docs` skill in this repo. "Grilling" here means the CEO-led interrogation sessions that produce binding rulings in `docs/DECISIONS.md` (e.g. the 2026-09-06 grill session with fable/astra that produced D27's rung ladder, and the 2026-09-07 session behind D35/D36) — plus element 4 of the delegation prompt contract, the "grill clause," which requires every dispatch prompt to surface gaps and ambiguity rather than have the delegate guess. Grilling is a decision-making discipline and a prompt-contract requirement in this repo, not a standalone invocable skill.
 
-## 4. How the governed pool works&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 4. How the governed pool works&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 Routing uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `workerbees/router.py` enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)).
 
@@ -78,7 +78,7 @@ A worker's own PASS or FAIL is never the final verdict. Acceptance follows verif
 
 Today's schema still requires a Claude model name and a Codex model name at every tier; allowing either subscription to be optional is a goal of the pooling design, not current behavior ([workerbees/config_schema.py](workerbees/config_schema.py), [workerbees/keys.py](workerbees/keys.py)).
 
-## 5. Project status&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 5. Project status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 **Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md).
 
@@ -98,7 +98,7 @@ The `gask.sh`, `mask.sh`, and `oask.sh` scripts are the free-tier legacy path. T
 
 Bindle Backend A is built: the local content-addressed artifact store captures and retrieves run output, and `WORKERBEES_ARTIFACTS` defaults to `local`. Backend B remains deferred; it requires an idempotent `finish_run` terminal event and a validated invoice mapping before any real `deislabs/bindle` installation or publication path.
 
-## 6. Where it fits&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 6. Where it fits&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 `agents_Inc` is an integration and governance layer above provider tools. It does not replace their CLIs or instruction formats.
 
@@ -114,13 +114,13 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
 
-## 7. Limitations&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 7. Limitations&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 The project has not yet measured cost savings or accuracy against its baseline. Local passing tests establish that the implementation behaves as coded, not that it is reliable in production. `WORKERBEES_GOVERNANCE` remains off by default, so the enforced-review path this repository is built around is not the path a fresh checkout runs.
 
 Cross-vendor review catches disagreement between models; it does not catch a shared blind spot both vendors have. Deterministic verification checks what a check can express (citations exist, a file changed, a command exit code) and does not substitute for a human judgment call on scope or design quality. Bindle Backend B (remote artifact publication) is unimplemented, so artifacts stay local-only today.
 
-## 8. Future work&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 8. Future work&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 Tracked as open issues on this repo:
 
@@ -130,7 +130,7 @@ Tracked as open issues on this repo:
 - [#4](https://github.com/domattioli/agents_Inc/issues/4) — a dispatch-prompt style-compression template, with findings and a validation plan.
 - [#3](https://github.com/domattioli/agents_Inc/issues/3) — brainstorm: mandate the speckit workflow for Supervisor-rung work.
 
-## 9. Getting started&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 9. Getting started&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 ### Install and configure providers
 
@@ -206,7 +206,7 @@ No LICENSE file exists yet.
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Continuing the work in a fresh session |
 | [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) | Full supervision discipline |
 
-## 10. Appendix: HTTP bridge&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
+## 10. Appendix: HTTP bridge&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<sub>[^ Back to top](#agents_inc)</sub>
 
 `bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests ([bridge.py](bridge.py)).
 
