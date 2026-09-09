@@ -32,12 +32,12 @@ class TestTokenize(unittest.TestCase):
         self.assertNotIn("abcdefghij1234567890", toks)
 
     def test_email_redaction(self):
-        text = "contact me at balmy-drapery-putt@duck.com about the swarm"
+        text = "contact me at jane.doe@example.com about the swarm"
         cleaned = nc.clean_text(text)
-        self.assertNotIn("duck.com", cleaned)
+        self.assertNotIn("example.com", cleaned)
         toks = nc.tokenize(text)
         self.assertIn("swarm", toks)
-        self.assertNotIn("duck", toks)
+        self.assertNotIn("example", toks)
 
     def test_bearer_token_redaction(self):
         cleaned = nc.clean_text("Authorization: Bearer abc123xyz999 swarm graph")
