@@ -1,0 +1,8 @@
+{"forged": [
+  {"quote": "3.5 bar plus or minus 0.5 bar", "anchor": "sample-a#p2"},
+  {"quote": "shall not exceed 500 milliseconds", "anchor": "sample-a#p3"},
+  {"quote": "fully verified against site data", "anchor": "sample-a#p5"},
+  {"quote": "signed 32-bit value in bar", "anchor": "sample-a#p6"}
+], "omissions": [
+  {"anchor": "sample-a#p3", "why": "Timing constraint applies only under nominal conditions; worst-case exceeds 500ms"}
+]}
