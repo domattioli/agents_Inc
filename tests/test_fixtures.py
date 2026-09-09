@@ -16,11 +16,11 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(r.matched, 0, "every seeded fault must fail")
         self.assertGreaterEqual(len(bad), 3)
 
-    def test_tim(self): self._check("tim", "matter.md")
-    def test_dom(self): self._check("dom", "design.md")
+    def test_sample_b(self): self._check("sample-b", "matter.md")
+    def test_sample_a(self): self._check("sample-a", "design.md")
 
     def test_fixture_omissions_valid(self):
-        for name in ["tim", "dom"]:
+        for name in ["sample-b", "sample-a"]:
             faults = json.loads((FIX / name / "faults.json").read_text())
             omissions = faults.get("omissions", [])
             self.assertGreater(len(omissions), 0, f"{name} must have ≥1 omission")
