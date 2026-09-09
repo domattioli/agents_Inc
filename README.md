@@ -17,9 +17,10 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 4. [How the governed pool works](#4-how-the-governed-pool-works)
 5. [Project status](#5-project-status)
 6. [Where it fits](#6-where-it-fits)
-7. [Future work](#7-future-work)
-8. [Getting started](#8-getting-started)
-9. [Appendix: HTTP bridge](#9-appendix-http-bridge)
+7. [Limitations](#7-limitations)
+8. [Future work](#8-future-work)
+9. [Getting started](#9-getting-started)
+10. [Appendix: HTTP bridge](#10-appendix-http-bridge)
 
 ## 1. Why pool model capacity
 
@@ -121,13 +122,19 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 | OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
 | Built here, no vendor equivalent | — | — | `ledger.py` (audit trail), `reviewer.py` (cross-vendor enforcement), `verifier.py` (deterministic pre-check), `artifacts.py` (content-addressed store), `router.py`/`routing.json` (tier and vendor routing) |
 
-The project has not yet measured cost savings or accuracy against its baseline. Local passing tests establish implementation behavior, not production reliability. Governance also remains off by default.
-
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
-## 7. Future work
+## 7. Limitations
+
+The project has not yet measured cost savings or accuracy against its baseline. Local passing tests establish that the implementation behaves as coded, not that it is reliable in production. `WORKERBEES_GOVERNANCE` remains off by default, so the enforced-review path this repository is built around is not the path a fresh checkout runs.
+
+Cross-vendor review catches disagreement between models; it does not catch a shared blind spot both vendors have. Deterministic verification checks what a check can express (citations exist, a file changed, a command exit code) and does not substitute for a human judgment call on scope or design quality. Bindle Backend B (remote artifact publication) is unimplemented, so artifacts stay local-only today.
+
+<div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
+
+## 8. Future work
 
 Tracked as open issues on this repo:
 
@@ -139,7 +146,7 @@ Tracked as open issues on this repo:
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
-## 8. Getting started
+## 9. Getting started
 
 ### Install and configure providers
 
@@ -217,7 +224,7 @@ No LICENSE file exists yet.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
-## 9. Appendix: HTTP bridge
+## 10. Appendix: HTTP bridge
 
 `bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests ([bridge.py](bridge.py)).
 
