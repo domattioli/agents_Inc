@@ -1,0 +1,13 @@
+{
+  "title": "agents_Inc",
+  "upload_type": "software",
+  "creators": [
+    {"name": "Mattioli, Dominik"}
+  ],
+  "keywords": [
+    "claude-code",
+    "multi-agent",
+    "model-pooling",
+    "governance"
+  ]
+}
