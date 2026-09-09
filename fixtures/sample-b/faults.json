@@ -1,0 +1,8 @@
+{"forged": [
+  {"quote": "rent of 2,400 dollars weekly", "anchor": "sample-b#p3"},
+  {"quote": "sixty days written notice", "anchor": "sample-b#p5"},
+  {"quote": "Landlord is liable for all water damage", "anchor": "sample-b#p6"},
+  {"quote": "runs for twenty-four months", "anchor": "sample-b#p4"}
+], "omissions": [
+  {"anchor": "sample-b#p4", "why": "Clause 8 overrides Clause 3 - term duration may be subject to renegotiation"}
+]}

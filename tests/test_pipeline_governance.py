@@ -20,7 +20,7 @@ def fake_runner_factory(payload: dict, status="returned"):
 class PipelineGovernanceTest(unittest.TestCase):
     def setUp(self):
         self.ws = Path(tempfile.mkdtemp())
-        self.exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        self.exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
 
     def tearDown(self):
         if "WORKERBEES_GOVERNANCE" in os.environ:
@@ -34,12 +34,12 @@ class PipelineGovernanceTest(unittest.TestCase):
 
         # Baseline run with no governance
         ws_baseline = Path(tempfile.mkdtemp())
-        r_baseline = brief(FIX/"tim"/"matter.md", "tim", "lawyer", ws_baseline, available={"claude","codex"},
+        r_baseline = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", ws_baseline, available={"claude","codex"},
                            runner=fake_runner_factory(payload), review_enabled=False)
         ledger_baseline = load_ledger(ws_baseline)
 
         # Run with off mode explicitly
-        r_off = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r_off = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                       runner=fake_runner_factory(payload), review_enabled=False, governance_mode="off")
 
         # Status should match
@@ -61,7 +61,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         # Spy on Registry.load and Gateway.__init__ to verify they're never called in off mode
         with patch('workerbees.registry.Registry.load') as mock_registry_load, \
              patch('workerbees.gateway.Gateway.__init__', return_value=None) as mock_gateway_init:
-            r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+            r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                       runner=fake_runner_factory(payload), review_enabled=False, governance_mode="off",
                       gateway=None, registry=None)
             self.assertEqual(r.status, "returned")
@@ -77,7 +77,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         registry = Registry.load("workerbees")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=runner, review_enabled=False, governance_mode="shadow",
                   registry=registry, gateway=gateway, confidential=False)
 
@@ -102,7 +102,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         registry = Registry.load("workerbees")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=runner, review_enabled=False, governance_mode="enforce",
                   registry=registry, gateway=gateway, confidential=False)
 
@@ -122,7 +122,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         with patch('workerbees.pipeline.check_dispatch', side_effect=PolicyError("Clearance exceeded")) as mock_check:
-            r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+            r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                       runner=runner, review_enabled=False, governance_mode="enforce",
                       registry=registry, gateway=gateway, confidential=True)
 
@@ -140,7 +140,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
 
         with self.assertRaises(ValueError) as ctx:
-            brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+            brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=fake_runner_factory(payload), review_enabled=False, governance_mode="invalid_mode")
 
         self.assertIn("Invalid WORKERBEES_GOVERNANCE mode", str(ctx.exception))
@@ -153,7 +153,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         os.environ["WORKERBEES_GOVERNANCE"] = "shadow"
         runner = fake_runner_factory(payload)
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=runner, review_enabled=False, confidential=False)
 
         # Should work in shadow mode and record decision in control.sqlite
@@ -176,7 +176,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         registry = Registry.load("workerbees")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws, available={"claude","codex"},
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                   runner=runner, review_enabled=False, governance_mode="shadow",
                   registry=registry, gateway=gateway, confidential=False)
 
@@ -222,7 +222,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         registry = Registry.load("workerbees")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
-        r = brief(FIX/"tim"/"matter.md", "tim", "lawyer", self.ws,
+        r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,
                   available={"claude", "codex"}, runner=runner, max_corrections=1,
                   governance_mode="shadow", registry=registry, gateway=gateway, confidential=False)
 

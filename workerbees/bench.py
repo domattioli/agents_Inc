@@ -8,7 +8,7 @@ from .adapters.base import run_worker
 from .router import _TABLE
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
-CASES = [("tim", "matter.md", "lawyer"), ("dom", "design.md", "engineer")]
+CASES = [("sample-b", "matter.md", "lawyer"), ("sample-a", "design.md", "engineer")]
 CONFIGS = [("claude", "grunt"), ("codex", "grunt"), ("claude", "executive"), ("codex", "executive")]
 T15_CONFIGS = [("claude", "grunt"), ("codex", "grunt")]
 
