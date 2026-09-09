@@ -7,6 +7,7 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-blue)](https://github.com/domattioli/agents_Inc/issues)
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
+![DOI](https://img.shields.io/badge/DOI-pending-lightgrey)
 
 **How to use:** `PYTHONPATH=. python3 tools/governance_demo.py --fake` — exercises governed routing, policy checks, and ledger recording with no provider keys required; see [Getting started](#getting-started) for real-provider setup.
 
