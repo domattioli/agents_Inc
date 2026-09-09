@@ -111,6 +111,16 @@ The project has not yet measured cost savings or accuracy against its baseline. 
 
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
 
+## Future work
+
+Tracked as open issues on this repo:
+
+- [#7](https://github.com/domattioli/agents_Inc/issues/7) — a CLI-agnostic dispatch mechanism, the inverse of `codex-bridge`, so Codex can drive the same workflow and call Claude models.
+- [#8](https://github.com/domattioli/agents_Inc/issues/8) — `astra` dispatch with `--approve-for-me` can hit host-classifier blocks that `terra`/`luna` do not.
+- [#6](https://github.com/domattioli/agents_Inc/issues/6) — `codex-bridge`'s `up.sh` hardcodes a stale pre-rename `BASE` path; `--workdir` doesn't override it.
+- [#4](https://github.com/domattioli/agents_Inc/issues/4) — a dispatch-prompt style-compression template, with findings and a validation plan.
+- [#3](https://github.com/domattioli/agents_Inc/issues/3) — brainstorm: mandate the speckit workflow for Supervisor-rung work.
+
 ## Getting started
 
 ### Install and configure providers
