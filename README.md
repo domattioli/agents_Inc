@@ -28,13 +28,11 @@ A corporate organization for AI agents: an executive plans, supervisor delegates
 
 ## 1. Why pool model capacity
 
-Delegated work can look successful while being wrong. In this project's own build history, two defects (a wrong `resume` argument order, a missing `--skip-git-repo-check`) passed a subagent's own smoke tests and were only caught when a supervisor read the code directly ([specs/001-codex-delegation-regime/tasks.md](specs/001-codex-delegation-regime/tasks.md)).
+Delegated model work can look done while being wrong. A flat pool of agents has no structure for catching that, so `agents_Inc` borrows a [corporate org chart](docs/governance/DELEGATION-MODEL.md): Owner, Secretary, Executive, Supervisor, Worker. Authority and review sit at whichever rung fits, not whichever model answers first.
 
-`agents_Inc` pools free Gemini, Mistral, and OpenRouter capacity with already-paid Claude and Codex subscriptions. The goal is more accepted work per dollar. Cheap models handle eligible routine work. Costlier models supervise, review, and take over only when evidence justifies escalation.
+Each rung sees only what its job needs: contract down, artifact trail back. Grilling aligns the Secretary with the Owner on the request before the Executive instantiates the process. Speckit gates that request through spec, plan, tasks, review. Bindle keeps every run's output addressable.
 
-An accepted task must pass independent checks. Savings and accuracy have not yet been measured, so the project does not claim a savings percentage or quality improvement ([docs/PLAN-MVP.md](docs/PLAN-MVP.md)).
-
-Formerly `agents_for_dummies`. The repository was renamed on 2026-09-07 without rewriting its history.
+Cheap models take routine work; costlier models supervise. Each rung's Secretary, Executive, or Supervisor validates the work reporting up to it before passing it further. [Savings are unmeasured, so none are claimed.](docs/PLAN-MVP.md) This is a structure for trust, not a number.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
@@ -314,6 +312,13 @@ Tracked as open issues on this repo:
 ### Install and configure providers
 
 Run the project from the repository root. Its Python code uses the standard library, so there is no Python package-install step.
+
+**Skill dependencies.** This repo's runtime dependencies are Claude Skills, not pip packages. [`skills.requirements.txt`](skills.requirements.txt) is the agentic-AI analog of `requirements.txt` — it pins each skill's version and source (vendored in this repo, or an external repo it was copied from). Refresh/verify with:
+
+```bash
+bash scripts/install_skills.sh            # sync external-repo entries, verify vendored ones present
+bash scripts/install_skills.sh --dry-run  # show what would change without touching anything
+```
 
 **Setup decision tree — follow the path that matches your setup:**
 

@@ -1,0 +1,23 @@
+# skills.requirements.txt
+# Agentic-AI analog of a Python requirements.txt: the runtime dependencies for
+# this repo are not pip packages, they are Claude Skill directories consumed
+# via SKILL.md. This file pins what version of each skill this repo expects
+# and where it came from, so drift is visible the same way a stale pip pin is.
+#
+# Format: <skill-name>==<version> ; source=<vendored|external-repo path/URL>
+# version is the skill's own SKILL.md frontmatter `version:` field, or
+# "unpinned" if that skill has not adopted the version field yet.
+#
+# Install: skills/*/  are the working copies (already present, this repo IS
+# the source for its own skills). To install/refresh from upstream instead of
+# reading this file by hand, run:
+#   bash scripts/install_skills.sh
+# which reads this file and syncs skills/<name>/ from each entry's source.
+
+codespace-exec==1.0.0        ; source=vendored (skills/codespace-exec)
+codex-bridge==1.0.0          ; source=vendored (skills/codex-bridge)
+doc-analysis==unpinned       ; source=vendored (skills/doc-analysis)
+grill-me==unpinned           ; source=external-repo /Users/domattioli/Projects/DomI/skills/grill-me
+grill-with-docs==unpinned    ; source=external-repo /Users/domattioli/Projects/DomI/skills/grill-with-docs
+speckit-pipeline==1.5-agents_Inc.2 ; source=vendored, forked from DomI (operator exception D35, 2026-09-07 — see skills/speckit-pipeline/SKILL.md header)
+workerbee==1.1.1             ; source=vendored (skills/workerbee)
