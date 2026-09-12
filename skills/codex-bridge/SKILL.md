@@ -1,7 +1,7 @@
 ---
 name: codex-bridge
 description: Start/stop/query the local Codex HTTP bridge and send prompts to a persistent OpenAI Codex session. Use to offload bulk file digestion, log triage, and second-opinion debugging to GPT instead of spending Claude context. Triggers — "start the codex bridge", "ask codex", "codex bridge status".
-version: 1.0.0
+version: 1.0.1
 benchmark: claude_tokens_saved_per_offloaded_task
 ---
 
@@ -189,3 +189,5 @@ The bridge uses your ChatGPT subscription, so rate limits and API restrictions a
 ## Security Note
 
 The token file at `~/.codex-bridge/token` grants shell-level access to codex-bridge operations. Protect it as you would an SSH key or API token. Do not commit it to version control.
+
+**Host-classifier gotcha (ultra-tier / high-autonomy delegates):** dispatching an ultra-tier delegate (e.g. `astra`) through codex-bridge/workerbee with `--approve-for-me` has been blocked by Claude Code's host permission classifier even when the same flag on a lower-tier delegate (`terra`/`luna`) was not blocked. Best-guess cause: auto-approve combined with autonomous git-push/PR authority reads as higher risk to the classifier. Fix observed: one live, explicit in-session operator approval ("i approve") unblocked it immediately, no code or flag change needed. **Do not loop retries on this block** — surface it and ask the operator for a live approval instead.
