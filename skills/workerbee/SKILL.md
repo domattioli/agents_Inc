@@ -1,6 +1,6 @@
 ---
 name: workerbee
-version: 1.1.1
+version: 1.1.2
 benchmark: unverified_delegate_claims_accepted_per_session
 description: Supervision discipline for running work through a multi-vendor fleet of delegate models in budget mode — capability tiering, flash-tier triage of delegate reports, supervisor-owned verification harnesses, and the honesty rules that keep delegated work trustworthy. Use when orchestrating codex/gemini/mistral/OpenRouter delegates, when a delegate reports a gate as passing, or when deciding which tier a task belongs to. Pairs with `codex-bridge` (that skill is the dispatch mechanism; this one is the judgment about using it). Caveman-style output.
 ---
@@ -405,6 +405,18 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    edits. Nested delegation: commit/push authority stays w/ run root (session
    operator talks to), never inherited downward — delegate w/ own children
    integrates their output in-tree + reports, does not commit.
+   **Free/cheap-only sub-delegation MUST be an enumerated allowlist, never
+   bare prose.** "Use a free/cheap model" alone is not enforceable — round
+   through to a paid tier silently (observed: nested `Agent` call ran on
+   `claude-opus-5` despite this exact instruction, DomI#12). State it as:
+   `SUB-DELEGATE MODEL ALLOWLIST: gpt-5.4-mini, OpenRouter free-tier, Gemini
+   free tier, Mistral free tier — ONLY. NEVER: any Agent-tool Claude model
+   (opus/sonnet/fable/haiku included), any Codex-account model
+   (astra/sol/terra/luna), even if named elsewhere in this prompt.` Before
+   issuing any nested/sub-delegated call, the dispatching delegate MUST
+   confirm the chosen model against this allowlist and echo the match
+   (`SUB-DELEGATE MODEL: <slug> — allowlist match: yes`) in its report; no
+   confirmation line = non-compliant, treat as an unverified nested call.
 8. **Confidentiality/data-classification tag.** State classification of
    content the delegate handles (e.g. public / confidential).
 9. **Explicit effort level, every dispatch, default medium.** State chosen
@@ -468,6 +480,32 @@ Agent-facing text = `caveman ultra`. Reader is a model.
 These 14 fold into, not replace, the shape below. 10 + 11 conditional; the
 other twelve unconditional. Compliant = each of the 14 present as content or
 explicit N/A line; a missing element is non-compliant either way.
+**No other element has an N/A out — 10 and 11 are the ONLY two of the 14
+that can be satisfied by an explicit-N/A line instead of real content.**
+Root cause closed: DomI#10 — a cross-repo dispatch used none of the 14,
+bare task description only, from a session with no local reason to know
+this contract existed. Paste-and-tick before sending ANY dispatch prompt,
+any delegate/rung/vendor, this repo or a session dispatching into it:
+
+```
+[ ] 1 caveman ultra instructed (or no-Skill-tool stated)
+[ ] 2 success gate stated, falsifiable
+[ ] 3 failure gate stated, separate from success
+[ ] 4 grill clause present
+[ ] 5 training opt-out line verbatim
+[ ] 6 evidence-citation instruction present
+[ ] 7 scope boilerplate + (if sub-delegating) free-tier allowlist
+[ ] 8 confidentiality/classification tag present
+[ ] 9 effort level stated explicitly
+[ ] 10 second-opinion justification OR explicit N/A
+[ ] 11 plan contract OR explicit N/A
+[ ] 12 report-shape instruction (scope-left-out, assumptions, files created)
+[ ] 13 edit-hygiene instruction present
+[ ] 14 lesson-candidate handling instruction present
+```
+
+Any unticked box (other than 10/11 with a stated N/A) → prompt is
+non-compliant, do not send it.
 
 Include, roughly this order:
 1. ROLE, one line
