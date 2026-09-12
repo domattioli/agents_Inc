@@ -53,6 +53,7 @@ marker count equal to item count per row).
 | Version | Reason | Plan to backfill |
 |---|---|---|
 | v1.1 | New content (Step 1a/1b/1c: model roster, discovery snippet, effort-tier rule) fixes a *different* failure class — vendor-nickname misidentification + unprompted effort escalation — not the self-graded-gate metric this skill already tracks. No comparable counter exists yet. | Track `vendor_nickname_misidentified_per_session` (count of times an orchestrator reports a real vendor model as "unavailable" or fails to map a nickname before dispatch) and `effort_escalated_without_operator_ask` starting next session that dispatches to Codex; both should be 0 post-v1.1 given Step 1a/1c now name the check explicitly. |
+| v1.1.3 | DomI#12/#10 follow-up (mechanical sub-delegate-allowlist lint + cross-repo dispatch note) fixes different failure classes — nested-call model-escape and external-repo contract-blindness — not the self-graded-gate metric. No comparable counter exists yet; the new script was self-tested against a known-bad and known-good transcript (2 violations / 0 violations), not against a live-session baseline. | Track `nested_subdelegate_allowlist_violations_per_session` once `check_subdelegate_allowlist.py` runs against real transcripts across a handful of sessions. |
 
 ---
 
