@@ -1,6 +1,6 @@
 ---
 name: workerbee
-version: 1.1.1
+version: 1.1.3
 benchmark: unverified_delegate_claims_accepted_per_session
 description: Supervision discipline for running work through a multi-vendor fleet of delegate models in budget mode — capability tiering, flash-tier triage of delegate reports, supervisor-owned verification harnesses, and the honesty rules that keep delegated work trustworthy. Use when orchestrating codex/gemini/mistral/OpenRouter delegates, when a delegate reports a gate as passing, or when deciding which tier a task belongs to. Pairs with `codex-bridge` (that skill is the dispatch mechanism; this one is the judgment about using it). Caveman-style output.
 ---
@@ -71,6 +71,8 @@ Two vendors, one ladder. Pick the tier the task needs.
 | bottom rung | — | oss / free | one-shot text, drafts, sounding boards, well-scoped small coding (high volume of small diffs, never a large or architecturally significant change) |
 
 Coding at flash/bottom-rung is scope-gated, not banned: small, narrow, high-volume jobs only. A task needing scope/design judgment is workhorse+, dispatch it there.
+
+Under a mandate, dispatch Codex rows via `agent.sh submit --backend codex --model <slug> --mandate <run_id> --role <rung>`; bare `codex exec` is stateless and must not be used for Executive/Supervisor re-engagement (spec-010, `skills/codex-bridge/SKILL.md` `agent.sh` mandate flags).
 
 **Scout = mode, not tier.** Recon before real dispatch (does X exist / what
 shape / worth it). Text-only recon -> free grunt (OpenRouter free, gemini
@@ -405,6 +407,33 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    edits. Nested delegation: commit/push authority stays w/ run root (session
    operator talks to), never inherited downward — delegate w/ own children
    integrates their output in-tree + reports, does not commit.
+   **Free/cheap-only sub-delegation MUST be an enumerated allowlist, never
+   bare prose.** "Use a free/cheap model" alone is not enforceable — round
+   through to a paid tier silently (observed: nested `Agent` call ran on
+   `claude-opus-5` despite this exact instruction, DomI#12). State it as:
+   `SUB-DELEGATE MODEL ALLOWLIST: gpt-5.4-mini, OpenRouter free-tier, Gemini
+   free tier, Mistral free tier — ONLY. NEVER: any Agent-tool Claude model
+   (opus/sonnet/fable/haiku included), any Codex-account model
+   (astra/sol/terra/luna), even if named elsewhere in this prompt.` Before
+   issuing any nested/sub-delegated call, the dispatching delegate MUST
+   confirm the chosen model against this allowlist and echo the match
+   (`SUB-DELEGATE MODEL: <slug> — allowlist match: yes`) in its report; no
+   confirmation line = non-compliant, treat as an unverified nested call.
+   **Mechanical check, not prose-trust alone (DomI#12 follow-up).** This
+   repo has no PreToolUse/hook mechanism (`scripts/hooks/` does not exist
+   here, `.claude/settings.json` absent — checked 2026-09-12) so nothing
+   can block a nested call before it fires. What IS achievable: lint the
+   saved transcript/output file after the dispatch —
+   `python3 skills/workerbee/scripts/check_subdelegate_allowlist.py
+   <transcript_file>` — greps for nested-call `"model":"..."` fields,
+   flags any that land on a forbidden slug (opus/sonnet/haiku/fable/
+   astra/sol/terra/luna) and flags any nested call missing the required
+   confirm-echo line. `COMPLIANT` / `NO NESTED CALLS FOUND` / exit 1 with
+   violation detail. Self-tested both ways (known-bad transcript mirroring
+   the actual DomI#12 evidence → 2 violations flagged; known-good → 0).
+   This does not resolve DomI#12's open (a)/(b) classification question
+   (model-behavior gap vs. harness gap) — it only makes the drop
+   detectable after the fact instead of trusting the prose alone.
 8. **Confidentiality/data-classification tag.** State classification of
    content the delegate handles (e.g. public / confidential).
 9. **Explicit effort level, every dispatch, default medium.** State chosen
@@ -468,6 +497,50 @@ Agent-facing text = `caveman ultra`. Reader is a model.
 These 14 fold into, not replace, the shape below. 10 + 11 conditional; the
 other twelve unconditional. Compliant = each of the 14 present as content or
 explicit N/A line; a missing element is non-compliant either way.
+**No other element has an N/A out — 10 and 11 are the ONLY two of the 14
+that can be satisfied by an explicit-N/A line instead of real content.**
+Root cause closed: DomI#10 — a cross-repo dispatch used none of the 14,
+bare task description only, from a session with no local reason to know
+this contract existed. Paste-and-tick before sending ANY dispatch prompt,
+any delegate/rung/vendor, this repo or a session dispatching into it:
+
+```
+[ ] 1 caveman ultra: Claude subagent -> Skill-tool invoke instructed + confirm-in-report REQUIRED, no N/A out. Non-Claude vendor (codex/gemini/mistral/openrouter, genuinely no Skill tool) -> explicit no-Skill-tool statement only
+[ ] 2 success gate stated, falsifiable
+[ ] 3 failure gate stated, separate from success
+[ ] 4 grill clause present
+[ ] 5 training opt-out line verbatim
+[ ] 6 evidence-citation instruction present
+[ ] 7 scope boilerplate + (if sub-delegating) free-tier allowlist
+[ ] 8 confidentiality/classification tag present
+[ ] 9 effort level stated explicitly
+[ ] 10 second-opinion justification OR explicit N/A
+[ ] 11 plan contract OR explicit N/A
+[ ] 12 report-shape instruction (scope-left-out, assumptions, files created)
+[ ] 13 edit-hygiene instruction present
+[ ] 14 lesson-candidate handling instruction present
+```
+
+Any unticked box (other than 10/11 with a stated N/A) → prompt is
+non-compliant, do not send it.
+
+**Cross-repo dispatch, external session (DomI#10 gap — honest limit, not a
+claimed fix).** DomI#10's actual root cause: a session working in a
+*different* repo (DomI), dispatching work about an agents_Inc issue, never
+read agents_Inc's `CLAUDE.md` — it had no local reason to know this
+contract existed. This repo cannot reach into another repo's session and
+force a read; no such enforcement mechanism exists here (no hook, no CI
+gate that runs against external repos). The only thing achievable from
+this side: make the contract self-contained and say plainly, in the
+canonical source (`CLAUDE.md` § Delegation prompt contract), that any
+session — this repo or another — dispatching work that touches an
+agents_Inc issue/task MUST fetch and apply this section first. Paste-and-
+tick block above is written to be copy-pasted whole into a dispatch prompt
+from anywhere, needing no other agents_Inc file open. **This does not
+close the gap for a session that never thinks to look** — that half of
+DomI#10 stays open; a real fix would need the *dispatching* repo (DomI, or
+whichever originates the call) to add its own check, which is out of this
+repo's control.
 
 Include, roughly this order:
 1. ROLE, one line
@@ -572,6 +645,20 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 
 ## Version History
 
+- **v1.1.3** (2026-09-12) — DomI#12 root-cause follow-up: bare-prose
+  confirm-and-echo requirement (v1.1.2) is unenforceable by itself — same
+  class of instruction the issue says gets ignored. Adds
+  `scripts/check_subdelegate_allowlist.py`, a mechanical transcript lint
+  (no hook mechanism exists in this repo to block live) that flags a
+  nested sub-delegate call landing on a forbidden model or missing the
+  confirm-echo line. Self-tested both ways. Does not resolve #12's open
+  (a) model-behavior vs (b) harness-gap question — only makes the drop
+  detectable after the fact. Also: DomI#10 root cause (external-repo
+  session, no local reason to read this contract) cannot be closed from
+  this side alone — added an explicit cross-repo fetch-first note to
+  `CLAUDE.md` and here as the smallest reachable fix, and corrected
+  checklist item 1's `(or no-Skill-tool stated)` wording, which read as a
+  blanket escape hatch not present in the original 14-point canon.
 - **v1.1** (2026-09-05) — Adds Step 1a (MODEL ROSTER: nickname → slug →
   exact dispatch command, verified against this machine's `codex`
   CLI/`codex-bridge` wrappers), Step 1b (runtime model-discovery snippet
