@@ -128,11 +128,11 @@ class GateAFlagMatrix(unittest.TestCase):
 
     def test_a1_tim_matrix(self):
         """Gate A1: tim fixture across (off, shadow, enforce) -> identical status."""
-        self._test_fixture_matrix("tim", "matter.md")
+        self._test_fixture_matrix("sample-b", "matter.md")
 
     def test_a2_dom_matrix(self):
         """Gate A2: dom fixture across (off, shadow, enforce) -> identical status."""
-        self._test_fixture_matrix("dom", "design.md")
+        self._test_fixture_matrix("sample-a", "design.md")
 
     def _test_fixture_matrix_reviewed(self, fixture_name, source_file):
         """Test a single fixture with review enabled across all 3 modes. Status must match."""
@@ -241,11 +241,11 @@ class GateAFlagMatrix(unittest.TestCase):
 
     def test_a3_tim_matrix_reviewed(self):
         """Gate A3: tim fixture with review across (off, shadow, enforce) -> verified status."""
-        self._test_fixture_matrix_reviewed("tim", "matter.md")
+        self._test_fixture_matrix_reviewed("sample-b", "matter.md")
 
     def test_a4_dom_matrix_reviewed(self):
         """Gate A4: dom fixture with review across (off, shadow, enforce) -> verified status."""
-        self._test_fixture_matrix_reviewed("dom", "design.md")
+        self._test_fixture_matrix_reviewed("sample-a", "design.md")
 
 
 # ============================================================================
@@ -336,11 +336,11 @@ class GateBSeededFaults(unittest.TestCase):
 
     def test_b1_tim_forged(self):
         """Gate B1: tim fixture with forged claims rejected in all modes."""
-        self._test_fixture_faults("tim", "matter.md")
+        self._test_fixture_faults("sample-b", "matter.md")
 
     def test_b2_dom_forged(self):
         """Gate B2: dom fixture with forged claims rejected in all modes."""
-        self._test_fixture_faults("dom", "design.md")
+        self._test_fixture_faults("sample-a", "design.md")
 
 
 # ============================================================================
@@ -377,7 +377,7 @@ class GateCZeroCallDenials(unittest.TestCase):
         registry = Registry.load(str(temp_wb))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
-        exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
         payload = {
             "claims": [dict(text="t", **c) for c in exp["required_claims"]],
             "draft": "Brief summary (p2)."
@@ -387,7 +387,7 @@ class GateCZeroCallDenials(unittest.TestCase):
         runner = fake_runner_factory(payload, call_count_list=call_count)
 
         # Call with confidential=True (should trigger CLASSIFICATION_EXCEEDED)
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer",
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer",
                  self.ws, available={"claude", "codex"},
                  runner=runner, review_enabled=False, governance_mode="enforce",
                  registry=registry, gateway=gateway, confidential=True)
@@ -447,7 +447,7 @@ class GateDFaultInjection(unittest.TestCase):
 
         gateway = Gateway(workspace=bad_ws, registry=registry, mode="enforce")
 
-        exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
         payload = {
             "claims": [dict(text="t", **c) for c in exp["required_claims"]],
             "draft": "Brief summary (p2)."
@@ -457,7 +457,7 @@ class GateDFaultInjection(unittest.TestCase):
         runner = fake_runner_factory(payload, call_count_list=call_count)
 
         # Call brief with enforce mode (control layer should fail)
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer",
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer",
                  bad_ws, available={"claude", "codex"},
                  runner=runner, review_enabled=False, governance_mode="enforce",
                  registry=registry, gateway=gateway, confidential=False)
@@ -475,7 +475,7 @@ class GateDFaultInjection(unittest.TestCase):
         registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
-        exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
         payload = {
             "claims": [dict(text="t", **c) for c in exp["required_claims"]],
             "draft": "Brief summary (p2)."
@@ -489,7 +489,7 @@ class GateDFaultInjection(unittest.TestCase):
         with patch("workerbees.gateway.record_dispatch", side_effect=OSError("Ledger write failed")), \
              patch("workerbees.gateway.record_return", side_effect=OSError("Ledger write failed")):
             # Call should still proceed (ledger is best-effort)
-            r = brief(FIX / "tim" / "matter.md", "tim", "lawyer",
+            r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer",
                      self.ws, available={"claude", "codex"},
                      runner=runner, review_enabled=False, governance_mode="enforce",
                      registry=registry, gateway=gateway, confidential=False)
@@ -532,7 +532,7 @@ class GateEInvalidMode(unittest.TestCase):
 
     def test_e1_brief_invalid_mode_raises(self):
         """Gate E1: brief() with invalid governance_mode raises ValueError."""
-        exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
         payload = {
             "claims": [dict(text="t", **c) for c in exp["required_claims"]],
             "draft": "Brief summary (p2)."
@@ -540,7 +540,7 @@ class GateEInvalidMode(unittest.TestCase):
         runner = fake_runner_factory(payload)
 
         with self.assertRaises(ValueError) as ctx:
-            brief(FIX / "tim" / "matter.md", "tim", "lawyer",
+            brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer",
                  self.ws, available={"claude", "codex"},
                  runner=runner, review_enabled=False, governance_mode="invalid_mode")
 

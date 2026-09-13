@@ -171,14 +171,36 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
             self.send_error_json(400, "reset must be a boolean")
             return
 
+        # spec-010 (persistent Exec/Super session): optional isolated-request fields.
+        # See specs/010-persistent-exec-session/contracts/cli-and-bridge.md C3.
+        thread_id_field = data.get("thread_id")
+        if thread_id_field is not None and not isinstance(thread_id_field, str):
+            self.send_error_json(400, "thread_id must be a string")
+            return
+        if thread_id_field == "":
+            thread_id_field = None
+        fresh_field = data.get("fresh", False)
+        if not isinstance(fresh_field, bool):
+            self.send_error_json(400, "fresh must be a boolean")
+            return
+        if thread_id_field and fresh_field:
+            self.send_error_json(400, "thread_id and fresh are mutually exclusive")
+            return
+        if reset and (thread_id_field or fresh_field):
+            self.send_error_json(400, "reset is mutually exclusive with thread_id/fresh")
+            return
+        # An isolated request (caller-supplied thread_id, or fresh:true) never reads or
+        # writes the server's global thread attribute -- contracts C3 rules 1-4.
+        isolated = bool(thread_id_field) or fresh_field
+
         # Determine model
         model = data.get("model") or self.server.default_model
 
         # Execute codex
         try:
             with self.server.codex_lock:
-                # Handle reset
-                if reset:
+                # Handle reset (global path only -- an isolated request never touches this).
+                if reset and not isolated:
                     self.server.thread_id = None
 
                 # Create temp file for output
@@ -191,7 +213,12 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cmd.extend(["-s", self.server.sandbox])
                     if model:
                         cmd.extend(["-m", model])
-                    if self.server.thread_id and not reset:
+                    if isolated:
+                        if thread_id_field:
+                            cmd.extend(["resume", thread_id_field])
+                        # fresh:true -> no resume argument at all, regardless of what the
+                        # server's global thread holds (contracts C3 rule 4).
+                    elif self.server.thread_id and not reset:
                         cmd.extend(["resume", self.server.thread_id])
                     cmd.extend(["--json", "--skip-git-repo-check", "-o", tmpfile, "-"])
 
@@ -204,7 +231,10 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
                         cwd=self.server.workdir,
                     )
 
-                    # Parse JSONL events from stdout
+                    # Parse JSONL events from stdout into a REQUEST-LOCAL variable.
+                    # Rule 1 (C3): never assign straight onto the server object here --
+                    # an isolated request must not mutate the global thread on any outcome.
+                    observed_thread_id = None
                     usage = None
                     for line in result.stdout.split("\n"):
                         line = line.strip()
@@ -213,7 +243,7 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
                         try:
                             obj = json.loads(line)
                             if obj.get("type") == "thread.started":
-                                self.server.thread_id = obj.get("thread_id")
+                                observed_thread_id = obj.get("thread_id")
                             elif obj.get("type") == "turn.completed":
                                 usage = obj.get("usage")
                         except json.JSONDecodeError:
@@ -230,12 +260,20 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
                         if not response_text:
                             response_text = ""
 
+                        if isolated:
+                            # Rule 2/3: response echoes the request-local id; the server's
+                            # global thread attribute is left byte-identical.
+                            response_thread_id = observed_thread_id
+                        else:
+                            self.server.thread_id = observed_thread_id
+                            response_thread_id = self.server.thread_id
+
                         self.send_response(200)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
                         response = {
                             "response": response_text,
-                            "thread_id": self.server.thread_id,
+                            "thread_id": response_thread_id,
                             "usage": usage,
                             "session_restarted": False,
                         }
@@ -245,8 +283,37 @@ class CodexBridgeHandler(http.server.BaseHTTPRequestHandler):
                         if usage:
                             input_tokens = usage.get("input_tokens")
                             output_tokens = usage.get("output_tokens")
-                            actual_model = resolve_actual_model(model, self.server.thread_id)
+                            actual_model = resolve_actual_model(model, response_thread_id)
                             append_usage_ledger(actual_model, input_tokens, output_tokens)
+                    elif isolated and thread_id_field:
+                        # contracts C3 / FR-008: resume of a caller-supplied thread_id that
+                        # fails is NEVER auto-retried as fresh -- 409, global left untouched.
+                        stderr = result.stderr[-4000:] if result.stderr else ""
+                        self.send_response(409)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        response = {
+                            "error": "resume failed",
+                            "thread_id": thread_id_field,
+                            "stderr": stderr[:500],
+                        }
+                        self.wfile.write(json.dumps(response).encode())
+                    elif isolated:
+                        # fresh:true that failed outright -- same shape as a normal fresh
+                        # dispatch failure; still never touches the global thread.
+                        stderr = result.stderr[-4000:] if result.stderr else ""
+                        if is_rate_limited(stderr):
+                            self.send_response(429)
+                            self.send_header("Content-Type", "application/json")
+                            self.end_headers()
+                            response = {
+                                "error": "rate limited",
+                                "backend": "codex",
+                                "detail": stderr[-500:] if stderr else "",
+                            }
+                            self.wfile.write(json.dumps(response).encode())
+                        else:
+                            self.send_error_json(502, f"codex exited {result.returncode}", stderr)
                     elif self.server.thread_id and "resume" in cmd:
                         # Check for rate limit BEFORE attempting retry
                         stderr = result.stderr[-4000:] if result.stderr else ""
