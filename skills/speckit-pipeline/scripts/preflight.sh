@@ -77,6 +77,13 @@ if [[ "$LEGACY" -eq 0 ]]; then
     fi
 fi
 
+# spec-010 (contracts C5): surface open-mandate WARN lines after the .specify/ check.
+# Never affects this script's exit code -- agent.sh may not exist on this machine/path.
+AGENT_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../codex-bridge/scripts" 2>/dev/null && pwd)/agent.sh"
+if [[ -n "${AGENT_SH:-}" && -x "$AGENT_SH" ]]; then
+    "$AGENT_SH" mandate list 2>&1 >/dev/null | grep '^WARN:' || true
+fi
+
 # Summary
 if (( FAILED > 0 )); then
     exit 1
