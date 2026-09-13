@@ -33,7 +33,7 @@ def _node_artifact_rows(ws: Path):
 
 class ArtifactsCaptureMatrixTest(unittest.TestCase):
     def setUp(self):
-        self.exp = json.loads((FIX / "tim" / "expected.json").read_text())
+        self.exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
         self.payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         self._saved_env = {k: os.environ.get(k) for k in ("WORKERBEES_ARTIFACTS", "WORKERBEES_GOVERNANCE")}
 
@@ -47,7 +47,7 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
     def test_default_unset_stores_output(self):
         os.environ.pop("WORKERBEES_ARTIFACTS", None)
         ws = Path(tempfile.mkdtemp())
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="off")
         rows = _node_artifact_rows(ws)
         self.assertGreaterEqual(len(rows), 1)
@@ -57,7 +57,7 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
     def test_explicit_off_stores_nothing(self):
         os.environ["WORKERBEES_ARTIFACTS"] = "off"
         ws = Path(tempfile.mkdtemp())
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="off")
         self.assertEqual(_node_artifact_rows(ws), [])
         self.assertEqual(r.receipt.get("artifacts", {}).get("backend"), "off")
@@ -66,7 +66,7 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
     def test_local_off_mode_stores_output(self):
         os.environ["WORKERBEES_ARTIFACTS"] = "local"
         ws = Path(tempfile.mkdtemp())
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="off")
         rows = _node_artifact_rows(ws)
         self.assertEqual(len(rows), 1)
@@ -78,7 +78,7 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
         ws = Path(tempfile.mkdtemp())
         registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
         gateway = Gateway(ws, registry=registry, mode="shadow")
-        r = brief(FIX / "tim" / "matter.md", "tim", "lawyer", ws, available={"claude", "codex"},
+        r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="shadow",
                   gateway=gateway, registry=registry)
         rows = _node_artifact_rows(ws)

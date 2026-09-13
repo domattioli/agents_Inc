@@ -410,3 +410,16 @@ Verification: `python3 -m unittest discover -s tests` — Ran 462 tests, OK (458
 - A valid run saves task/pass rule, authority and move rule, policy version, allowed models, hard limits, budget/deadline, ranking order, retry/fallback rule, model-list snapshot, all candidates with keep/drop reasons, picks, retries, and authority changes. Filter hard-limit failures; rank by stated order; tie-break by model ID. No order means invalid run. This claims policy-choice determinism and replay only, not deterministic model output or live availability.
 - `CONTEXT.md` is updated as glossary canon. `CLAUDE.md` and `docs/governance/ROUTING-RANKING.md` still contain old rung/pair/final-say rules; a later scoped update must align them.
 - LESSON-CANDIDATE: keep authority rules in one canon or add a drift check, so rung wording cannot silently grant final say.
+
+## D40 — LESSON-CANDIDATE: stale long-lived server proc can mimic the exact bug under test (2026-09-12, spec-010 T040 live run)
+
+caveman-ultra (operator instruction):
+
+- ctx: spec-010 quickstart live run, bridge.py process long-lived, not restarted since before session's edits.
+- symptom: 2 fresh mandate roles -> same thread_id. Looked exactly like isolation defect spec-010 fixes.
+- root cause: bridge proc start-time (14:31) < bridge.py commit-time (21:26). Old code in mem, not new.
+- verify method: `ps -ef` start-time vs `git log -1 --format=%ci -- <file>`. + 2 bare `codex exec` calls bypassing bridge -> distinct thread_ids both -> CLI not the source -> narrowed to server proc.
+- fix: `down.sh` + `up.sh --force`. discard polluted mandate. re-run clean.
+- rule going forward: before trusting ANY live-acceptance-run result against a long-lived server proc, check proc start-time >= last-commit-time of the file(s) it serves, OR force-restart first. Stale server = false positive/negative, indistinguishable from a real defect w/o this check.
+- canon-check: not yet checked vs prior LESSON-CANDIDATEs above (no budget at time of surfacing). flag only.
+- src: T040 execution, session 01JRnYrBKuQqFQQVYQZabPxP, full transcript `specs/010-persistent-exec-session/evidence/quickstart-2026-09-12.txt`.

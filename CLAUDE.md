@@ -59,6 +59,8 @@ Every dispatch prompt, any delegate/rung/vendor, MUST include all 14. Full wordi
 
 Elements 10/11 conditional: explicit N/A satisfies them, silence does not. All others unconditional — missing = non-compliant.
 
+**Cross-repo note (DomI#10):** this contract binds any dispatch touching agents_Inc work, including one issued from a session working in a different repo. That session has no other reason to know this file exists — fetch this section (or `skills/workerbee/SKILL.md` Step 11's paste-and-tick block, self-contained) before dispatching. agents_Inc cannot enforce this on a session it doesn't control; this note is the smallest fix reachable from this side. See `skills/workerbee/SKILL.md` Step 11 for the honest limit of what this closes.
+
 ## Never
 
 - Read `.env` files or print keys.

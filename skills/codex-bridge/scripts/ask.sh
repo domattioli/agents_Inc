@@ -19,6 +19,8 @@ RESET=false
 RAW=false
 PROMPT=""
 TIMEOUT=300
+THREAD=""
+FRESH=false
 
 # Check if state.json exists to get port/timeout
 if [[ -f "$STATE_FILE" ]]; then
@@ -51,6 +53,14 @@ while [[ $# -gt 0 ]]; do
       RAW=true
       shift
       ;;
+    --thread)
+      THREAD="$2"
+      shift 2
+      ;;
+    --fresh)
+      FRESH=true
+      shift
+      ;;
     *)
       # Positional: prompt text
       PROMPT="$1"
@@ -58,6 +68,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# spec-010 contracts C4: --thread and --fresh are mutually exclusive; refuse before
+# issuing any request.
+if [[ -n "$THREAD" && "$FRESH" == true ]]; then
+  echo "error: --thread and --fresh are mutually exclusive" >&2
+  exit 2
+fi
 
 # Read from stdin if no prompt provided
 if [[ -z "$PROMPT" ]]; then
@@ -74,6 +91,8 @@ fi
 export PROMPT
 export RESET
 export MODEL
+export THREAD
+export FRESH
 JSON_BODY=$(python3 << 'PYTHON'
 import json
 import os
@@ -84,6 +103,12 @@ body = {
 }
 if os.environ.get('MODEL'):
   body['model'] = os.environ.get('MODEL')
+# spec-010 contracts C4: keys are present ONLY when their flag was passed -- never
+# "thread_id": null / "fresh": false (FR-012, CHK002).
+if os.environ.get('THREAD'):
+  body['thread_id'] = os.environ.get('THREAD')
+if os.environ.get('FRESH') == 'true':
+  body['fresh'] = True
 
 print(json.dumps(body))
 PYTHON
