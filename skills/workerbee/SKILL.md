@@ -72,6 +72,8 @@ Two vendors, one ladder. Pick the tier the task needs.
 
 Coding at flash/bottom-rung is scope-gated, not banned: small, narrow, high-volume jobs only. A task needing scope/design judgment is workhorse+, dispatch it there.
 
+Under a mandate, dispatch Codex rows via `agent.sh submit --backend codex --model <slug> --mandate <run_id> --role <rung>`; bare `codex exec` is stateless and must not be used for Executive/Supervisor re-engagement (spec-010, `skills/codex-bridge/SKILL.md` `agent.sh` mandate flags).
+
 **Scout = mode, not tier.** Recon before real dispatch (does X exist / what
 shape / worth it). Text-only recon -> free grunt (OpenRouter free, gemini
 cheap/digest, mistral cheap, gpt-5.4-mini). Recon needs tools (walk repo,
