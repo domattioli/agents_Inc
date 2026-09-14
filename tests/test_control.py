@@ -8,8 +8,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workerbees.control import Control, ReplayResult
-from workerbees.envelope import Decision
+from agents_inc.control import Control, ReplayResult
+from agents_inc.envelope import Decision
 
 
 class TestControlDecisions(unittest.TestCase):
@@ -304,7 +304,7 @@ class TestControlErrorHandling(unittest.TestCase):
 
     def test_record_decision_with_sqlite_error_raises(self):
         """Test that non-readonly sqlite errors raise ControlError."""
-        from workerbees.control import ControlError
+        from agents_inc.control import ControlError
 
         # Corrupt the database file by truncating it
         with open(self.control.db_path, "w") as f:

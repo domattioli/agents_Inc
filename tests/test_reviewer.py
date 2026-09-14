@@ -1,9 +1,14 @@
 import json, unittest
-from workerbees.reviewer import review
-from workerbees.adapters.base import WorkerResult
+from agents_inc.reviewer import review as _review
+from agents_inc.adapters.base import WorkerResult
+from codex_testkit import CODEX_EXECUTABLE
 
 SRC = "Clause 3. Rent monthly.\n\nClause 8. Rent quarterly."
 CLAIMS = [{"text": "monthly", "quote": "Rent monthly", "anchor": "x#p1"}]
+
+def review(*args, **kwargs):
+    kwargs.setdefault("codex_executable", str(CODEX_EXECUTABLE))
+    return _review(*args, **kwargs)
 
 def runner_with(payload, status="returned"):
     def r(cmd, stdin_text, timeout=300):
@@ -31,8 +36,15 @@ class ReviewerTest(unittest.TestCase):
         def r(cmd, stdin_text, timeout=300):
             seen["cmd"] = cmd
             return WorkerResult("returned", json.dumps({"verdicts":[],"omissions":[]}), "", 0)
-        review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False, runner=r)
-        self.assertEqual(seen["cmd"][0], "codex")
+        review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False, runner=r,
+               codex_executable=str(CODEX_EXECUTABLE))
+        self.assertEqual(seen["cmd"][0], str(CODEX_EXECUTABLE))
+
+    def test_codex_route_without_executable_fails_closed(self):
+        res = _review(SRC, "x", CLAIMS, "d", "claude", {"claude", "codex"}, False,
+                     runner=runner_with({}))
+        self.assertEqual(res.status, "blocked")
+        self.assertIn("WB_CLI_NOT_FOUND", res.raw)
 
     def test_unparsed(self):
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude","codex"}, False, runner=runner_with(None))

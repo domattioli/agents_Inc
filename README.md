@@ -9,7 +9,7 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)
 
-**Supported local install (pre-MVP):** `python3 -m workerbees.install.cli install --source "$PWD"`. This creates one user-scoped, immutable direct-Codex runtime; it does not install or manage the HTTP bridge.
+**Supported local install (pre-MVP):** `python3 -m agents_inc.install.cli install --source "$PWD"`. This creates one user-scoped, immutable direct-Codex runtime; it does not install or manage the HTTP bridge.
 
 For a packaged install, run `pipx install .` from the repository root. The source-module command above remains available when packaging tools are unavailable.
 
@@ -169,17 +169,17 @@ Phase 5: CLOSURE
 
 ## 4. How the governed pool works
 
-**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `workerbees/router.py` enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in `routing.json` and checked before dispatch.
+**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `agents_inc/router.py` enforces that boundary and selects the vendor and model for each dispatch ([agents_inc/routing.json](agents_inc/routing.json), [agents_inc/router.py](agents_inc/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in `routing.json` and checked before dispatch.
 
 Moving to a costlier rung requires a recorded reason: repeated failed checks or a provider quota pause. Worker confidence is not an escalation reason.
 
 Verification runs in this order:
 
-1. **Verifier** (deterministic code checks, no model call): `workerbees/verifier.py` checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
-2. **Reviewer** (cross-vendor semantic review, a model-based check): `workerbees/reviewer.py` performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
-3. **Ledger** (append-only audit trail recording every decision): `workerbees/ledger.py` records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
+1. **Verifier** (deterministic code checks, no model call): `agents_inc/verifier.py` checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
+2. **Reviewer** (cross-vendor semantic review, a model-based check): `agents_inc/reviewer.py` performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
+3. **Ledger** (append-only audit trail recording every decision): `agents_inc/ledger.py` records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
 
-A worker's own PASS or FAIL is never the final verdict. Acceptance follows verifier and reviewer results recorded in the ledger ([workerbees/pipeline.py](workerbees/pipeline.py)).
+A worker's own PASS or FAIL is never the final verdict. Acceptance follows verifier and reviewer results recorded in the ledger ([agents_inc/pipeline.py](agents_inc/pipeline.py)).
 
 **Verification pipeline flow (with timing and decision gates):**
 
@@ -247,7 +247,7 @@ Example: 500-word summary task
 └─ Decision: PASS (if verifier + reviewer agree)
 ```
 
-Today's schema still requires a Claude model name and a Codex model name at every tier; allowing either subscription to be optional is a goal of the pooling design, not current behavior ([workerbees/config_schema.py](workerbees/config_schema.py), [workerbees/keys.py](workerbees/keys.py)).
+Today's schema still requires a Claude model name and a Codex model name at every tier; allowing either subscription to be optional is a goal of the pooling design, not current behavior ([agents_inc/config_schema.py](agents_inc/config_schema.py), [agents_inc/keys.py](agents_inc/keys.py)).
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
@@ -265,7 +265,7 @@ Built and tested today:
 - The live `agent.sh`/`agent_runner.py` dispatch path (shells out to the Codex CLI directly; `bridge.py` is a separate HTTP path for a second device, see appendix).
 - 462 automated tests passing locally with `python3 -m unittest discover -s tests`.
 
-`WORKERBEES_GOVERNANCE` still defaults to `off`. The governed path therefore exists but is not enabled by default ([workerbees/gateway.py](workerbees/gateway.py)).
+`WORKERBEES_GOVERNANCE` still defaults to `off`. The governed path therefore exists but is not enabled by default ([agents_inc/gateway.py](agents_inc/gateway.py)).
 
 The `gask.sh`, `mask.sh`, and `oask.sh` scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
 
@@ -321,7 +321,7 @@ Install agents_Inc once per machine/user account from the repository root:
 pipx install .
 ```
 
-This creates the `agents-inc` launcher for use from any project directory. If packaging tools are unavailable, use `python3 -m workerbees.install.cli install --source "$PWD"` instead. Re-run the install after updating this repository.
+This creates the `agents-inc` launcher for use from any project directory. If packaging tools are unavailable, use `python3 -m agents_inc.install.cli install --source "$PWD"` instead. Re-run the install after updating this repository.
 
 **Setup decision tree — follow the path that matches your setup:**
 
@@ -336,9 +336,9 @@ Do you have Claude Code CLI installed + authenticated?
 │                 ├─ NO → ✓ Ready for demo (no keys needed; optional providers skipped)
 │                 │       └─ Run: PYTHONPATH=. python3 tools/governance_demo.py --fake
 │                 └─ YES → Configure free tiers (optional; can skip each one)
-│                         ├─ Run: python3 -m workerbees.keys gemini
-│                         ├─ Run: python3 -m workerbees.keys mistral
-│                         └─ Run: python3 -m workerbees.keys openrouter
+│                         ├─ Run: python3 -m agents_inc.keys gemini
+│                         ├─ Run: python3 -m agents_inc.keys mistral
+│                         └─ Run: python3 -m agents_inc.keys openrouter
 │                           (Each opens provider page; press Enter to skip)
 │                           ✓ Ready for real jobs (with optional-provider support)
 │                           └─ Run: skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"

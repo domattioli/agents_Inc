@@ -128,7 +128,7 @@ def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str,
     Creates synthetic family (family_id = f"synthetic-{run_id}") and request (request_id == node_id).
     Raises on real errors; swallowed by record_dispatch per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
     import sqlite3
 
     d = workspace / ".workerbees"
@@ -276,7 +276,7 @@ def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: floa
 
     Appends event record to node. Raises on real errors; swallowed by record_return per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
     import sqlite3
 
     d = workspace / ".workerbees"
@@ -312,7 +312,7 @@ def record_output(workspace: Path, *, node_id: str, sha256: str, size: int,
         return True  # nothing to do; node_artifact is sqlite-only
 
     try:
-        from workerbees.store import Store
+        from agents_inc.store import Store
         import sqlite3
 
         d = workspace / ".workerbees"
@@ -568,7 +568,7 @@ def lint(ledger: Ledger | None = None, *, source: str = "jsonl",
 def _lint_sqlite(workspace: Path) -> list[Finding]:
     """Run q1-q5 against workerbees.db; convert q1/q3/q4 rows to findings."""
     import sqlite3
-    from workerbees.schema import QUERIES
+    from agents_inc.schema import QUERIES
 
     db_file = workspace / ".workerbees" / "workerbees.db"
     findings: list[Finding] = []

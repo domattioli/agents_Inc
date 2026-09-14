@@ -1,6 +1,6 @@
 import json, unittest
 from pathlib import Path
-from workerbees.verifier import verify, passed
+from agents_inc.verifier import verify, passed
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
 

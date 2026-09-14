@@ -10,10 +10,10 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
-agents-inc = "workerbees.install.cli:main"
+agents-inc = "agents_inc.install.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["workerbees*", "agents_inc*"]
 
 [tool.setuptools.package-data]
-workerbees = ["*.json"]
+agents_inc = ["*.json"]

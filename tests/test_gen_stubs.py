@@ -1,6 +1,6 @@
 import tempfile, unittest
 from pathlib import Path
-from workerbees.hosts.gen_stubs import generate
+from agents_inc.hosts.gen_stubs import generate
 
 CANON = Path(__file__).resolve().parent.parent / "skills" / "doc-analysis" / "SKILL.md"
 

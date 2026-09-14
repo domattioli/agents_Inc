@@ -7,7 +7,8 @@ class PackagingMetadataTests(unittest.TestCase):
         text = pathlib.Path("pyproject.toml").read_text()
         self.assertIn('name = "agents-inc"', text)
         self.assertIn('include = ["workerbees*", "agents_inc*"]', text)
-        self.assertIn('agents-inc = "workerbees.install.cli:main"', text)
+        self.assertIn('agents-inc = "agents_inc.install.cli:main"', text)
+        self.assertIn('agents_inc = ["*.json"]', text)
 
 
 if __name__ == "__main__":

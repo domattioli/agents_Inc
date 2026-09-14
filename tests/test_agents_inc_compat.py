@@ -4,7 +4,7 @@ import unittest
 
 
 class AgentsIncCompatibilityTests(unittest.TestCase):
-    def test_namespace_and_module_forward_to_workerbees_implementation(self):
+    def test_workerbees_namespace_forwards_to_canonical_implementation(self):
         import agents_inc
         from agents_inc.router import Route
         from workerbees.router import Route as WorkerbeesRoute

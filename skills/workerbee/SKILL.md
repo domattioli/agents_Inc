@@ -2,7 +2,7 @@
 name: workerbee
 version: 1.1.3
 benchmark: unverified_delegate_claims_accepted_per_session
-description: Supervision discipline for running work through a multi-vendor fleet of delegate models in budget mode — capability tiering, flash-tier triage of delegate reports, supervisor-owned verification harnesses, and the honesty rules that keep delegated work trustworthy. Use when orchestrating codex/gemini/mistral/OpenRouter delegates, when a delegate reports a gate as passing, or when deciding which tier a task belongs to. Pairs with `codex-bridge` (that skill is the dispatch mechanism; this one is the judgment about using it). Caveman-style output.
+description: Use when asked for astra, sol, terra, luna, or a Codex delegate. Claude Agent cannot select these Codex models; use the installed agents-inc launcher. Covers supervision and verification.
 ---
 
 # workerbee
@@ -15,7 +15,9 @@ this delegate's GREEN?" — a question that cost three false accepts in one
 session before these rules existed.
 
 This skill is judgment, not plumbing. The dispatch machinery lives in
-`codex-bridge` (`~/Projects/workerbees`).
+the installed `codex-bridge` skill. For Astra, Sol, Terra, or Luna, invoke the
+absolute installed `agents-inc` launcher recorded by installation; Claude's
+`Agent` cannot select those Codex aliases.
 
 ## Metadata
 
@@ -113,10 +115,10 @@ vendor that isn't wired up here.
 
 | nickname | vendor | slug | dispatch | tier | when-to-use |
 |---|---|---|---|---|---|
-| astra | OpenAI (Codex, this acct) | `gpt-6-astra` | `codex exec -m gpt-6-astra -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | ultra | hardest reasoning, last resort. Effort `ultra` self-delegates — see Step 1c |
-| sol | OpenAI (Codex, this acct) | `gpt-5.6-sol` | `codex exec -m gpt-5.6-sol -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | flagship | orchestration, adversarial review, gates |
-| terra | OpenAI (Codex, this acct) | `gpt-5.6-terra` | `codex exec -m gpt-5.6-terra -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | workhorse | implementation, supervising a pair |
-| luna | OpenAI (Codex, this acct) | `gpt-5.6-luna` | `codex exec -m gpt-5.6-luna -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | flash | triage, mechanical edits, high volume. No `ultra` effort exists for this slug — floor is `max`, so luna cannot self-delegate |
+| astra | OpenAI (Codex) | `gpt-6-astra` | `@AGENTS_INC_LAUNCHER@ run --model astra --cwd <dir>` | ultra | hardest reasoning |
+| sol | OpenAI (Codex) | `gpt-5.6-sol` | `@AGENTS_INC_LAUNCHER@ run --model sol --cwd <dir>` | flagship | orchestration, review |
+| terra | OpenAI (Codex) | `gpt-5.6-terra` | `@AGENTS_INC_LAUNCHER@ run --model terra --cwd <dir>` | workhorse | implementation |
+| luna | OpenAI (Codex) | `gpt-5.6-luna` | `@AGENTS_INC_LAUNCHER@ run --model luna --cwd <dir>` | flash | triage, mechanical work |
 | fable | Anthropic | n/a — `Agent` tool | `Agent(model="fable", ...)` | ultra | Claude-side hardest reasoning, last resort |
 | opus | Anthropic | n/a — `Agent` tool | `Agent(model="opus", ...)` | flagship | Claude-side orchestration, adversarial review, gates |
 | sonnet | Anthropic | n/a — `Agent` tool | `Agent(model="sonnet", ...)` | workhorse | Claude-side implementation |

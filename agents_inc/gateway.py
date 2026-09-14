@@ -6,14 +6,14 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
-from workerbees.envelope import Envelope, Decision, validate, canonical_hash
-from workerbees.registry import Registry, RegistryError
-from workerbees.policy import evaluate, PolicyError
-from workerbees.control import Control, ControlError
-from workerbees.ledger import record_dispatch, record_return, record_output
-from workerbees import artifacts as _artifacts
-from workerbees.router import Route
-from workerbees.adapters import base, claude, codex
+from agents_inc.envelope import Envelope, Decision, validate, canonical_hash
+from agents_inc.registry import Registry, RegistryError
+from agents_inc.policy import evaluate, PolicyError
+from agents_inc.control import Control, ControlError
+from agents_inc.ledger import record_dispatch, record_return, record_output
+from agents_inc import artifacts as _artifacts
+from agents_inc.router import Route
+from agents_inc.adapters import base, claude, codex
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class Gateway:
         self.registry = registry
         self.control = control or Control(self.workspace)
         base_dir = Path(__file__).resolve().parent
-        self.protocols = {"v1": {}, "workerbees": {}}
+        self.protocols = {"v1": {}, "agents_inc": {}, "workerbees": {}}
         self.catalog = json.loads((base_dir / "models.json").read_text()).get("models", {})
 
         if self.mode == "enforce" and not self.registry:
@@ -282,7 +282,10 @@ class Gateway:
             if route.provider == "claude":
                 cmd = claude.build_cmd(route.model)
             elif route.provider == "codex":
-                cmd = codex.build_cmd(route.model, context.get("cwd"))
+                executable = context.get("codex_executable")
+                if not executable or not Path(executable).is_absolute():
+                    raise ValueError("WB_CLI_NOT_FOUND: resolved Codex executable required")
+                cmd = codex.build_cmd(route.model, str(executable), context.get("cwd"), context.get("effort", "medium"))
             else:
                 raise ValueError(f"Unknown provider: {route.provider}")
 
