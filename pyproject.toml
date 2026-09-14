@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agents-inc"
+version = "0.1.0"
+description = "Governed multi-agent dispatch and verification layer"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+agents-inc = "workerbees.install.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["workerbees*", "agents_inc*"]
+
+[tool.setuptools.package-data]
+workerbees = ["*.json"]

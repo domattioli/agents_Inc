@@ -9,7 +9,9 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)
 
-**How to use:** `PYTHONPATH=. python3 tools/governance_demo.py --fake` — exercises governed routing, policy checks, and ledger recording with no provider keys required; see [Getting started](#getting-started) for real-provider setup.
+**Supported local install (pre-MVP):** `python3 -m workerbees.install.cli install --source "$PWD"`. This creates one user-scoped, immutable direct-Codex runtime; it does not install or manage the HTTP bridge.
+
+For a packaged install, run `pipx install .` from the repository root. The source-module command above remains available when packaging tools are unavailable.
 
 1. [Why pool model capacity](#1-why-pool-model-capacity)
 2. [Asking for work in plain language](#2-asking-for-work-in-plain-language)
@@ -313,7 +315,13 @@ Tracked as open issues on this repo:
 
 ### Install and configure providers
 
-Run the project from the repository root. Its Python code uses the standard library, so there is no Python package-install step.
+Install agents_Inc once per machine/user account from the repository root:
+
+```bash
+pipx install .
+```
+
+This creates the `agents-inc` launcher for use from any project directory. If packaging tools are unavailable, use `python3 -m workerbees.install.cli install --source "$PWD"` instead. Re-run the install after updating this repository.
 
 **Setup decision tree — follow the path that matches your setup:**
 
