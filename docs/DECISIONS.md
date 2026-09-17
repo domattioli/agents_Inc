@@ -410,3 +410,19 @@ Verification: `python3 -m unittest discover -s tests` — Ran 462 tests, OK (458
 - A valid run saves task/pass rule, authority and move rule, policy version, allowed models, hard limits, budget/deadline, ranking order, retry/fallback rule, model-list snapshot, all candidates with keep/drop reasons, picks, retries, and authority changes. Filter hard-limit failures; rank by stated order; tie-break by model ID. No order means invalid run. This claims policy-choice determinism and replay only, not deterministic model output or live availability.
 - `CONTEXT.md` is updated as glossary canon. `CLAUDE.md` and `docs/governance/ROUTING-RANKING.md` still contain old rung/pair/final-say rules; a later scoped update must align them.
 - LESSON-CANDIDATE: keep authority rules in one canon or add a drift check, so rung wording cannot silently grant final say.
+
+## D40 — Handoff lint gate on every dispatch prompt and delegate report (2026-09-17)
+
+Source: operator instruction 2026-09-17, relaying a Fable 5.1 design from another session on whether an Opus→Fable handoff "linter or pruner" should exist. Verdict encoded as given: yes, narrow, deterministic, lint-and-reject only.
+
+- **What.** Every dispatch prompt (down) and every delegate report (up) passes DomI `handoff-lint` before it is sent / before its claims are acted on. Six mechanical rules:
+  - H1 social padding (greetings, "great question", request restated back, closing offers)
+  - H2 provenance tags — every claim `[verified]` / `[inferred]` / `[assumed]`; an inference arriving as a fact is the worst handoff failure
+  - H3 dangling references — "the file", "as discussed", nothing self-contained in the message
+  - H4 task contract — goal, constraints, done, out of scope; missing fields fail rather than get guessed (dispatch profile only)
+  - H5 dedupe — identical blocks pasted twice, same instruction restated (restatements can conflict)
+  - H6 verbatim — errors paraphrased instead of quoted; unclosed code fence
+- **What it never does.** Rewrite the message (both sides must see the same text, or multi-agent debugging becomes archaeology). Touch hedges or reasoning (deleting "I'm not sure, but" deletes information; the *why* is what handles the unanticipated case). Judge truth or clarity — those stay with the models.
+- **Relation to the 14-element contract.** Complement, not replacement. `check_dispatch_prompt.py` verifies this repo's 14 elements are present; `handoff-lint` verifies generic handoff hygiene. Both run; not a 15th element (that would need its own ruling).
+- **Where.** Tool lives in DomI (`skills/handoff-lint/`, stdlib python, tests + smoke in DomI CI). Installed here at user scope via `skills.requirements.txt`, never vendored (CLAUDE.md § Never). Wiring: `CLAUDE.md` § Delegation prompt contract (gate paragraph), `skills/workerbee/SKILL.md` Step 11 (mechanical gate, both directions; v1.1.3 → v1.1.4), `CONTEXT.md` (glossary term "Handoff lint").
+- **Not done.** No hook or CI gate can force this on an external session dispatching into agents_Inc (same honest limit as DomI#10). No auto-fix path — by design, and none should be added.

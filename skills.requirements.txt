@@ -19,5 +19,6 @@ codex-bridge==1.0.0          ; source=vendored (skills/codex-bridge)
 doc-analysis==unpinned       ; source=vendored (skills/doc-analysis)
 grill-me==unpinned           ; source=external-repo /Users/domattioli/Projects/DomI/skills/grill-me
 grill-with-docs==unpinned    ; source=external-repo /Users/domattioli/Projects/DomI/skills/grill-with-docs
+handoff-lint==1.0            ; source=external-repo /Users/domattioli/Projects/DomI/skills/handoff-lint (D40 gate on every dispatch prompt + delegate report; user-scope install, never vendored)
 speckit-pipeline==1.5-agents_Inc.2 ; source=vendored, forked from DomI (operator exception D35, 2026-09-07 — see skills/speckit-pipeline/SKILL.md header)
-workerbee==1.1.1             ; source=vendored (skills/workerbee)
+workerbee==1.1.4             ; source=vendored (skills/workerbee)
