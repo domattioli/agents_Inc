@@ -27,6 +27,7 @@ that were right.
 
 | Version | Date | Metric | Baseline | Observed | Delta | Evidence |
 |---|---|---|---|---|---|---|
+| v1.1.4 | 2026-09-18 | `dispatch_prompts_written_for_sub-3-call_tasks` | not-measured (gate did not exist in this copy pre-port) | not-measured | not-measured | Step 0 gate ported from DomI's fork (2026-09-18 batch dispatch session), no counter wired here yet — track next session with the gate active |
 | v1.0 | 2026-09-05 | `unverified_delegate_claims_accepted_per_session` | 3 (pre-harness, same session) | 0 (post-harness) | -3 | session 33338e35; see below |
 
 Baseline incidents, all in the same session BEFORE the supervisor-owned
