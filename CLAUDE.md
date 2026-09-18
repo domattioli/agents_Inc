@@ -59,6 +59,8 @@ Every dispatch prompt, any delegate/rung/vendor, MUST include all 14. Full wordi
 
 Elements 10/11 conditional: explicit N/A satisfies them, silence does not. All others unconditional — missing = non-compliant.
 
+**Handoff lint gate (D40, 2026-09-17):** 14-element check ≠ handoff hygiene. Before send, run BOTH: `python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt>` (contract elements present) + DomI `handoff-lint` `python3 ~/.claude/skills/handoff-lint/scripts/handoff_lint.py <prompt>` (H1 padding / H2 provenance tags / H3 dangling refs / H4 goal+constraints+done+out-of-scope / H5 dupes / H6 paraphrased errs). Delegate report returned → `--profile report` before Step 2/3 verification; untagged claim = inference dressed as fact, reject. Lint + reject only — never rewrite, never touch hedges/reasoning (info loss). Skill user-scope from DomI (`skills.requirements.txt`), never vendored. Exit ≠ 0 → fix text, re-lint, then send; no gate bypass.
+
 **Cross-repo note (DomI#10):** this contract binds any dispatch touching agents_Inc work, including one issued from a session working in a different repo. That session has no other reason to know this file exists — fetch this section (or `skills/workerbee/SKILL.md` Step 11's paste-and-tick block, self-contained) before dispatching. agents_Inc cannot enforce this on a session it doesn't control; this note is the smallest fix reachable from this side. See `skills/workerbee/SKILL.md` Step 11 for the honest limit of what this closes.
 
 ## Never

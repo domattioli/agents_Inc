@@ -637,6 +637,29 @@ any delegate/rung/vendor, this repo or a session dispatching into it:
 Any unticked box (other than 10/11 with a stated N/A) → prompt is
 non-compliant, do not send it.
 
+**Mechanical gate, both directions (D40, 2026-09-17).** Tick-list = human
+check. Run two linters too, prompt saved to file first:
+
+```
+python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt_file>   # 14 elements present
+python3 ~/.claude/skills/handoff-lint/scripts/handoff_lint.py <prompt_file> # DomI handoff-lint, dispatch profile
+```
+
+Second = DomI `handoff-lint` (user-scope install via `skills.requirements.txt`;
+fallback: fetch `skills/handoff-lint/scripts/handoff_lint.py` from
+`domattioli/DomI`, never vendor). Rules: H1 social padding, H2 provenance
+tags `[verified]`/`[inferred]`/`[assumed]` on claims, H3 dangling refs ("the
+file", "as discussed") w/ no in-msg antecedent, H4 goal + constraints + done +
+out-of-scope present + non-empty, H5 exact/near-dup blocks (restatements
+conflict), H6 err paraphrased instead of quoted / unclosed fence. Either exit
+≠ 0 → fix prompt text, re-lint, then send. Delegate report back →
+`handoff_lint.py <report_file> --profile report` BEFORE Step 2/3 verification:
+untagged claim = inference dressed as fact → reject report, re-ask w/ tags.
+Linter never rewrites (lint + reject only) + never flags hedges/reasoning —
+those carry info; stripping them = the failure mode, not the fix. Overlap:
+`check_dispatch_prompt.py` checks *this repo's* 14 elements; `handoff-lint`
+checks generic handoff hygiene any model→model msg needs. Both, not either.
+
 **Cross-repo dispatch, external session (DomI#10 gap — honest limit, not a
 claimed fix).** DomI#10's actual root cause: a session working in a
 *different* repo (DomI), dispatching work about an agents_Inc issue, never
