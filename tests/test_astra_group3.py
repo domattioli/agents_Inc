@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workerbees import ledger
-from workerbees.control import Control
-from workerbees.envelope import Decision
-from workerbees.store import Store
+from agents_inc import ledger
+from agents_inc.control import Control
+from agents_inc.envelope import Decision
+from agents_inc.store import Store
 
 
 class AstraGroup3Tests(unittest.TestCase):

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workerbees import ledger
+from agents_inc import ledger
 
 
 class SQLiteLintTest(unittest.TestCase):

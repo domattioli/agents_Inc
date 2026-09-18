@@ -9,10 +9,10 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from workerbees.pipeline import brief
-from workerbees.adapters.base import WorkerResult
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway
+from agents_inc.pipeline import brief
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -76,7 +76,7 @@ class ArtifactsCaptureMatrixTest(unittest.TestCase):
     def test_local_shadow_mode_stores_output(self):
         os.environ["WORKERBEES_ARTIFACTS"] = "local"
         ws = Path(tempfile.mkdtemp())
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(ws, registry=registry, mode="shadow")
         r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer", ws, available={"claude", "codex"},
                   runner=fake_runner_factory(self.payload), review_enabled=False, governance_mode="shadow",

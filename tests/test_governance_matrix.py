@@ -9,15 +9,21 @@ GATE E: INVALID MODE - ValueError on unsupported WORKERBEES_GOVERNANCE
 import json, os, sqlite3, tempfile, unittest, shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from workerbees.pipeline import brief
-from workerbees.adapters.base import WorkerResult
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway, GatewayError
-from workerbees.control import Control, ControlError
-from workerbees.policy import PolicyError
-from workerbees.ledger import load as load_ledger
+from agents_inc.pipeline import brief as _brief
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway, GatewayError
+from agents_inc.control import Control, ControlError
+from agents_inc.policy import PolicyError
+from agents_inc.ledger import load as load_ledger
+from codex_testkit import CODEX_EXECUTABLE
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
+
+
+def brief(*args, **kwargs):
+    kwargs.setdefault("codex_executable", str(CODEX_EXECUTABLE))
+    return _brief(*args, **kwargs)
 
 
 def fake_runner_factory(payload: dict, status="returned", call_count_list=None):
@@ -82,7 +88,7 @@ class GateAFlagMatrix(unittest.TestCase):
         # Mode: shadow
         call_count_shadow = [0]
         runner_shadow = fake_runner_factory(payload, call_count_list=call_count_shadow)
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway_shadow = Gateway(workspace=self.ws_shadow, registry=registry, mode="shadow")
         r_shadow = brief(FIX / fixture_name / source_file, fixture_name, "lawyer",
                         self.ws_shadow, available={"claude", "codex"},
@@ -157,7 +163,7 @@ class GateAFlagMatrix(unittest.TestCase):
         # Mode: shadow (with review)
         call_count_shadow = [0]
         runner_shadow = fake_runner_with_review_factory(worker_payload, reviewer_verdict, call_count_list=call_count_shadow)
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway_shadow = Gateway(workspace=self.ws_shadow, registry=registry, mode="shadow")
         r_shadow = brief(FIX / fixture_name / source_file, fixture_name, "lawyer",
                         self.ws_shadow, available={"claude", "codex"},
@@ -285,7 +291,7 @@ class GateBSeededFaults(unittest.TestCase):
                      runner=runner_off, review_enabled=False, governance_mode="off")
 
         # Mode: shadow
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway_shadow = Gateway(workspace=self.ws_shadow, registry=registry, mode="shadow")
         runner_shadow = fake_runner_factory(payload_forged)
         r_shadow = brief(FIX / fixture_name / source_file, fixture_name, "lawyer",
@@ -363,7 +369,7 @@ class GateCZeroCallDenials(unittest.TestCase):
         # Create temp workerbees with modified governance (lower worker clearance)
         temp_wb = self.ws / "workerbees_temp"
         shutil.copytree(
-            str(Path(__file__).resolve().parent.parent / "workerbees"),
+            str(Path(__file__).resolve().parent.parent / "agents_inc"),
             str(temp_wb)
         )
 
@@ -434,7 +440,7 @@ class GateDFaultInjection(unittest.TestCase):
 
     def test_d1_control_write_fails_blocks_dispatch(self):
         """Gate D1: Control layer write failure -> dispatch blocked, no runner call."""
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
 
         # Create a workspace where control.sqlite cannot be written
         # (use a path that's not a directory)
@@ -472,7 +478,7 @@ class GateDFaultInjection(unittest.TestCase):
 
     def test_d2_ledger_write_fails_preserves_outcome(self):
         """Gate D2: Ledger write failure -> outcome preserved, runner called, process continues."""
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         exp = json.loads((FIX / "sample-b" / "expected.json").read_text())
@@ -486,8 +492,8 @@ class GateDFaultInjection(unittest.TestCase):
 
         # Patch both record_dispatch and record_return in the gateway module (where they're imported)
         # to fail. This accurately models ledger outage.
-        with patch("workerbees.gateway.record_dispatch", side_effect=OSError("Ledger write failed")), \
-             patch("workerbees.gateway.record_return", side_effect=OSError("Ledger write failed")):
+        with patch("agents_inc.gateway.record_dispatch", side_effect=OSError("Ledger write failed")), \
+             patch("agents_inc.gateway.record_return", side_effect=OSError("Ledger write failed")):
             # Call should still proceed (ledger is best-effort)
             r = brief(FIX / "sample-b" / "matter.md", "sample-b", "lawyer",
                      self.ws, available={"claude", "codex"},
@@ -555,7 +561,7 @@ class GateEInvalidMode(unittest.TestCase):
     def test_e3_env_invalid_mode_raises(self):
         """Gate E3: WORKERBEES_GOVERNANCE=invalid in env raises GatewayError on gateway init."""
         os.environ["WORKERBEES_GOVERNANCE"] = "invalid_mode"
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
 
         with self.assertRaises(GatewayError) as ctx:
             Gateway(workspace=self.ws, registry=registry)

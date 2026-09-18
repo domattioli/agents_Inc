@@ -1,5 +1,5 @@
 import unittest
-from workerbees.verifier import verify, passed
+from agents_inc.verifier import verify, passed
 
 SRC = "Clause 3. Tenant pays rent monthly.\n\nClause 8. Tenant pays rent quarterly."
 
@@ -40,7 +40,7 @@ class VerifierTest(unittest.TestCase):
 
 class CheckDraftTest(unittest.TestCase):
     def test_check_draft_counts_cited(self):
-        from workerbees.verifier import check_draft
+        from agents_inc.verifier import check_draft
         draft = "Paragraph one (p2). Paragraph two (p3). Paragraph three (p4)."
         result = check_draft(draft, {"2", "3", "4"})
         self.assertEqual(result["sentences"], 3)
@@ -49,7 +49,7 @@ class CheckDraftTest(unittest.TestCase):
         self.assertEqual(result["bad_citations"], [])
 
     def test_check_draft_flags_uncited_sentence(self):
-        from workerbees.verifier import check_draft
+        from agents_inc.verifier import check_draft
         draft = "Paragraph one (p2). Paragraph two. Paragraph three (p4)."
         result = check_draft(draft, {"2", "3", "4"})
         self.assertEqual(result["sentences"], 3)
@@ -58,7 +58,7 @@ class CheckDraftTest(unittest.TestCase):
         self.assertEqual(result["bad_citations"], [])
 
     def test_check_draft_bad_citation(self):
-        from workerbees.verifier import check_draft
+        from agents_inc.verifier import check_draft
         draft = "Paragraph one (p2). Paragraph two (p9)."
         result = check_draft(draft, {"2", "3"})
         self.assertEqual(result["sentences"], 2)

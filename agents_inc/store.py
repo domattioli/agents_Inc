@@ -23,7 +23,7 @@ class Store:
 
         Args: conn_or_path: sqlite3.Connection or path str/Path to DB file.
         """
-        from workerbees import schema
+        from agents_inc import schema
 
         if isinstance(conn_or_path, sqlite3.Connection):
             self.conn = conn_or_path

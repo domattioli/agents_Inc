@@ -1,5 +1,13 @@
 # HOW IT WORKS
 
+## Installed direct runtime (pre-MVP)
+
+Installation stages an allowlisted immutable bundle under
+`~/.local/share/agents-inc/releases`, atomically activates `current`, and links
+both hosts to it. The launcher records absolute runtime paths and invokes Codex
+read-only with inherited environment, web search, and shell tool disabled. HTTP
+bridge/daemon lifecycle is unsupported by this installer.
+
 - Reader
   - **Audience**
     - Operators and agents.
@@ -202,7 +210,7 @@ ask_mistral: API error: Not enough capacity available for this request, please r
 
 ## Legacy wrappers for optional providers
 
-`workerbees/adapters/` ships claude + codex only. Gemini / Mistral / OpenRouter reach the fleet through `codex-bridge` shell wrappers, not through an adapter module:
+`agents_inc/adapters/` ships claude + codex only. Gemini / Mistral / OpenRouter reach the fleet through `codex-bridge` shell wrappers, not through an adapter module:
 
 | provider | wrapper | key file (or env var) |
 |---|---|---|

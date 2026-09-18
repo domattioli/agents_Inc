@@ -1,10 +1,10 @@
 import json, tempfile, unittest
 from pathlib import Path
 from datetime import datetime, timedelta
-from workerbees.router import Route
-from workerbees.policy import check_dispatch, is_authorized, PolicyError, paused, evaluate
-from workerbees.envelope import Envelope
-from workerbees.registry import Registry
+from agents_inc.router import Route
+from agents_inc.policy import check_dispatch, is_authorized, PolicyError, paused, evaluate
+from agents_inc.envelope import Envelope
+from agents_inc.registry import Registry
 
 class PolicyTest(unittest.TestCase):
     def setUp(self):
@@ -31,7 +31,7 @@ class PolicyTest(unittest.TestCase):
 
 class EvaluateTest(unittest.TestCase):
     def setUp(self):
-        self.registry = Registry.load("workerbees")
+        self.registry = Registry.load("agents_inc")
 
     def _make_envelope(self, sender="agent-supervisor-01", recipient="agent-worker-01",
                        operation="request", schema="request_v1", classification="internal",
@@ -266,7 +266,7 @@ class EvaluateTest(unittest.TestCase):
     def test_delegation_depth_limit_min_of_three(self):
         """D4: Depth limit = min(edge.max_delegation_depth, sender.max_delegation_depth, 1)."""
         # Create a custom registry with edge max_delegation_depth=0
-        from workerbees.registry import Registry, Agent, Relationship, Capability
+        from agents_inc.registry import Registry, Agent, Relationship, Capability
 
         test_registry = Registry(
             version="test",
@@ -304,7 +304,7 @@ class EvaluateTest(unittest.TestCase):
 
     def test_approval_required_by_edge(self):
         """D5: Approval required if edge.requires_approval is true."""
-        from workerbees.registry import Registry, Agent, Relationship
+        from agents_inc.registry import Registry, Agent, Relationship
 
         test_registry = Registry(
             version="test",
