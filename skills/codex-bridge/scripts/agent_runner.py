@@ -882,9 +882,8 @@ def command_parser() -> argparse.ArgumentParser:
     follow.add_argument("--role", help=argparse.SUPPRESS)
     follow.add_argument("--fresh", action="store_true", help=argparse.SUPPRESS)
     follow.add_argument("--force", action="store_true", help=argparse.SUPPRESS)
-    # nargs="?" so argparse does not abandon the trailing prompt when a (refused) mandate flag
-    # is interspersed between the two positionals; the prompt stays effectively required via
-    # the explicit check in main().
+    # Prompt after interspersed flags is dropped by argparse; main() uses parse_known_args()
+    # to separate trailing args, then enforces prompt requirement explicitly.
     follow.add_argument("prompt", nargs="?")
     status = commands.add_parser("status", help="show one job")
     status.add_argument("job_id")
@@ -922,12 +921,15 @@ def command_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     parser = command_parser()
-    args = parser.parse_args()
-    if args.command == "submit":
-        return submit(args)
+    args, extras = parser.parse_known_args()
     if args.command == "follow-up":
         if args.mandate or args.role or args.fresh or args.force:
             die("follow-up does not accept mandate flags in v1; use submit --mandate")
+    if extras:
+        parser.error("unrecognized arguments: " + " ".join(extras))
+    if args.command == "submit":
+        return submit(args)
+    if args.command == "follow-up":
         if args.prompt is None:
             die("follow-up requires a prompt")
         parent = read_job(args.job_id)
