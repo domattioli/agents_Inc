@@ -1,5 +1,6 @@
 """T004: tests for workerbees/config_schema.py -- stdlib dataclass validation."""
 from __future__ import annotations
+import ast
 import json
 import subprocess
 import sys
@@ -62,12 +63,24 @@ class TestConfigSchema(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        pip_count = len(
-            subprocess.run(
-                [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
-            ).stdout.splitlines()
-        )
-        self.assertEqual(pip_count, 28)
+
+        # Parse config_schema.py and check all imports are stdlib or workerbees
+        config_schema_path = ROOT / "workerbees" / "config_schema.py"
+        tree = ast.parse(config_schema_path.read_text())
+        offenders = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module_name = alias.name.split('.')[0]
+                    if module_name not in sys.stdlib_module_names and module_name != "workerbees":
+                        offenders.append(module_name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    module_name = node.module.split('.')[0]
+                    if module_name != "__future__" and module_name not in sys.stdlib_module_names and module_name != "workerbees":
+                        offenders.append(module_name)
+
+        self.assertFalse(offenders, f"Third-party imports found: {sorted(set(offenders))}")
 
 
 if __name__ == "__main__":
