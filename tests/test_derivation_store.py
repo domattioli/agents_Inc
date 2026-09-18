@@ -1,4 +1,4 @@
-"""Unit tests for workerbees/derivation_store.py -- RunRecord persistence + replay.
+"""Unit tests for agents_inc/derivation_store.py -- RunRecord persistence + replay.
 
 Covers: lossless persist-then-reload round trip, replay recomputation matching the
 originally persisted pick, and an authority_change_events entry round-tripping.
@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workerbees.lineup_router import RunRecord, route_step, with_authority_change
-from workerbees.router import Route
-from workerbees.derivation_store import persist_run_record, load_run_record, replay_pick
+from agents_inc.lineup_router import RunRecord, route_step, with_authority_change
+from agents_inc.router import Route
+from agents_inc.derivation_store import persist_run_record, load_run_record, replay_pick
 
 
 class TestPersistReloadRoundTrip(unittest.TestCase):

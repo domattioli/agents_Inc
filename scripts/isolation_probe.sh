@@ -4,7 +4,7 @@ set -u
 prov="${1:-codex}"; fail=0
 run() { python3 - "$prov" "$1" <<'PY'
 import subprocess, sys
-from workerbees.adapters import claude, codex
+from agents_inc.adapters import claude, codex
 prov, prompt = sys.argv[1], sys.argv[2]
 cmd = claude.build_cmd("haiku") if prov == "claude" else codex.build_cmd("gpt-5.4-mini")
 p = subprocess.run(cmd, input=prompt, text=True, capture_output=True, timeout=180)

@@ -1,4 +1,4 @@
-"""workerbees/envelope.py - Envelope structures and validation for inter-agent messaging."""
+"""agents_inc/envelope.py - Envelope structures and validation for inter-agent messaging."""
 
 from __future__ import annotations
 import dataclasses

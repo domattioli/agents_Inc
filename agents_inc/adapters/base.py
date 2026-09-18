@@ -1,4 +1,4 @@
-# workerbees/adapters/base.py
+# agents_inc/adapters/base.py
 """Run one tool-free Worker. Exit 0 means Returned, never Verified."""
 from __future__ import annotations
 import re, subprocess

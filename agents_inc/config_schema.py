@@ -1,4 +1,4 @@
-"""T004: stdlib-only schema hardening for workerbees/{governance,models,protocols,routing}.json.
+"""T004: stdlib-only schema hardening for agents_inc/{governance,models,protocols,routing}.json.
 
 No third-party deps -- dataclasses + json + pathlib only. Raises ValueError with a
 descriptive message on any malformed file.

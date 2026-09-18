@@ -12,7 +12,7 @@ import sqlite3, json, os, uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
-from workerbees.envelope import Decision
+from agents_inc.envelope import Decision
 
 class ControlError(Exception):
     """Control layer error."""
@@ -424,7 +424,7 @@ def _store_enabled() -> bool:
 
 
 def _dual_write_transition(workspace: Path, operation) -> None:
-    from workerbees.store import Store
+    from agents_inc.store import Store
     with Store(workspace / ".workerbees" / "workerbees.db") as store:
         operation(store)
         store.conn.commit()
@@ -450,7 +450,7 @@ def _dual_write_decision(workspace: Path, decision: Decision, run_id: str, node_
     Synthetic family: family_id = f"synthetic-{run_id}", request_id == node_id.
     Raises on real errors; swallowed by record_decision per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"
@@ -494,7 +494,7 @@ def _dual_write_reservation(workspace: Path, run_id: str, node_id: str, calls: i
     Synthetic family: family_id = f"synthetic-{run_id}", request_id == node_id.
     Raises on real errors; swallowed by reserve per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"
@@ -530,7 +530,7 @@ def _dual_write_reservation(workspace: Path, run_id: str, node_id: str, calls: i
 
 def _dual_write_run_budget(workspace: Path, run_id: str, budget: Dict[str, Any]) -> None:
     """Mirror the immutable per-run budget into canonical 3NF storage."""
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     db_path = workspace / ".workerbees" / "workerbees.db"
     with Store(db_path) as store:
@@ -550,7 +550,7 @@ def _dual_write_replay(workspace: Path, message_id: str, envelope_hash: str, art
 
     Raises on real errors; swallowed by check_replay/store_artifact per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"
@@ -571,7 +571,7 @@ def _dual_write_cancellation(workspace: Path, run_id: str) -> None:
 
     Raises on real errors; swallowed by cancel per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"
@@ -592,7 +592,7 @@ def _dual_write_lease(workspace: Path, workspace_key: str, run_id: str) -> None:
 
     Raises on real errors; swallowed by acquire_lease per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"
@@ -615,7 +615,7 @@ def _dual_write_approval(workspace: Path, approval_id: str, run_id: str, request
 
     Raises on real errors; swallowed by request_approval per FR-008.
     """
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     d = workspace / ".workerbees"
     db_path = d / "workerbees.db"

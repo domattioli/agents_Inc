@@ -1,13 +1,18 @@
 import json, os, sqlite3, tempfile, unittest
 from pathlib import Path
-from workerbees.reviewer import review, ReviewResult
-from workerbees.adapters.base import WorkerResult
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway
-from workerbees.router import Route
+from agents_inc.reviewer import review as _review, ReviewResult
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway
+from agents_inc.router import Route
+from codex_testkit import CODEX_EXECUTABLE
 
 SRC = "Clause 3. Rent monthly.\n\nClause 8. Rent quarterly."
 CLAIMS = [{"text": "monthly", "quote": "Rent monthly", "anchor": "x#p1"}]
+
+def review(*args, **kwargs):
+    kwargs.setdefault("codex_executable", str(CODEX_EXECUTABLE))
+    return _review(*args, **kwargs)
 
 def runner_ok(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
     """Fake runner that returns ok verdicts."""
@@ -41,7 +46,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
     def test_supplied_same_vendor_route_enforce_mode(self):
         """Supplied same-vendor route returns 'same_vendor' in enforce mode, runner not called."""
         route = Route(provider="claude", model="claude-opus", tier="executive", cmd_kind="cli")
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude"}, False,
                     runner=counter_runner, role="lawyer", route=route,
@@ -61,7 +66,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
 
     def test_shadow_mode_decision_recorded(self):
         """Shadow mode: reviewer runs, decision recorded in control.sqlite."""
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude", "codex"}, False,
                     runner=runner_ok, role="lawyer", governance_mode="shadow",
@@ -78,8 +83,8 @@ class ReviewerGovernanceTest(unittest.TestCase):
 
     def test_enforce_allowed_no_ledger_duplicate(self):
         """Enforce mode allowed: gateway handles ledger, no duplicate reviewer node."""
-        from workerbees.ledger import load as load_ledger
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc.ledger import load as load_ledger
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude", "codex"}, False,
                     runner=runner_ok, role="lawyer", governance_mode="enforce",
@@ -101,7 +106,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
         # Create temp workerbees dir with modified governance.json
         temp_wb = self.ws / "workerbees_temp"
         shutil.copytree(
-            str(Path(__file__).resolve().parent.parent / "workerbees"),
+            str(Path(__file__).resolve().parent.parent / "agents_inc"),
             str(temp_wb)
         )
         # Lower reviewer clearance to public to trigger CLASSIFICATION_EXCEEDED
@@ -127,11 +132,11 @@ class ReviewerGovernanceTest(unittest.TestCase):
         # We use an unlisted sender-recipient pair to force real policy denial
         # Since we can't easily create custom envelopes from review(), we verify the mechanism works
         # by checking that when gateway.dispatch is called with denied result, review returns "blocked"
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         # Direct test: call gateway.dispatch with a no-edge envelope
-        from workerbees.envelope import Envelope
+        from agents_inc.envelope import Envelope
         from datetime import datetime
         import uuid
         uid = uuid.uuid4().hex
@@ -143,8 +148,8 @@ class ReviewerGovernanceTest(unittest.TestCase):
             payload={"prompt": "test"}, data_classification="internal",
             created_at=datetime.utcnow().isoformat()+"Z"
         )
-        route = Path(__file__).resolve().parent.parent / "workerbees"
-        from workerbees.router import pick_model
+        route = Path(__file__).resolve().parent.parent / "agents_inc"
+        from agents_inc.router import pick_model
         r = pick_model("review", "workhorse", {"claude", "codex"}, False)
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender},
                                  runner=counter_runner, route=r)
@@ -164,7 +169,7 @@ class ReviewerGovernanceTest(unittest.TestCase):
     def test_governance_mode_from_environ(self):
         """governance_mode=None defaults to os.environ['WORKERBEES_GOVERNANCE'] or 'off'."""
         os.environ["WORKERBEES_GOVERNANCE"] = "shadow"
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
         res = review(SRC, "x", CLAIMS, "d", "claude", {"claude", "codex"}, False,
                     runner=runner_ok, role="lawyer", governance_mode=None,
@@ -177,8 +182,8 @@ class ReviewerGovernanceTest(unittest.TestCase):
     def test_shadow_mode_duplicate_envelope_no_exception(self):
         """G4 regression: shadow mode with duplicate/conflict status returns sane ReviewResult, no exception."""
         import unittest.mock
-        from workerbees.envelope import Decision
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc.envelope import Decision
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
         # Mock gateway.dispatch to return duplicate status (None worker_result)
@@ -204,8 +209,8 @@ class ReviewerGovernanceTest(unittest.TestCase):
     def test_shadow_mode_conflict_envelope_no_exception(self):
         """G4 regression: shadow mode with conflict status (None worker_result) handled correctly."""
         import unittest.mock
-        from workerbees.envelope import Decision
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc.envelope import Decision
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
         # Mock gateway.dispatch to return conflict status (None worker_result)

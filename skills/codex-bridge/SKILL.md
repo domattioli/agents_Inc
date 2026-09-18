@@ -1,13 +1,15 @@
 ---
 name: codex-bridge
-description: Start/stop/query the local Codex HTTP bridge and send prompts to a persistent OpenAI Codex session. Use to offload bulk file digestion, log triage, and second-opinion debugging to GPT instead of spending Claude context. Triggers — "start the codex bridge", "ask codex", "codex bridge status".
+description: Use for astra, sol, terra, luna, or a Codex delegate. Installed direct launcher is required; Claude Agent cannot select these models. Bridge commands remain source-only.
 version: 1.0.1
 benchmark: claude_tokens_saved_per_offloaded_task
 ---
 
 # Codex Bridge
 
-The Codex Bridge is a local HTTP server that exposes OpenAI's Codex model (GPT-4 or GPT-3.5) as a persistent session with memory. Use it to preserve context across multiple prompts without burning your Claude token budget on bulk file reading, log triage, or debugging second opinions.
+The HTTP bridge is a deferred, source-checkout-only feature. The supported
+cross-project path is the installed `agents-inc` direct Codex launcher; it
+runs a read-only, isolated command and does not start, stop, or inspect a daemon.
 
 ## When to Use
 

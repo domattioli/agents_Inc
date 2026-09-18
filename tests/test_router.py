@@ -1,5 +1,5 @@
 import unittest
-from workerbees.router import pick_model, pick_model_chain, Route, _TABLE
+from agents_inc.router import pick_model, pick_model_chain, Route, _TABLE
 
 class RouterTest(unittest.TestCase):
     def test_cheap_extract_prefers_required_provider(self):

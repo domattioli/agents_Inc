@@ -51,7 +51,7 @@ fi
 # Fallback: read from ~/Projects/.env if key is missing/empty/placeholder
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; then
   if [[ -f "$HOME/Projects/.env" ]]; then
-    ENV_KEY=$(grep -m1 -E '^OPENROUTER_API_KEY=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
+    ENV_KEY=$(grep -m1 -E '^(OPEN_ROUTER_API_KEY|OPENROUTER_API_KEY)=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
     if [[ -n "$ENV_KEY" ]]; then
       ENV_KEY="${ENV_KEY%\"}"
       ENV_KEY="${ENV_KEY#\"}"
@@ -63,7 +63,7 @@ if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; 
 fi
 
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; then
-  echo "oask error: no API key (checked $KEY_FILE and ~/Projects/.env OPENROUTER_API_KEY)" >&2
+  echo "oask error: no API key (checked $KEY_FILE and ~/Projects/.env OPEN_ROUTER_API_KEY|OPENROUTER_API_KEY)" >&2
   exit 2
 fi
 
