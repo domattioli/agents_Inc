@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock
 
-from workerbees.adapters.base import WorkerResult
-from workerbees.envelope import Envelope
-from workerbees.gateway import Gateway
-from workerbees.registry import Registry
-from workerbees.router import Route
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.envelope import Envelope
+from agents_inc.gateway import Gateway
+from agents_inc.registry import Registry
+from agents_inc.router import Route
+from codex_testkit import CODEX_EXECUTABLE
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,7 +31,7 @@ class RunBudgetTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.registry = Registry.load(str(ROOT / "workerbees"))
+        self.registry = Registry.load(str(ROOT / "agents_inc"))
         self.route = Route("claude", "haiku", "grunt", "cli")
 
     def tearDown(self):
@@ -95,15 +96,15 @@ class ExplicitOffOverridesEnv(unittest.TestCase):
     def test_review_off_ignores_env_enforce(self):
         import os
         from unittest import mock
-        from workerbees import reviewer
-        from workerbees.router import Route
+        from agents_inc import reviewer
+        from agents_inc.router import Route
         calls = []
         def runner(cmd, prompt):
-            from workerbees.adapters.base import WorkerResult
+            from agents_inc.adapters.base import WorkerResult
             calls.append(cmd); return WorkerResult("returned", "NO DEFECTS", "", 0)
         with mock.patch.dict(os.environ, {"WORKERBEES_GOVERNANCE": "enforce"}):
             rv = reviewer.review("src", "s", [], "draft", "claude", {"claude", "codex"}, True,
                                  runner=runner, route=Route("codex", "gpt-5.4-mini", "grunt", "cli"),
-                                 governance_mode="off")
+                                 governance_mode="off", codex_executable=str(CODEX_EXECUTABLE))
         self.assertEqual(len(calls), 1)
         self.assertNotEqual(rv.status, "error")

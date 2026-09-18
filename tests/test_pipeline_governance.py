@@ -1,13 +1,18 @@
 import json, os, sqlite3, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
-from workerbees.pipeline import brief
-from workerbees.adapters.base import WorkerResult
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway
-from workerbees.policy import PolicyError
+from agents_inc.pipeline import brief as _brief
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway
+from agents_inc.policy import PolicyError
+from codex_testkit import CODEX_EXECUTABLE
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
+
+def brief(*args, **kwargs):
+    kwargs.setdefault("codex_executable", str(CODEX_EXECUTABLE))
+    return _brief(*args, **kwargs)
 
 def fake_runner_factory(payload: dict, status="returned"):
     calls = [0]
@@ -28,7 +33,7 @@ class PipelineGovernanceTest(unittest.TestCase):
 
     def test_off_mode_identical_to_no_governance(self):
         """Off mode should be byte-identical to current behavior: ledger call, runner call, ledger return."""
-        from workerbees.ledger import load as load_ledger
+        from agents_inc.ledger import load as load_ledger
 
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
 
@@ -59,8 +64,8 @@ class PipelineGovernanceTest(unittest.TestCase):
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
 
         # Spy on Registry.load and Gateway.__init__ to verify they're never called in off mode
-        with patch('workerbees.registry.Registry.load') as mock_registry_load, \
-             patch('workerbees.gateway.Gateway.__init__', return_value=None) as mock_gateway_init:
+        with patch('agents_inc.registry.Registry.load') as mock_registry_load, \
+             patch('agents_inc.gateway.Gateway.__init__', return_value=None) as mock_gateway_init:
             r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                       runner=fake_runner_factory(payload), review_enabled=False, governance_mode="off",
                       gateway=None, registry=None)
@@ -74,7 +79,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         runner = fake_runner_factory(payload)
 
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
         r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
@@ -99,7 +104,7 @@ class PipelineGovernanceTest(unittest.TestCase):
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         runner = fake_runner_factory(payload)
 
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
@@ -118,10 +123,10 @@ class PipelineGovernanceTest(unittest.TestCase):
 
         # Test real denial through policy: send confidential data to a worker without sufficient clearance
         # Use a patched policy.check_dispatch to simulate authorization failure
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
-        with patch('workerbees.pipeline.check_dispatch', side_effect=PolicyError("Clearance exceeded")) as mock_check:
+        with patch('agents_inc.pipeline.check_dispatch', side_effect=PolicyError("Clearance exceeded")) as mock_check:
             r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
                       runner=runner, review_enabled=False, governance_mode="enforce",
                       registry=registry, gateway=gateway, confidential=True)
@@ -168,12 +173,12 @@ class PipelineGovernanceTest(unittest.TestCase):
 
     def test_ledger_no_duplicates_with_gateway(self):
         """Gateway owns ledger emission in shadow/enforce mode: no duplicate nodes."""
-        from workerbees.ledger import load
+        from agents_inc.ledger import load
 
         payload = {"claims": [dict(text="t", **c) for c in self.exp["required_claims"]], "draft": "Brief. (p2)"}
         runner = fake_runner_factory(payload)
 
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
         r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws, available={"claude","codex"},
@@ -186,7 +191,7 @@ class PipelineGovernanceTest(unittest.TestCase):
 
     def test_correction_with_governance_routing(self):
         """Correction loop reuses _dispatch_worker with edge_type='corrects'."""
-        from workerbees.ledger import load
+        from agents_inc.ledger import load
 
         worker_1 = {
             "claims": [dict(text="t", **c) for c in self.exp["required_claims"]],
@@ -219,7 +224,7 @@ class PipelineGovernanceTest(unittest.TestCase):
                 "omissions": [],
             }), "", 0)
 
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
 
         r = brief(FIX/"sample-b"/"matter.md", "sample-b", "lawyer", self.ws,

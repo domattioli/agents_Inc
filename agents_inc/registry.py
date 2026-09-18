@@ -47,7 +47,7 @@ class Registry:
 
     @classmethod
     def load(cls, path: Optional[str] = None) -> "Registry":
-        base = Path(path) if path else Path("workerbees")
+        base = Path(path) if path else Path("agents_inc")
 
         def read_json(filename: str):
             p = base / filename

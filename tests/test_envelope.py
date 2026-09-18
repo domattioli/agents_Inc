@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workerbees.envelope import (
+from agents_inc.envelope import (
     Envelope, Decision, ArtifactRef, EnvelopeError,
     validate, canonical_hash, VALID_OPERATIONS, VALID_CLASSIFICATIONS
 )

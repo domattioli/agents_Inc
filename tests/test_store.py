@@ -1,8 +1,8 @@
 import sqlite3
 import unittest
 from datetime import datetime, timezone
-from workerbees.store import Store
-from workerbees import schema
+from agents_inc.store import Store
+from agents_inc import schema
 
 
 class TestStoreBasics(unittest.TestCase):

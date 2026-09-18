@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from workerbees import ledger, control
+from agents_inc import ledger, control
 
 
 class TestStoreDualWrite(unittest.TestCase):
@@ -280,7 +280,7 @@ class TestStoreDualWrite(unittest.TestCase):
             ledger.record_return(self.workspace, node_id="child", status="returned", seconds=1.0, subscription_calls=3)
 
             # Execute canonical q5, not a test-local substitute.
-            from workerbees.schema import QUERIES
+            from agents_inc.schema import QUERIES
             db_file = self.workspace / ".workerbees" / "workerbees.db"
             conn = sqlite3.connect(str(db_file))
             conn.row_factory = sqlite3.Row
@@ -338,7 +338,7 @@ class TestStoreDualWrite(unittest.TestCase):
         os.environ["WORKERBEES_STORE"] = "both"
         try:
             fault = OSError("injected normalized store failure")
-            with patch("workerbees.store.Store.append_event", side_effect=fault) as append:
+            with patch("agents_inc.store.Store.append_event", side_effect=fault) as append:
                 success = ledger.record_dispatch(
                 self.workspace,
                 node_id="node_fr008",
@@ -369,7 +369,7 @@ class TestStoreDualWrite(unittest.TestCase):
         try:
             ctrl = control.Control(self.workspace)
 
-            from workerbees.envelope import Decision
+            from agents_inc.envelope import Decision
 
             # Create a decision with all required fields
             decision = Decision(

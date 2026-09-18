@@ -1,10 +1,12 @@
 # tests/test_adapters.py
 import unittest
-from workerbees.adapters import claude, codex
-from workerbees.adapters.base import run_worker
+from agents_inc.adapters import claude, codex
+from agents_inc.adapters.base import run_worker
+from codex_testkit import CODEX_EXECUTABLE as CODEX_EXECUTABLE_PATH
 
 DISALLOWED = {"Bash","PowerShell","Read","Edit","Write","Glob","Grep","Task",
               "AskUserQuestion","TodoWrite","WebFetch","WebSearch","NotebookEdit"}
+CODEX_EXECUTABLE = str(CODEX_EXECUTABLE_PATH)
 
 class AdapterTest(unittest.TestCase):
     def test_claude_cmd_is_tool_free_and_not_bare(self):
@@ -18,10 +20,16 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--setting-sources")+1], "")
 
     def test_codex_cmd_read_only_stdin(self):
-        cmd = codex.build_cmd("gpt-5.4-mini")
-        self.assertEqual(cmd[:2], ["codex", "exec"])
+        cmd = codex.build_cmd("gpt-5.4-mini", CODEX_EXECUTABLE)
+        self.assertEqual(cmd[:2], [CODEX_EXECUTABLE, "exec"])
         self.assertIn("read-only", cmd)
         self.assertEqual(cmd[-1], "-")
+
+    def test_codex_cmd_requires_explicit_absolute_executable(self):
+        with self.assertRaisesRegex(ValueError, "WB_CLI_NOT_FOUND"):
+            codex.build_cmd("gpt-5.4-mini", None)
+        with self.assertRaisesRegex(ValueError, "WB_CLI_NOT_FOUND"):
+            codex.build_cmd("gpt-5.4-mini", "codex")
 
     def test_run_worker_exit0_is_returned_not_verified(self):
         r = run_worker(["cat"], "echo-me")
@@ -32,7 +40,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(r.status, "paused")
 
     def test_codex_cmd_has_isolated_cwd_and_no_env(self):
-        cmd = codex.build_cmd("gpt-5.4-mini", cwd="/tmp/x")
+        cmd = codex.build_cmd("gpt-5.4-mini", CODEX_EXECUTABLE, cwd="/tmp/x")
         self.assertIn("-C", cmd); self.assertEqual(cmd[cmd.index("-C")+1], "/tmp/x")
         self.assertIn('shell_environment_policy.inherit="none"', cmd)
         self.assertIn('web_search="disabled"', cmd)

@@ -411,7 +411,20 @@ Verification: `python3 -m unittest discover -s tests` — Ran 462 tests, OK (458
 - `CONTEXT.md` is updated as glossary canon. `CLAUDE.md` and `docs/governance/ROUTING-RANKING.md` still contain old rung/pair/final-say rules; a later scoped update must align them.
 - LESSON-CANDIDATE: keep authority rules in one canon or add a drift check, so rung wording cannot silently grant final say.
 
-## D40 — Handoff lint gate on every dispatch prompt and delegate report (2026-09-17)
+## D40 — LESSON-CANDIDATE: stale long-lived server proc can mimic the exact bug under test (2026-09-12, spec-010 T040 live run)
+
+caveman-ultra (operator instruction):
+
+- ctx: spec-010 quickstart live run, bridge.py process long-lived, not restarted since before session's edits.
+- symptom: 2 fresh mandate roles -> same thread_id. Looked exactly like isolation defect spec-010 fixes.
+- root cause: bridge proc start-time (14:31) < bridge.py commit-time (21:26). Old code in mem, not new.
+- verify method: `ps -ef` start-time vs `git log -1 --format=%ci -- <file>`. + 2 bare `codex exec` calls bypassing bridge -> distinct thread_ids both -> CLI not the source -> narrowed to server proc.
+- fix: `down.sh` + `up.sh --force`. discard polluted mandate. re-run clean.
+- rule going forward: before trusting ANY live-acceptance-run result against a long-lived server proc, check proc start-time >= last-commit-time of the file(s) it serves, OR force-restart first. Stale server = false positive/negative, indistinguishable from a real defect w/o this check.
+- canon-check: not yet checked vs prior LESSON-CANDIDATEs above (no budget at time of surfacing). flag only.
+- src: T040 execution, session 01JRnYrBKuQqFQQVYQZabPxP, full transcript `specs/010-persistent-exec-session/evidence/quickstart-2026-09-12.txt`.
+
+## D41 — Handoff lint gate on every dispatch prompt and delegate report (2026-09-17)
 
 Source: operator instruction 2026-09-17, relaying a Fable 5.1 design from another session on whether an Opus→Fable handoff "linter or pruner" should exist. Verdict encoded as given: yes, narrow, deterministic, lint-and-reject only.
 
@@ -426,3 +439,4 @@ Source: operator instruction 2026-09-17, relaying a Fable 5.1 design from anothe
 - **Relation to the 14-element contract.** Complement, not replacement. `check_dispatch_prompt.py` verifies this repo's 14 elements are present; `handoff-lint` verifies generic handoff hygiene. Both run; not a 15th element (that would need its own ruling).
 - **Where.** Tool lives in DomI (`skills/handoff-lint/`, stdlib python, tests + smoke in DomI CI). Installed here at user scope via `skills.requirements.txt`, never vendored (CLAUDE.md § Never). Wiring: `CLAUDE.md` § Delegation prompt contract (gate paragraph), `skills/workerbee/SKILL.md` Step 11 (mechanical gate, both directions; v1.1.3 → v1.1.4), `CONTEXT.md` (glossary term "Handoff lint").
 - **Not done.** No hook or CI gate can force this on an external session dispatching into agents_Inc (same honest limit as DomI#10). No auto-fix path — by design, and none should be added.
+

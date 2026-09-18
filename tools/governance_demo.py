@@ -3,12 +3,12 @@
 import os, sys, json, sqlite3, tempfile, shutil
 from pathlib import Path
 from datetime import datetime
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway
-from workerbees.envelope import Envelope
-from workerbees.router import pick_model
-from workerbees.adapters import base
-from workerbees.ledger import load as load_ledger, to_mermaid
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway
+from agents_inc.envelope import Envelope
+from agents_inc.router import pick_model
+from agents_inc.adapters import base
+from agents_inc.ledger import load as load_ledger, to_mermaid
 
 def fake_run_worker(cmd, stdin_text, cwd=None, timeout=300):
     return base.WorkerResult("returned", "PONG", "", 0)
@@ -18,7 +18,7 @@ def run_demo(use_fake=False):
     os.environ["WORKERBEES_GOVERNANCE"] = "enforce"
     tmpdir = Path(tempfile.mkdtemp(prefix="governance_demo_"))
     try:
-        registry = Registry.load("workerbees")
+        registry = Registry.load("agents_inc")
         gateway = Gateway(workspace=tmpdir, registry=registry, mode="enforce")
         runner = fake_run_worker if use_fake else base.run_worker
         results = {}

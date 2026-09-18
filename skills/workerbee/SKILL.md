@@ -2,7 +2,7 @@
 name: workerbee
 version: 1.1.4
 benchmark: unverified_delegate_claims_accepted_per_session
-description: Supervision discipline for running work through a multi-vendor fleet of delegate models in budget mode — capability tiering, flash-tier triage of delegate reports, supervisor-owned verification harnesses, and the honesty rules that keep delegated work trustworthy. Use when orchestrating codex/gemini/mistral/OpenRouter delegates, when a delegate reports a gate as passing, or when deciding which tier a task belongs to. Pairs with `codex-bridge` (that skill is the dispatch mechanism; this one is the judgment about using it). Caveman-style output.
+description: Use when asked for astra, sol, terra, luna, or a Codex delegate. Claude Agent cannot select these Codex models; use the installed agents-inc launcher. Covers supervision and verification.
 ---
 
 # workerbee
@@ -15,7 +15,9 @@ this delegate's GREEN?" — a question that cost three false accepts in one
 session before these rules existed.
 
 This skill is judgment, not plumbing. The dispatch machinery lives in
-`codex-bridge` (`~/Projects/workerbees`).
+the installed `codex-bridge` skill. For Astra, Sol, Terra, or Luna, invoke the
+absolute installed `agents-inc` launcher recorded by installation; Claude's
+`Agent` cannot select those Codex aliases.
 
 ## Metadata
 
@@ -57,6 +59,47 @@ price coerced to zero inflated a reported savings figure ~29x, from a
 defensible `$1.15` to `$33.06`.
 
 ## Protocol
+
+### Step 0: Dispatch-worthiness gate — run before writing any prompt
+
+A correctly-written dispatch prompt (Step 11: role, reporting chain, verified
+state, constraints, gates, output shape) costs roughly 600-1,200 tokens to
+write plus the delegate's own floor (measured: 3,181 tokens for a one-word
+ultra-tier reply). For a small task that fixed cost exceeds doing the work
+directly. Answer both questions below before writing the prompt. Either
+answer `no` means do the work in the orchestrating session.
+
+**Q1 — Volume.** Estimate the direct tool calls this task would take you
+(read / grep / glob / single edit / one command). **If the estimate is 3 or
+fewer, do not dispatch.** Count the calls, do not estimate the difficulty;
+a one-file lookup, a single grep, a known-path edit, and a one-line config
+change are all under the line regardless of how important they are.
+Exceptions, each of which must be stated out loud when used:
+- the task is one of N≥3 independent tasks being fanned out in parallel;
+- the calls are individually cheap but return large output the orchestrator
+  should not hold in context (log sweeps, whole-file dumps);
+- the work is code writing/editing under a binding coding-dispatch policy
+  for the repo you're operating in, if one exists (dispatch regardless of
+  size in that case).
+
+**Q2 — Affordance.** Does the delegate have the capabilities the task needs?
+
+| delegate | filesystem | shell | repo state |
+|---|---|---|---|
+| Claude subagent (`Agent` tool) | yes | yes | yes |
+| `agent.sh` / codex-bridge runner | yes | yes | yes |
+| `gask.sh` / `mask.sh` / `oask.sh` (bare API) | **no** | **no** | **no** |
+
+A bare-API wrapper sees only the text in the prompt. If the task says
+"grep the repo", "read that file", or "check the branch", either paste the
+real source into the prompt (Step 6) or pick a delegate with filesystem
+access. Dispatching a filesystem task to a bare-API buddy costs a full
+correction round-trip — the failure that produced this gate (MADMESHing,
+2026-09-08: dispatch → "no filesystem" correction → local grep → re-dispatch,
+strictly more expensive than the grep alone).
+
+State the gate result in one line before dispatching, e.g.
+`dispatch gate: ~8 calls, delegate=Agent(fs=yes) → dispatch`.
 
 ### Step 1: Place the task on the capability ladder
 
@@ -113,10 +156,10 @@ vendor that isn't wired up here.
 
 | nickname | vendor | slug | dispatch | tier | when-to-use |
 |---|---|---|---|---|---|
-| astra | OpenAI (Codex, this acct) | `gpt-6-astra` | `codex exec -m gpt-6-astra -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | ultra | hardest reasoning, last resort. Effort `ultra` self-delegates — see Step 1c |
-| sol | OpenAI (Codex, this acct) | `gpt-5.6-sol` | `codex exec -m gpt-5.6-sol -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | flagship | orchestration, adversarial review, gates |
-| terra | OpenAI (Codex, this acct) | `gpt-5.6-terra` | `codex exec -m gpt-5.6-terra -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | workhorse | implementation, supervising a pair |
-| luna | OpenAI (Codex, this acct) | `gpt-5.6-luna` | `codex exec -m gpt-5.6-luna -c model_reasoning_effort=<level> --skip-git-repo-check "<prompt>"` | flash | triage, mechanical edits, high volume. No `ultra` effort exists for this slug — floor is `max`, so luna cannot self-delegate |
+| astra | OpenAI (Codex) | `gpt-6-astra` | `@AGENTS_INC_LAUNCHER@ run --model astra --cwd <dir>` | ultra | hardest reasoning |
+| sol | OpenAI (Codex) | `gpt-5.6-sol` | `@AGENTS_INC_LAUNCHER@ run --model sol --cwd <dir>` | flagship | orchestration, review |
+| terra | OpenAI (Codex) | `gpt-5.6-terra` | `@AGENTS_INC_LAUNCHER@ run --model terra --cwd <dir>` | workhorse | implementation |
+| luna | OpenAI (Codex) | `gpt-5.6-luna` | `@AGENTS_INC_LAUNCHER@ run --model luna --cwd <dir>` | flash | triage, mechanical work |
 | fable | Anthropic | n/a — `Agent` tool | `Agent(model="fable", ...)` | ultra | Claude-side hardest reasoning, last resort |
 | opus | Anthropic | n/a — `Agent` tool | `Agent(model="opus", ...)` | flagship | Claude-side orchestration, adversarial review, gates |
 | sonnet | Anthropic | n/a — `Agent` tool | `Agent(model="sonnet", ...)` | workhorse | Claude-side implementation |
@@ -668,6 +711,11 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 
 ## Version History
 
+- **v1.1.4** (2026-09-18) — Ports DomI's Step 0 dispatch-worthiness gate
+  (2 questions: volume ≤3 calls → don't dispatch; affordance → bare-API
+  buddies have no filesystem/shell/repo access) into this canonical copy,
+  closing the drift where DomI's workerbee fork had the gate and this one
+  didn't. DomI#470.
 - **v1.1.3** (2026-09-12) — DomI#12 root-cause follow-up: bare-prose
   confirm-and-echo requirement (v1.1.2) is unenforceable by itself — same
   class of instruction the issue says gets ignored. Adds

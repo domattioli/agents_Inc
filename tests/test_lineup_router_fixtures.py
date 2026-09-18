@@ -1,4 +1,4 @@
-"""Fixture-expansion tests for lineup-mode routing (workerbees/lineup_router.py) -- test-only,
+"""Fixture-expansion tests for lineup-mode routing (agents_inc/lineup_router.py) -- test-only,
 no production code. Covers three scenarios NOT exercised by tests/test_lineup_router.py,
 per specs/009-cross-vendor-dispatch/routing-contract.md section 4/7.
 
@@ -9,8 +9,8 @@ invent a resolution the spec says is unresolved.
 import unittest
 from dataclasses import replace
 
-from workerbees.router import Route
-from workerbees.lineup_router import (
+from agents_inc.router import Route
+from agents_inc.lineup_router import (
     RoutePlan,
     RunRecord,
     route_step,

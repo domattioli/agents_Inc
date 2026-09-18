@@ -1,5 +1,5 @@
 import unittest
-from workerbees.bench import summarize
+from agents_inc.bench import summarize
 
 class BenchTest(unittest.TestCase):
     def test_summary_has_no_percent_claim_and_reports_unknown_cost(self):
