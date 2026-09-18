@@ -1,6 +1,6 @@
 ---
 name: workerbee
-version: 1.1.4
+version: 1.2.1
 benchmark: unverified_delegate_claims_accepted_per_session
 description: Use when asked for astra, sol, terra, luna, or a Codex delegate. Claude Agent cannot select these Codex models; use the installed agents-inc launcher. Covers supervision and verification.
 ---
@@ -101,9 +101,44 @@ strictly more expensive than the grep alone).
 State the gate result in one line before dispatching, e.g.
 `dispatch gate: ~8 calls, delegate=Agent(fs=yes) → dispatch`.
 
+### Step 0.5: Vendor eligibility gate — non-Claude is off by default
+
+Claude (`Agent` tool) is the default vendor for every dispatch. Codex
+(astra/sol/terra/luna), Gemini, Mistral and OpenRouter are **OFF unless a
+gate below opens.** The ladder in Step 1 is a capability map, not a menu of
+equally-default options — do not pick a vendor row because it is cheaper,
+present, or already wired up.
+
+Open a non-Claude vendor only on one of:
+(a) **Operator asked.** Named the vendor/nickname for this dispatch. A prior
+    session's use is not standing consent.
+(b) **Capability fit.** The task needs something Claude cannot do as well
+    here, stated concretely, not as a preference. Legitimate examples:
+    1M-context single-blob digest (gemini digest); genuine cross-vendor
+    blind second opinion where same-vendor correlation is the thing being
+    avoided; Claude quota-paused (= a failed attempt, per CLAUDE.md).
+(c) **Declared budget modality.** The operator has put this run in budget
+    mode. Budget mode opens the free grunts (gpt-5.4-mini, OpenRouter free,
+    Gemini free, Mistral free) for workhorse/grunt slots; it does NOT open
+    paid Codex-account models — those still need (a) or (b).
+
+State the result in one line before dispatching, same shape as Step 0:
+`vendor gate: gate (b) cross-vendor blind review → mistral code` or
+`vendor gate: no gate open → Claude (sonnet)`.
+
+No gate open → dispatch Claude. Cheaper-and-available is not a gate.
+
+**Pairs `subagent-dispatch-policy` Step 0.** That step says an operator
+naming a model assigns the top-level delegate without locking the subtree —
+go cheaper beneath it freely *within Claude*. This step is the sideways
+constraint on the same tree: a named Claude model does not open a free-grunt
+or Codex sub-delegate by itself; crossing vendors beneath it still needs a
+gate above. Downward is free, sideways is gated.
+
 ### Step 1: Place the task on the capability ladder
 
-Two vendors, one ladder. Pick the tier the task needs.
+Two vendors, one ladder. Pick the tier the task needs. **Step 0.5 gates which
+vendor column you may use** — the ladder tells you the rung, not the vendor.
 
 | tier | Anthropic | OpenAI | use for |
 |---|---|---|---|
@@ -171,6 +206,7 @@ vendor that isn't wired up here.
 | mistral code | Mistral API | `codestral-latest` | `skills/codex-bridge/scripts/mask.sh --tier code "<prompt>"` | workhorse | code review/critique. Devstral not exposed on this key; codestral is the substitute |
 | mistral deep | Mistral API | `mistral-large-latest` | `skills/codex-bridge/scripts/mask.sh --tier deep "<prompt>"` | workhorse | research-style questions |
 | openrouter free | OpenRouter, free-tier models only | model id from `curl https://openrouter.ai/api/v1/models` | `skills/codex-bridge/scripts/oask.sh "<prompt>"` | bottom rung | one-shot text/drafts. Hard-coded spend guard refuses non-free models — operator rule is spend nothing on OpenRouter |
+| DelegateAgent | OpenAI (Codex), via MCP | `gpt-5.6-luna` | `DelegateAgent(model="luna", ...)` | flash | transcript-return alternative to broken --backend codex --wait for luna; same call shape as Claude `Agent` tool |
 
 Bridge scripts (`gask.sh`/`mask.sh`/`oask.sh`) live in `skills/codex-bridge/scripts/` in this repo, alongside this skill. Prefer `agent.sh submit --backend <b> --wait "<prompt>"` over calling a wrapper directly (see `## CLI` section below) — it gives a job id and a saved `result.json`.
 
@@ -309,6 +345,35 @@ progress signal available to an operator who cannot read a test.
 
 Self-test the poller both ways before trusting it, same bar as any harness
 (Step 2): prove it says `DONE` on a finished job and `DIED` on a killed one.
+
+### Step 3b: Visibility contract — what the operator can and cannot see
+
+Claude `Agent` subagents stream into the transcript; codex-bridge jobs do
+not, and cannot. Bash tool output reaches the session only at command
+completion — no user-space script can push incremental lines into a
+transcript mid-run. This is a harness boundary, not a missing feature.
+What IS achievable, and is therefore required:
+
+1. **Default to blocking dispatch.** `agent.sh submit --backend <b> --wait`
+   run in the foreground returns into the transcript exactly like an `Agent`
+   call. Use it unless the job is long enough to need a background slot, and
+   say why when you don't. Exception: for `--backend codex` with luna, `--wait`
+   is broken (bridge daemon can't see codex on PATH); use the `DelegateAgent`
+   MCP tool instead for real-time transcript return. `--wait` remains the default
+   for gemini/mistral/openrouter backends.
+2. **Async submit → emit the watch line in the same turn, unasked.** Print
+   `scripts/watch.sh ~/.codex-bridge/jobs/<id>/stdout.log` immediately. The
+   operator's live view is a pane, not the transcript — it costs zero
+   context and is the only true live signal that exists.
+3. **Checkpoint with `poll.sh --once`, not a continuous poller in context.**
+   One state line per checkpoint the session was already going to hit.
+   Continuous polling into the transcript spends the tokens delegation saves.
+4. **Never narrate a job you are not polling.** "It's still working" without
+   a poll line is a guess; `DIED` and `thinking` look identical from outside.
+
+Real streaming parity would need an MCP server wrapping codex-bridge and
+exposing a streaming tool — different infrastructure, out of scope for a
+discipline skill. Do not re-litigate it as a doc gap.
 
 ### Step 4: Triage delegate reports through a flash model
 
@@ -450,6 +515,11 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    edits. Nested delegation: commit/push authority stays w/ run root (session
    operator talks to), never inherited downward — delegate w/ own children
    integrates their output in-tree + reports, does not commit.
+   **The allowlist is a hard lock and is opt-in** — it binds only when the
+   dispatch actually carries one. An operator naming a model without an
+   allowlist is a top-level assignment (`subagent-dispatch-policy` Step 0),
+   not an implied allowlist; do not read the format below as the general
+   case for every named model.
    **Free/cheap-only sub-delegation MUST be an enumerated allowlist, never
    bare prose.** "Use a free/cheap model" alone is not enforceable — round
    through to a paid tier silently (observed: nested `Agent` call ran on
@@ -635,6 +705,8 @@ rotation. Keep using the file, never the pasted literal.
 | Describing code to a stateless buddy | It invents an API and you debug fiction |
 | Coercing unknown to zero | Confident wrong numbers outlive the session |
 | Rephrasing to get past a blocked permission | Destroys the trust the role depends on |
+| Picking a non-Claude vendor because it is cheap and wired up | Cheaper-and-available is not a capability gate (Step 0.5) |
+| Reporting "still working" on an unpolled job | `DIED` and `thinking` are indistinguishable from outside |
 
 ## CLI
 
@@ -642,9 +714,10 @@ None. This is a discipline skill with no scripts of its own — it governs
 how you use someone else's. Dispatch goes through `codex-bridge`:
 
 ```
-skills/codex-bridge/scripts/agent.sh submit --backend <b> --wait "<prompt>"
+skills/codex-bridge/scripts/agent.sh submit --backend <b> --wait "<prompt>"  # DEFAULT for gemini/mistral/openrouter
 skills/codex-bridge/scripts/agent.sh result <id>
 skills/codex-bridge/scripts/agent.sh submit --class review "<prompt>"   # route.sh picks
+# For codex/luna, use DelegateAgent MCP tool instead (--wait is broken on codex backend)
 ```
 
 Prefer `agent.sh` over calling a provider wrapper directly — it gives a job
@@ -661,6 +734,8 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 | A permission classifier blocks a dispatch | Report it. Never rephrase to slip past |
 | Operator changes the premise mid-flight | Kill the running delegate before it reports against the old one |
 | Delegate needs to commit under `workspace-write` | Expect `Operation not permitted`. Land the commit yourself |
+| Non-Claude vendor chosen with no Step 0.5 gate line stated | Non-compliant dispatch. Do not send it |
+| Async submit with no `watch.sh` line emitted in the same turn | Non-compliant (Step 3b). Emit it before moving on |
 
 ## Cost discipline
 
@@ -688,6 +763,26 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 
 ## Version History
 
+- **v1.2.1** (2026-09-18) — DelegateAgent MCP tool clarification. Step 3b
+  (item 1) now notes that `--backend codex --wait` is broken for luna; use
+  DelegateAgent MCP tool instead for real-time transcript return. CLI section
+  conditional DEFAULT comment and DelegateAgent note added. MODEL ROSTER table
+  gains DelegateAgent row.
+- **v1.2.0** (2026-09-18) — Three additions. (1) Step 0.5 vendor eligibility
+  gate: non-Claude vendors are OFF by default and open only on operator
+  request, a stated capability fit, or declared budget modality (which opens
+  free grunts only, never paid Codex models); a one-line gate statement is now
+  required before any non-Claude dispatch. Closes the gap where "two vendors,
+  one ladder" read as a menu of equally-default options with no preference
+  expressed. (2) Step 3b visibility contract: states plainly that transcript
+  streaming parity with the `Agent` tool is a harness boundary and not
+  achievable, makes `--wait` the default dispatch form (which does buy
+  transcript-return parity), and requires an unprompted `watch.sh` line on
+  every async submit. (3) MUST 7 clarified: the sub-delegate allowlist is a
+  hard lock and is opt-in — an operator naming a model is a top-level
+  assignment per `subagent-dispatch-policy` Step 0, not an implied allowlist.
+  Step 0.5 and that Step 0 cross-reference each other: downward within a
+  vendor is free, sideways across vendors is gated.
 - **v1.1.4** (2026-09-18) — Ports DomI's Step 0 dispatch-worthiness gate
   (2 questions: volume ≤3 calls → don't dispatch; affordance → bare-API
   buddies have no filesystem/shell/repo access) into this canonical copy,
