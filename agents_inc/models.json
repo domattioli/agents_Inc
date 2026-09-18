@@ -60,7 +60,8 @@
       "tasks_bad": [],
       "ctx_hint": 128000,
       "cost_class": "mid",
-      "status": "available"
+      "status": "available",
+      "supported_efforts": ["low", "medium", "high", "max"]
     },
     "gpt-5.6-terra": {
       "vendor": "openai",
@@ -70,7 +71,8 @@
       "tasks_bad": [],
       "ctx_hint": 128000,
       "cost_class": "mid",
-      "status": "unprobed"
+      "status": "unprobed",
+      "supported_efforts": ["low", "medium", "high", "max", "ultra"]
     },
     "gpt-5.6-sol": {
       "vendor": "openai",
@@ -80,7 +82,8 @@
       "tasks_bad": [],
       "ctx_hint": 128000,
       "cost_class": "mid",
-      "status": "unprobed"
+      "status": "unprobed",
+      "supported_efforts": ["low", "medium", "high", "max", "ultra"]
     },
     "gpt-6-astra": {
       "vendor": "openai",
@@ -90,7 +93,8 @@
       "tasks_bad": [],
       "ctx_hint": 200000,
       "cost_class": "premium",
-      "status": "available"
+      "status": "available",
+      "supported_efforts": ["low", "medium", "high", "max", "ultra"]
     },
     "gemini-2.5-flash": {
       "vendor": "google",

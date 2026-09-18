@@ -1,8 +1,8 @@
-"""Additive derivation storage -- binds RunRecord (workerbees/lineup_router.py) into an
+"""Additive derivation storage -- binds RunRecord (agents_inc/lineup_router.py) into an
 append-only JSONL store for audit/replay, per CONTEXT.md's "Derivation" glossary entry
 and specs/009-cross-vendor-dispatch/routing-contract.md section 2.
 
-Separate file/schema from workerbees/ledger.py (Node/Edge/Run model) by design: RunRecord's
+Separate file/schema from agents_inc/ledger.py (Node/Edge/Run model) by design: RunRecord's
 shape (candidates_considered, retries, authority_change_events, tie_break_order, etc.) does
 not match ledger.py's Node fields, and ledger.py's dedup/lint logic assumes the Node shape.
 Mixing schemas into one JSONL file would break both. Reuses ledger._now_iso() for a
@@ -22,9 +22,9 @@ import dataclasses
 import json
 from pathlib import Path
 
-from workerbees.ledger import _now_iso
-from workerbees.lineup_router import RunRecord
-from workerbees.router import Route
+from agents_inc.ledger import _now_iso
+from agents_inc.lineup_router import RunRecord
+from agents_inc.router import Route
 
 _FILE_NAME = "derivations.jsonl"
 

@@ -1,7 +1,7 @@
 """Unit tests for lineup_router.py — authority-driven cross-vendor dispatch."""
 import unittest
-from workerbees.router import Route
-from workerbees.lineup_router import (
+from agents_inc.router import Route
+from agents_inc.lineup_router import (
     RoutePlan,
     RunRecord,
     lineup_candidates,
@@ -502,7 +502,7 @@ class TestTieBreakOrder(unittest.TestCase):
 
     def test_rank_by_cost_then_latency(self):
         """Ranking respects tie_break_order: cost first, then latency."""
-        from workerbees.lineup_router import rank
+        from agents_inc.lineup_router import rank
 
         pool = (
             Route("codex", "gpt-5.6-terra", "workhorse", "cli"),  # mid cost

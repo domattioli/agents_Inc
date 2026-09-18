@@ -158,15 +158,17 @@ class BriefResult:
     route: Route | None = None
     receipt: dict = field(default_factory=dict)
 
-def _cmd(route: Route, prompt: str) -> tuple[list[str], str]:
+def _cmd(route: Route, prompt: str, codex_executable: str | None = None) -> tuple[list[str], str]:
     if route.provider == "claude":
         return claude.build_cmd(route.model), prompt
     if route.provider == "codex":
-        return codex.build_cmd(route.model), prompt
+        return codex.build_cmd(route.model, codex_executable), prompt
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway, registry,
-                     confidential, gate_reason, parent_id, edge_type, run_budget=None):
+                     confidential, gate_reason, parent_id, edge_type, run_budget=None, codex_executable=None):
+    if route.provider == "codex" and not codex_executable:
+        return None, None, False, False, {"reason": "WB_CLI_NOT_FOUND"}
     if mode == "off":
         nid = uuid.uuid4().hex
         d_ok = ledger.record_dispatch(workspace, node_id=nid, run_id=run_id, model=route.model, tier=route.tier, task="extract", provider=route.provider, parent_id=parent_id, edge_type=edge_type, gate_reason=gate_reason)
@@ -183,6 +185,7 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
         data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z",
         budget=dict(run_budget or {}))
     result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
+        "codex_executable": codex_executable,
         "parent_id": parent_id, "edge_type": edge_type}, runner=runner, route=route)
     if result.status != "allowed" or result.worker_result is None:
         d = result.decision
@@ -191,7 +194,8 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
           available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "grunt",
           worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1,
-          gate_reason: str | None = None, run_budget: dict | None = None, *, governance_mode: str | None = None, registry=None, gateway=None) -> BriefResult:
+          gate_reason: str | None = None, run_budget: dict | None = None, *, governance_mode: str | None = None, registry=None, gateway=None,
+          codex_executable: str | None = None) -> BriefResult:
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
@@ -201,7 +205,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         from .gateway import Gateway; from .registry import Registry
         _registry = registry or Registry.load(str(Path(__file__).resolve().parent))
         _gateway = gateway or Gateway(workspace, registry=_registry, mode=gov_mode)
-    avail = available if available is not None else doctor.available(workspace, governance_mode=gov_mode, gateway=_gateway, registry=_registry)
+    avail = available if available is not None else doctor.available(
+        workspace, governance_mode=gov_mode, gateway=_gateway, registry=_registry,
+        codex_executable=codex_executable)
     route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
     if route is None:
         return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
@@ -214,12 +220,12 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     numbered = "\n\n".join(f"[p{i}] {p}" for i, p in enumerate(paras, 1))
     prompt = EXTRACT_PROMPT.format(mode=mode, source_id=source_id, source=numbered)
     try:
-        cmd, stdin = _cmd(route, prompt)
-    except NotImplementedError as e:
+        cmd, stdin = _cmd(route, prompt, codex_executable)
+    except (NotImplementedError, ValueError) as e:
         return BriefResult("blocked", route=route, receipt={"reason": str(e)})
     res, worker_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
         workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-        gate_reason if route.tier == "executive" else None, None, None, run_budget)
+        gate_reason if route.tier == "executive" else None, None, None, run_budget, codex_executable)
     if block_receipt:
         return BriefResult("blocked", route=route, receipt=block_receipt)
 
@@ -261,11 +267,11 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
 
         if gov_mode == "off":
             rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
-                       governance_mode="off", artifact_hash=draft_hash, artifact_size=draft_size)
+                       governance_mode="off", artifact_hash=draft_hash, artifact_size=draft_size, codex_executable=codex_executable)
         else:
             rv = review(source, source_id, claims, draft, route.provider, avail, is_authorized(workspace), runner=runner, role=mode, route=reviewer_route,
                        governance_mode=gov_mode, gateway=_gateway, registry=_registry, workspace=workspace, run_id=run_id, parent_id=worker_node_id, confidential=confidential,
-                       run_budget=run_budget, artifact_hash=draft_hash, artifact_size=draft_size)
+                       run_budget=run_budget, artifact_hash=draft_hash, artifact_size=draft_size, codex_executable=codex_executable)
 
         if reviewer_node_id:
             elapsed = time.monotonic() - start_time
@@ -296,15 +302,15 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         corrections += 1
         receipt["corrections"] = corrections
         try:
-            cmd, stdin = _cmd(route, _correction_prompt(source_id, mode, source, rv))
-        except NotImplementedError as e:
+            cmd, stdin = _cmd(route, _correction_prompt(source_id, mode, source, rv), codex_executable)
+        except (NotImplementedError, ValueError) as e:
             return BriefResult("blocked", route=route, receipt={"reason": str(e)})
         prior_draft, prior_rep = draft, rep
 
         # Record correction worker dispatch and return (D1 — corrects edge)
         res, correction_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
             workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-            None, worker_node_id, "corrects", run_budget)
+            None, worker_node_id, "corrects", run_budget, codex_executable)
         if block_receipt:
             return BriefResult("blocked", route=route, receipt=block_receipt)
         if not dispatch_ok or not return_ok:

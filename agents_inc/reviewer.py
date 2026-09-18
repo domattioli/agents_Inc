@@ -36,7 +36,7 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
            route=None, *, governance_mode: str | None = None, gateway=None, registry=None,
            workspace=None, run_id=None, parent_id=None, confidential: bool = True,
            run_budget: dict | None = None, artifact_hash: str | None = None,
-           artifact_size: int | None = None) -> ReviewResult:
+           artifact_size: int | None = None, codex_executable: str | None = None) -> ReviewResult:
     import os
     import hashlib
     from pathlib import Path
@@ -59,8 +59,10 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
     claim_lines = "\n".join(f"{i}. quote={c.get('quote')!r} anchor={c.get('anchor')} claim={c.get('text')!r}"
                             for i, c in enumerate(claims))
     prompt = REVIEW_PROMPT.format(role=role, source_id=source_id, claims=claim_lines, draft=draft, source=numbered)
+    if route.provider == "codex" and not codex_executable:
+        return ReviewResult("blocked", raw="WB_CLI_NOT_FOUND")
     if gov_mode == "off":
-        cmd = claude.build_cmd(route.model) if route.provider == "claude" else codex.build_cmd(route.model)
+        cmd = claude.build_cmd(route.model) if route.provider == "claude" else codex.build_cmd(route.model, codex_executable)
         res = runner(cmd, prompt)
     else:  # shadow or enforce
         import uuid
@@ -73,6 +75,7 @@ def review(source_text: str, source_id: str, claims: list[dict], draft: str, wor
             data_classification="confidential" if confidential else "public", created_at=datetime.utcnow().isoformat()+"Z",
             budget=dict(run_budget or {}))
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id,
+            "codex_executable": codex_executable,
             "parent_id": parent_id, "edge_type": "reviews",
             "artifact_hash": artifact_hash,
             "artifact_size": artifact_size}, runner=runner, route=route)

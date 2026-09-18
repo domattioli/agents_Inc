@@ -9,10 +9,10 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from workerbees import ledger
-from workerbees.adapters.base import WorkerResult
-from workerbees.pipeline import brief
-from workerbees.schema import QUERIES
+from agents_inc import ledger
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.pipeline import brief
+from agents_inc.schema import QUERIES
 
 fixtures = [(Path("fixtures/tim/matter.md"), "tim", "lawyer"),
             (Path("fixtures/dom/design.md"), "dom", "scientist")]

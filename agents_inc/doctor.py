@@ -17,16 +17,21 @@ def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, run_id: str | None = None, *,
-              governance_mode: str | None = None, gateway=None, registry=None) -> dict:
+              governance_mode: str | None = None, gateway=None, registry=None,
+              codex_executable: str | None = None) -> dict:
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"Invalid WORKERBEES_GOVERNANCE mode: {gov_mode}")
 
     model = _TABLE["tiers"]["grunt"][provider]
 
+    if provider == "codex" and not codex_executable:
+        return {"provider": provider, "status": "WB_CLI_NOT_FOUND",
+                "detail": "absolute Codex executable required", "at": _now()}
+
     if gov_mode == "off":
         # Original behavior: direct run with ledger calls by doctor
-        cmd = claude.build_cmd(model) if provider == "claude" else codex.build_cmd(model)
+        cmd = claude.build_cmd(model) if provider == "claude" else codex.build_cmd(model, codex_executable)
         probe_node_id = None
         start_time = time.monotonic()
         if workspace and run_id:
@@ -61,6 +66,7 @@ def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, r
             return {"provider": provider, "status": "WB_NO_ELIGIBLE_ROUTE",
                    "detail": "no eligible route for probe", "at": _now()}
         result = gateway.dispatch(env, context={"authenticated_sender": env.sender, "run_id": run_id or uuid.uuid4().hex,
+            "codex_executable": codex_executable,
             "parent_id": None, "edge_type": "probes"}, runner=runner, route=route)
         if result.status != "allowed":
             d = result.decision
@@ -82,10 +88,12 @@ def probe_cli(provider: str, runner=run_worker, workspace: Path | None = None, r
     return {"provider": provider, "status": status, "detail": text[-300:], "at": _now()}
 
 def run(workspace: Path, providers=("claude", "codex"), runner=run_worker, *,
-        governance_mode: str | None = None, gateway=None, registry=None) -> dict:
+        governance_mode: str | None = None, gateway=None, registry=None,
+        codex_executable: str | None = None) -> dict:
     run_id = uuid.uuid4().hex
     results = {p: probe_cli(p, runner=runner, workspace=workspace, run_id=run_id,
-                           governance_mode=governance_mode, gateway=gateway, registry=registry)
+                           governance_mode=governance_mode, gateway=gateway, registry=registry,
+                           codex_executable=codex_executable)
               for p in providers}
     paused = [p for p, r in results.items() if r["status"] == "WB_QUOTA_EXHAUSTED"]
     out = {"results": results, "paused": paused, "at": _now(), "epoch": time.time()}
@@ -94,7 +102,8 @@ def run(workspace: Path, providers=("claude", "codex"), runner=run_worker, *,
     return out
 
 def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600, runner=run_worker, extra_env_paths: list | None = None, *,
-              governance_mode: str | None = None, gateway=None, registry=None) -> set[str]:
+              governance_mode: str | None = None, gateway=None, registry=None,
+              codex_executable: str | None = None) -> set[str]:
     f = workspace / ".workerbees" / "doctor.json"
     cache = None
     if f.exists():
@@ -105,7 +114,8 @@ def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600,
         except (json.JSONDecodeError, OSError, ValueError):
             cache = None
     if cache is None:
-        cache = run(workspace, runner=runner, governance_mode=governance_mode, gateway=gateway, registry=registry)
+        cache = run(workspace, runner=runner, governance_mode=governance_mode, gateway=gateway, registry=registry,
+                    codex_executable=codex_executable)
     ok_required = {p for p, r in cache["results"].items() if r["status"] == "ok"}
     return (available_providers(env_path, extra_env_paths=extra_env_paths) - REQUIRED) | ok_required
 

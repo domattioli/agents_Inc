@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from workerbees.router import Route, _eligible
+from agents_inc.router import Route, _eligible
 
 _CATALOG = json.loads((Path(__file__).parent / "models.json").read_text())["models"]
 
@@ -285,7 +285,7 @@ def pick_model_or_lineup(task: str, tier: str, available: set[str], workspace_au
     """Compatibility wrapper: use lineup-mode if lineup_target_vendor given, else old pick_model path."""
     if lineup_target_vendor is None:
         # Old path — import and use existing pick_model
-        from workerbees.router import pick_model
+        from agents_inc.router import pick_model
         return pick_model(task, tier, available, workspace_authorized,
                          exclude_provider, prefer_provider)
 

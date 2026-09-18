@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workerbees import artifacts, ledger
+from agents_inc import artifacts, ledger
 
 
 class ArtifactsTest(unittest.TestCase):

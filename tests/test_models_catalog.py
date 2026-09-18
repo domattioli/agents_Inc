@@ -14,8 +14,8 @@ class TestModelsCatalog(unittest.TestCase):
     def setUpClass(cls):
         """Load models.json and routing.json once for all tests."""
         base_dir = Path(__file__).parent.parent
-        models_path = base_dir / "workerbees" / "models.json"
-        routing_path = base_dir / "workerbees" / "routing.json"
+        models_path = base_dir / "agents_inc" / "models.json"
+        routing_path = base_dir / "agents_inc" / "routing.json"
         doc_path = base_dir / "docs" / "free-openrouter-models.md"
 
         with open(models_path) as f:

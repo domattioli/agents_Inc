@@ -6,12 +6,12 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from workerbees.gateway import Gateway, GatewayError, GatewayResult
-from workerbees.envelope import Envelope, Decision, ArtifactRef
-from workerbees.registry import Registry, Agent, Capability, Relationship
-from workerbees.router import Route
-from workerbees.control import Control, ControlError
-from workerbees.adapters.base import WorkerResult
+from agents_inc.gateway import Gateway, GatewayError, GatewayResult
+from agents_inc.envelope import Envelope, Decision, ArtifactRef
+from agents_inc.registry import Registry, Agent, Capability, Relationship
+from agents_inc.router import Route
+from agents_inc.control import Control, ControlError
+from agents_inc.adapters.base import WorkerResult
 
 
 class FakeRegistry(Registry):
@@ -313,7 +313,7 @@ class GatewayTest(unittest.TestCase):
 
     def test_claude_adapter_called_with_correct_model(self):
         """Claude provider builds command with correct model."""
-        with patch('workerbees.adapters.claude.build_cmd') as mock_claude:
+        with patch('agents_inc.adapters.claude.build_cmd') as mock_claude:
             mock_claude.return_value = ["claude", "-p", "--model", "haiku"]
 
             gw = Gateway(self.workspace, registry=self.registry, mode="off")
@@ -327,17 +327,17 @@ class GatewayTest(unittest.TestCase):
 
     def test_codex_adapter_called_with_correct_model(self):
         """Codex provider builds command with correct model."""
-        with patch('workerbees.adapters.codex.build_cmd') as mock_codex:
+        with patch('agents_inc.adapters.codex.build_cmd') as mock_codex:
             mock_codex.return_value = ["codex", "exec", "-m", "gpt-5.4-mini"]
 
             gw = Gateway(self.workspace, registry=self.registry, mode="off")
             env = make_envelope()
             route = Route("codex", "gpt-5.4-mini", "grunt", "cli")
-            context = {"cwd": "/tmp"}
+            context = {"cwd": "/tmp", "codex_executable": "/opt/homebrew/bin/codex"}
 
             gw.dispatch(env, context=context, runner=fake_runner, route=route)
 
-            mock_codex.assert_called_once_with("gpt-5.4-mini", "/tmp")
+            mock_codex.assert_called_once_with("gpt-5.4-mini", "/opt/homebrew/bin/codex", "/tmp", "medium")
 
     def test_worker_result_returned_on_success(self):
         """Successful run returns worker_result."""
