@@ -28,18 +28,28 @@ def install_convenience_launcher(paths: InstallPaths, journal=None) -> OwnedPath
 
 def install(args):
     paths = _paths()
+    notices = []
     with LifecycleLock(paths.lock):
         TransactionJournal.recover(paths.journal)
         journal = TransactionJournal(paths.journal).begin("install")
         try:
             staged = stage_bundle(Path(args.source), paths)
-            receipt = InstallReceipt(staged.digest, Path(sys.executable).resolve(), resolve_executable("codex", os.environ.get("PATH")))
+            codex = None
+            if not getattr(args, "without_codex", False):
+                try: codex = resolve_executable("codex", os.environ.get("PATH"))
+                except FileNotFoundError:
+                    notices.append("NOTE: codex CLI not found -> Codex delegation unavailable; skills installed anyway. Re-run after installing codex, or pass --without-codex to silence.")
+            receipt = InstallReceipt(staged.digest, Path(sys.executable).resolve(), codex)
             receipt = activate(staged, paths, receipt, journal)
             receipt = install_skill_links(paths, staged.path, receipt, args.adopt_existing_workerbee, journal)
             launcher = install_convenience_launcher(paths, journal)
             receipt = InstallReceipt(receipt.release_hash, receipt.python_path, receipt.codex_path, receipt.owned_paths + (launcher,), receipt.prior_release)
             journal.apply("receipt", paths.receipt, None, None, lambda: receipt.save_atomic(paths.receipt))
-            journal.commit(); return 0
+            paths.roster.parent.mkdir(parents=True, exist_ok=True)
+            if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
+            journal.commit()
+            for line in notices: print(line)
+            return 0
         except Exception:
             TransactionJournal.recover(paths.journal)
             raise
@@ -62,16 +72,24 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
-    p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true")
+    p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true")
     p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
-    p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true")
+    p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true")
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
         if args.command == "install": return install(args)
         if args.command == "doctor":
-            report = check_install(paths, args.live_model); print(json.dumps(report.as_dict()) if args.json else " ".join(report.codes or ("READY",))); return 0 if report.ready else 1
+            report = check_install(paths, args.live_model)
+            if args.json:
+                print(json.dumps(report.as_dict()))
+            else:
+                output = " ".join(report.codes or ("READY",))
+                if report.warnings:
+                    output += " " + " ".join(f"[WARNING: {w}]" for w in report.warnings)
+                print(output)
+            return 0 if report.ready else 1
         receipt = InstallReceipt.load(paths.receipt)
         if args.command == "run": return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()))
         if args.command == "uninstall":

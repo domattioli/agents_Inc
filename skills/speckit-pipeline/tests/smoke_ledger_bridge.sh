@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test for resolve_rung.py + ledger_bridge.py -- the agents_for_dummies
-# synergy pieces added to the DomI fork (D35). Exercises the full
+# synergy pieces added to the upstream fork (D35). Exercises the full
 # rung-resolve -> dispatch -> return flow against an isolated temp
 # workspace (never touches this repo's real .workerbees/ ledger) and
 # asserts the rung-to-schema-tier fix actually persists to SQLite.

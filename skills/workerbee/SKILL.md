@@ -128,7 +128,7 @@ State the result in one line before dispatching, same shape as Step 0:
 
 No gate open → dispatch Claude. Cheaper-and-available is not a gate.
 
-**Pairs `subagent-dispatch-policy` Step 0.** That step says an operator
+**Pairs the operator-named-model rule.** An operator
 naming a model assigns the top-level delegate without locking the subtree —
 go cheaper beneath it freely *within Claude*. This step is the sideways
 constraint on the same tree: a named Claude model does not open a free-grunt
@@ -489,11 +489,19 @@ Agent-facing text = `caveman ultra`. Reader is a model.
 **MUST — every dispatch prompt, no exceptions. 14 elements** (operator ruling
 2026-09-06, grilled + expanded same date):
 
-1. **Caveman ultra, explicit.** Not just terse writing — tell delegate to run
-   it. Skill tool present (Claude subagent) → instruct actual `/caveman ultra`
+1. **Caveman ultra, explicit (D42: conditional on the third-party skill).**
+   Not just terse writing — tell delegate to run it. Skill tool present
+   (Claude subagent) + `caveman` installed → instruct actual `/caveman ultra`
    invoke + confirm in report; claimed activation w/o call = false report.
-   No Skill tool (codex/gemini/mistral/openrouter) → say so plainly, follow
-   convention. Never skip the instruction.
+   `caveman` not installed (third-party, never vendored here) → prompt states
+   `caveman NOT installed -> checked by hand` and delegate applies the rules
+   by hand; that line satisfies element 1. No Skill tool
+   (codex/gemini/mistral/openrouter) → say so plainly, follow convention.
+   Never skip the instruction: one of the two forms MUST be present. `ultra`
+   is agents_Inc's own level choice, not inherited. Same "if installed use it,
+   else state it and continue" treatment applies to `nested-notes` and
+   `write-like-scientist` for human-facing docs (carried over, advisory; not
+   checked by script).
 2. **Strict SUCCESS gate.** Concrete, falsifiable. Specific check, specific
    expected result. Not "looks right".
 3. **Strict FAILURE gate, stated separately.** Name failure conditions
@@ -517,13 +525,13 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    integrates their output in-tree + reports, does not commit.
    **The allowlist is a hard lock and is opt-in** — it binds only when the
    dispatch actually carries one. An operator naming a model without an
-   allowlist is a top-level assignment (`subagent-dispatch-policy` Step 0),
+   allowlist is a top-level assignment (downward within Claude is free),
    not an implied allowlist; do not read the format below as the general
    case for every named model.
    **Free/cheap-only sub-delegation MUST be an enumerated allowlist, never
    bare prose.** "Use a free/cheap model" alone is not enforceable — round
    through to a paid tier silently (observed: nested `Agent` call ran on
-   `claude-opus-5` despite this exact instruction, DomI#12). State it as:
+   `claude-opus-5` despite this exact instruction, upstream incident A). State it as:
    `SUB-DELEGATE MODEL ALLOWLIST: gpt-5.4-mini, OpenRouter free-tier, Gemini
    free tier, Mistral free tier — ONLY. NEVER: any Agent-tool Claude model
    (opus/sonnet/fable/haiku included), any Codex-account model
@@ -532,7 +540,7 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    confirm the chosen model against this allowlist and echo the match
    (`SUB-DELEGATE MODEL: <slug> — allowlist match: yes`) in its report; no
    confirmation line = non-compliant, treat as an unverified nested call.
-   **Mechanical check, not prose-trust alone (DomI#12 follow-up).** This
+   **Mechanical check, not prose-trust alone (follow-up to upstream incident A).** This
    repo has no PreToolUse/hook mechanism (`scripts/hooks/` does not exist
    here, `.claude/settings.json` absent — checked 2026-09-12) so nothing
    can block a nested call before it fires. What IS achievable: lint the
@@ -543,8 +551,8 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    astra/sol/terra/luna) and flags any nested call missing the required
    confirm-echo line. `COMPLIANT` / `NO NESTED CALLS FOUND` / exit 1 with
    violation detail. Self-tested both ways (known-bad transcript mirroring
-   the actual DomI#12 evidence → 2 violations flagged; known-good → 0).
-   This does not resolve DomI#12's open (a)/(b) classification question
+   the actual incident-A evidence → 2 violations flagged; known-good → 0).
+   This does not resolve the open (a)/(b) classification question
    (model-behavior gap vs. harness gap) — it only makes the drop
    detectable after the fact instead of trusting the prose alone.
 8. **Confidentiality/data-classification tag.** State classification of
@@ -612,13 +620,13 @@ other twelve unconditional. Compliant = each of the 14 present as content or
 explicit N/A line; a missing element is non-compliant either way.
 **No other element has an N/A out — 10 and 11 are the ONLY two of the 14
 that can be satisfied by an explicit-N/A line instead of real content.**
-Root cause closed: DomI#10 — a cross-repo dispatch used none of the 14,
+Root cause closed (upstream incident B) — a cross-repo dispatch used none of the 14,
 bare task description only, from a session with no local reason to know
 this contract existed. Paste-and-tick before sending ANY dispatch prompt,
 any delegate/rung/vendor, this repo or a session dispatching into it:
 
 ```
-[ ] 1 caveman ultra: Claude subagent -> Skill-tool invoke instructed + confirm-in-report REQUIRED, no N/A out. Non-Claude vendor (codex/gemini/mistral/openrouter, genuinely no Skill tool) -> explicit no-Skill-tool statement only
+[ ] 1 caveman ultra: Claude subagent + caveman installed -> Skill-tool invoke instructed + confirm-in-report REQUIRED; caveman not installed -> line `caveman NOT installed -> checked by hand` (no bare N/A out). Non-Claude vendor (codex/gemini/mistral/openrouter, genuinely no Skill tool) -> explicit no-Skill-tool statement only
 [ ] 2 success gate stated, falsifiable
 [ ] 3 failure gate stated, separate from success
 [ ] 4 grill clause present
@@ -637,32 +645,41 @@ any delegate/rung/vendor, this repo or a session dispatching into it:
 Any unticked box (other than 10/11 with a stated N/A) → prompt is
 non-compliant, do not send it.
 
-**Mechanical gate, both directions (D40, 2026-09-17).** Tick-list = human
-check. Run two linters too, prompt saved to file first:
+**Mechanical gate, both directions (D41, 2026-09-17; conditional per D42).**
+Tick-list = human check. Run the in-repo linter (mandatory), prompt saved to
+file first, plus the optional third-party `handoff-lint` tool:
 
 ```
 python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt_file>   # 14 elements present
-python3 ~/.claude/skills/handoff-lint/scripts/handoff_lint.py <prompt_file> # DomI handoff-lint, dispatch profile
+H="$HOME/.claude/skills/handoff-lint/scripts/handoff_lint.py"
+[ -f "$H" ] && python3 "$H" <prompt_file> || echo "handoff-lint NOT installed -> H1-H6 checked by hand"
 ```
 
-Second = DomI `handoff-lint` (user-scope install via `skills.requirements.txt`;
-fallback: fetch `skills/handoff-lint/scripts/handoff_lint.py` from
-`domattioli/DomI`, never vendor). Rules: H1 social padding, H2 provenance
+`check_dispatch_prompt.py <prompt_file> --with-handoff-lint` does both: tool
+absent → the warning goes to stderr and exit = 14-element verdict alone.
+`handoff-lint` = optional user-scope third-party tool (install per
+`skills.requirements.txt`), never vendored. Absent → emit exactly one line
+`handoff-lint NOT installed -> H1-H6 checked by hand` and continue; do the
+check by hand from these rules. Rules: H1 social padding, H2 provenance
 tags `[verified]`/`[inferred]`/`[assumed]` on claims, H3 dangling refs ("the
 file", "as discussed") w/ no in-msg antecedent, H4 goal + constraints + done +
 out-of-scope present + non-empty, H5 exact/near-dup blocks (restatements
-conflict), H6 err paraphrased instead of quoted / unclosed fence. Either exit
-≠ 0 → fix prompt text, re-lint, then send. Delegate report back →
-`handoff_lint.py <report_file> --profile report` BEFORE Step 2/3 verification:
-untagged claim = inference dressed as fact → reject report, re-ask w/ tags.
-Linter never rewrites (lint + reject only) + never flags hedges/reasoning —
-those carry info; stripping them = the failure mode, not the fix. Overlap:
-`check_dispatch_prompt.py` checks *this repo's* 14 elements; `handoff-lint`
-checks generic handoff hygiene any model→model msg needs. Both, not either.
+conflict), H6 err paraphrased instead of quoted / unclosed fence. Any check
+failing → fix prompt text, re-check, then send. Delegate report back, same
+conditional gate, report direction: tool installed →
+`handoff_lint.py <report_file> --profile report` (or
+`check_dispatch_prompt.py <report_file> --with-handoff-lint --profile report`);
+absent → same one-line notice + H1-H6 by hand. Either way BEFORE Step 2/3
+verification: untagged claim = inference dressed as fact → reject report,
+re-ask w/ tags. Linter never rewrites (lint + reject only) + never flags
+hedges/reasoning — those carry info; stripping them = the failure mode, not
+the fix. Overlap: `check_dispatch_prompt.py` checks *this repo's* 14
+elements; `handoff-lint` checks generic handoff hygiene any model→model msg
+needs. Both, not either.
 
-**Cross-repo dispatch, external session (DomI#10 gap — honest limit, not a
-claimed fix).** DomI#10's actual root cause: a session working in a
-*different* repo (DomI), dispatching work about an agents_Inc issue, never
+**Cross-repo dispatch, external session (upstream incident B gap — honest limit, not a
+claimed fix).** Incident B's actual root cause: a session working in a
+*different* repo (the upstream private governance repo), dispatching work about an agents_Inc issue, never
 read agents_Inc's `CLAUDE.md` — it had no local reason to know this
 contract existed. This repo cannot reach into another repo's session and
 force a read; no such enforcement mechanism exists here (no hook, no CI
@@ -674,8 +691,8 @@ agents_Inc issue/task MUST fetch and apply this section first. Paste-and-
 tick block above is written to be copy-pasted whole into a dispatch prompt
 from anywhere, needing no other agents_Inc file open. **This does not
 close the gap for a session that never thinks to look** — that half of
-DomI#10 stays open; a real fix would need the *dispatching* repo (DomI, or
-whichever originates the call) to add its own check, which is out of this
+incident B stays open; a real fix would need the *dispatching* repo (the
+upstream private governance repo, or whichever originates the call) to add its own check, which is out of this
 repo's control.
 
 Include, roughly this order:
@@ -803,23 +820,23 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
   transcript-return parity), and requires an unprompted `watch.sh` line on
   every async submit. (3) MUST 7 clarified: the sub-delegate allowlist is a
   hard lock and is opt-in — an operator naming a model is a top-level
-  assignment per `subagent-dispatch-policy` Step 0, not an implied allowlist.
-  Step 0.5 and that Step 0 cross-reference each other: downward within a
+  assignment (downward within Claude is free), not an implied allowlist.
+  Step 0.5 states the sideways half: downward within a
   vendor is free, sideways across vendors is gated.
-- **v1.1.4** (2026-09-18) — Ports DomI's Step 0 dispatch-worthiness gate
+- **v1.1.4** (2026-09-18) — Ports the upstream private governance repo's Step 0 dispatch-worthiness gate
   (2 questions: volume ≤3 calls → don't dispatch; affordance → bare-API
   buddies have no filesystem/shell/repo access) into this canonical copy,
-  closing the drift where DomI's workerbee fork had the gate and this one
-  didn't. DomI#470.
-- **v1.1.3** (2026-09-12) — DomI#12 root-cause follow-up: bare-prose
+  closing the drift where the upstream private governance repo's workerbee fork had the gate and this one
+  didn't.
+- **v1.1.3** (2026-09-12) — upstream incident A root-cause follow-up: bare-prose
   confirm-and-echo requirement (v1.1.2) is unenforceable by itself — same
   class of instruction the issue says gets ignored. Adds
   `scripts/check_subdelegate_allowlist.py`, a mechanical transcript lint
   (no hook mechanism exists in this repo to block live) that flags a
   nested sub-delegate call landing on a forbidden model or missing the
-  confirm-echo line. Self-tested both ways. Does not resolve #12's open
+  confirm-echo line. Self-tested both ways. Does not resolve incident A's open
   (a) model-behavior vs (b) harness-gap question — only makes the drop
-  detectable after the fact. Also: DomI#10 root cause (external-repo
+  detectable after the fact. Also: incident B root cause (external-repo
   session, no local reason to read this contract) cannot be closed from
   this side alone — added an explicit cross-repo fetch-first note to
   `CLAUDE.md` and here as the smallest reachable fix, and corrected

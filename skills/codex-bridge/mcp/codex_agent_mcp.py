@@ -4,6 +4,41 @@ import sys
 import subprocess
 import os
 
+# luna only by default; astra/sol/terra are added by user config (roster.json / env map) once tested live.
+DEFAULT_MODEL_MAP = {"luna": "gpt-5.6-luna"}
+
+
+def _read_map(raw):
+    raw = raw.strip()
+    text = raw if raw.startswith("{") else open(os.path.expanduser(raw)).read()
+    data = json.loads(text)
+    if isinstance(data, dict) and isinstance(data.get("models"), dict):
+        data = data["models"]
+    if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) and v for k, v in data.items()):
+        raise ValueError("model map must be a JSON object of alias -> slug strings")
+    return data
+
+
+def load_model_map():
+    """Defaults < ~/.config/agents-inc/roster.json < AGENTS_INC_MODEL_MAP < CODEXAGENT_MODEL_MAP.
+
+    Env values are a JSON object string (starts with "{") or a path to a JSON file.
+    Malformed override: warn on stderr, keep the rest, never raise.
+    """
+    merged = dict(DEFAULT_MODEL_MAP)
+    roster = os.path.join(os.environ.get("HOME", ""), ".config/agents-inc/roster.json")
+    sources = [("roster", roster if os.path.isfile(roster) else None)]
+    sources += [(n, os.environ.get(n)) for n in ("AGENTS_INC_MODEL_MAP", "CODEXAGENT_MODEL_MAP")]
+    for label, raw in sources:
+        if not raw:
+            continue
+        try:
+            merged.update(_read_map(raw))
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("WARN: ignoring malformed model map from %s: %s; using defaults\n" % (label, exc))
+    return merged
+
+
 def send_response(obj):
     """Send JSON-RPC response to stdout."""
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -28,6 +63,9 @@ def handle_initialize(req_id):
 
 def handle_tools_list(req_id):
     """Handle tools/list method."""
+    model_map = load_model_map()
+    models = sorted(model_map)
+    default_model = "luna" if "luna" in model_map else models[0]
     return {
         "jsonrpc": "2.0",
         "id": req_id,
@@ -35,7 +73,7 @@ def handle_tools_list(req_id):
             "tools": [
                 {
                     "name": "DelegateAgent",
-                    "description": "Delegate a task to an agent (currently: Codex luna model only)",
+                    "description": "Delegate a task to an agent (Codex models: %s)" % ", ".join(models),
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -44,8 +82,8 @@ def handle_tools_list(req_id):
                             },
                             "model": {
                                 "type": "string",
-                                "enum": ["luna"],
-                                "default": "luna"
+                                "enum": models,
+                                "default": default_model
                             },
                             "cwd": {
                                 "type": "string"
@@ -212,4 +250,13 @@ def main():
                 })
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 3 and sys.argv[1] == "--resolve-model":
+        # Used by scripts/codexagent.sh: print slug for alias, exit 1 if unknown.
+        _slug = load_model_map().get(sys.argv[2])
+        if not _slug:
+            sys.exit(1)
+        print(_slug)
+    elif len(sys.argv) == 2 and sys.argv[1] == "--list-models":
+        print(" ".join(sorted(load_model_map())))
+    else:
+        main()

@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# MODEL_MAP: luna=gpt-5.6-luna (MVP; terra/sol/astra not wired yet)
+# Model map: built-in defaults < ~/.config/agents-inc/roster.json < AGENTS_INC_MODEL_MAP < CODEXAGENT_MODEL_MAP
+# (JSON object or path to JSON file), resolved by mcp/codex_agent_mcp.py --resolve-model. --slug passes a raw slug.
+MCP_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../mcp/codex_agent_mcp.py"
 
 MODEL="luna"
+RAW_SLUG=""
 PROMPT_ARGS=()
 
 # Parse flags
@@ -11,6 +14,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --model)
             MODEL="$2"
+            shift 2
+            ;;
+        --slug)
+            RAW_SLUG="$2"
             shift 2
             ;;
         *)
@@ -21,8 +28,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$MODEL" != "luna" ]]; then
-    echo "Error: invalid model '$MODEL'. Only 'luna' supported." >&2
+if [[ -n "$RAW_SLUG" ]]; then
+    SLUG="$RAW_SLUG"
+elif ! SLUG="$(python3 "$MCP_PY" --resolve-model "$MODEL")"; then
+    echo "Error: invalid model '$MODEL'. Allowed: $(python3 "$MCP_PY" --list-models)" >&2
     exit 1
 fi
 
@@ -49,9 +58,9 @@ TIMEOUT_VAL="${CODEXAGENT_TIMEOUT:-300}"
 
 CODEX_EXIT=0
 if [[ -n "$TIMEOUT_CMD" ]]; then
-    "$TIMEOUT_CMD" "$TIMEOUT_VAL" codex exec -m gpt-5.6-luna -s read-only --skip-git-repo-check -o "$TMPFILE" -- "$PROMPT" 2>"$STDERR_FILE" >/dev/null || CODEX_EXIT=$?
+    "$TIMEOUT_CMD" "$TIMEOUT_VAL" codex exec -m "$SLUG" -s read-only --skip-git-repo-check -o "$TMPFILE" -- "$PROMPT" 2>"$STDERR_FILE" >/dev/null || CODEX_EXIT=$?
 else
-    codex exec -m gpt-5.6-luna -s read-only --skip-git-repo-check -o "$TMPFILE" -- "$PROMPT" 2>"$STDERR_FILE" >/dev/null || CODEX_EXIT=$?
+    codex exec -m "$SLUG" -s read-only --skip-git-repo-check -o "$TMPFILE" -- "$PROMPT" 2>"$STDERR_FILE" >/dev/null || CODEX_EXIT=$?
 fi
 
 if [[ $CODEX_EXIT -ne 0 ]]; then

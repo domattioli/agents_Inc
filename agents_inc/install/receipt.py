@@ -33,17 +33,20 @@ class OwnedPath:
 class InstallReceipt:
     release_hash: str
     python_path: Path
-    codex_path: Path
+    codex_path: Path | None
     owned_paths: tuple[OwnedPath, ...] = field(default_factory=tuple)
     prior_release: str | None = None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
-        if self.schema_version != 1:
+        # schema 1: codex_path required. schema 2: codex_path may be None (codex CLI absent at install).
+        if self.codex_path is None and self.schema_version == 1:
+            object.__setattr__(self, "schema_version", 2)
+        if self.schema_version not in (1, 2):
             raise ValueError("unsupported receipt schema")
         if len(self.release_hash) != 64 or any(c not in "0123456789abcdef" for c in self.release_hash):
             raise ValueError("release hash must be a sha256 hex digest")
-        if not self.python_path.is_absolute() or not self.codex_path.is_absolute():
+        if not self.python_path.is_absolute() or (self.codex_path is not None and not self.codex_path.is_absolute()):
             raise ValueError("runtime paths must be absolute")
 
     def as_dict(self) -> dict[str, object]:
@@ -51,7 +54,7 @@ class InstallReceipt:
             "schema_version": self.schema_version,
             "release_hash": self.release_hash,
             "python_path": str(self.python_path),
-            "codex_path": str(self.codex_path),
+            "codex_path": None if self.codex_path is None else str(self.codex_path),
             "owned_paths": [item.as_dict() for item in self.owned_paths],
             "prior_release": self.prior_release,
         }
@@ -64,7 +67,7 @@ class InstallReceipt:
             raise ValueError("receipt is not valid JSON") from exc
         if not isinstance(data, dict):
             raise ValueError("receipt must be a JSON object")
-        if data.get("schema_version") != 1:
+        if data.get("schema_version") not in (1, 2):
             raise ValueError("unsupported receipt schema")
         owned = data.get("owned_paths", [])
         if not isinstance(owned, list):
@@ -73,7 +76,7 @@ class InstallReceipt:
             return cls(
                 release_hash=str(data["release_hash"]),
                 python_path=Path(str(data["python_path"])),
-                codex_path=Path(str(data["codex_path"])),
+                codex_path=None if data["codex_path"] is None else Path(str(data["codex_path"])),
                 owned_paths=tuple(OwnedPath.from_dict(item) for item in owned),
                 prior_release=data.get("prior_release"),
             )
