@@ -1,9 +1,9 @@
 ---
 description: "Project constitution — agents_for_dummies"
-version: 1.7.0
+version: 1.8.0
 status: proposed
 ratified: false
-last_amended: 2026-09-07
+last_amended: 2026-09-18
 ---
 
 # Constitution: agents_for_dummies
@@ -48,7 +48,7 @@ astra / sol / terra / luna are OpenAI Codex-account model codenames reached via 
 
 ## P8 — Delegation prompt contract (MUST)
 
-Every dispatch prompt, any rung, any vendor, carries the 14-element contract. Elements 10 (second-opinion / wheel-spin justification, paid vendors only) and 11 (plan contract) are conditional and satisfied by an explicit N/A line when unmet; the other ten are unconditional. Element 9 (effort) on the Claude `Agent`-tool transport = state that effort control is unavailable + intended level. Element 10's trigger is the P2 promotion trigger, defined once ("Failed check — definition of record"). Canon, full list + exact wording: `CLAUDE.md` "Delegation prompt contract"; template + per-element rationale: `skills/workerbee/SKILL.md` Step 11. Not restated here (P0). Authority: `docs/DECISIONS.md` D29 (effort default, element 9); broader contract ratified by operator 2026-09-06, grilled + expanded same date; consistency pass same date (fable final say).
+Every dispatch prompt, any rung, any vendor, carries the 14-element contract. Elements 10 (second-opinion / wheel-spin justification, paid vendors only) and 11 (plan contract) are conditional and satisfied by an explicit N/A line when unmet; the other ten are unconditional [SUPERSEDED in part by D42, 2026-09-18: element 1 (caveman) is now CONDITIONAL, see below; nine remain unconditional]. Element 1 (D42): if the caveman skill is installed, invoke it; if absent, emit `caveman NOT installed -> checked by hand` and continue. The same conditional applies to the handoff-lint gate (D41). The in-repo `check_dispatch_prompt.py` check stays mandatory, unconditional. Element 9 (effort) on the Claude `Agent`-tool transport = state that effort control is unavailable + intended level. Element 10's trigger is the P2 promotion trigger, defined once ("Failed check — definition of record"). Canon, full list + exact wording: `CLAUDE.md` "Delegation prompt contract"; template + per-element rationale: `skills/workerbee/SKILL.md` Step 11. Not restated here (P0). Authority: `docs/DECISIONS.md` D29 (effort default, element 9); broader contract ratified by operator 2026-09-06, grilled + expanded same date; consistency pass same date (fable final say); element-1 conditionality authorized by `docs/DECISIONS.md` D42 (operator sign-off 2026-09-18).
 
 ## P9 — Edit hygiene: surgical over full-rewrite (MUST)
 

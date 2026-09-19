@@ -154,6 +154,8 @@ In `CODEX_BRIDGE_MODE=ultra`, the runner refuses Anthropic names and follows `ro
 `submit` accepts additive flags so a Codex-backed role (Executive/Supervisor rung) can be re-engaged within one mandate without re-briefing, instead of `codex exec` cold-starting every call. Full spec: `specs/010-persistent-exec-session/`.
 
 ```bash
+# NOTE: --backend codex --wait is broken (bridge daemon can't see codex on PATH) and superseded by the delegate-agent MCP tool for luna; other codex models still use this async path until wired into delegate-agent.
+
 # First engagement opens the mandate + role; a fresh provider session starts.
 agent.sh submit --backend codex --model gpt-6-astra --mandate run-123 --role executive --wait "brief..."
 

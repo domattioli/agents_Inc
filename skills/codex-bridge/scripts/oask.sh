@@ -19,7 +19,7 @@ SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 
 # Defaults
-MODEL="${MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}"
+MODEL="${MODEL:-deepseek/deepseek-v4-flash-0731:free}"
 RAW=false
 OASK_TIMEOUT="${OASK_TIMEOUT:-180}"
 OASK_CONNECT_TIMEOUT="${OASK_CONNECT_TIMEOUT:-10}"

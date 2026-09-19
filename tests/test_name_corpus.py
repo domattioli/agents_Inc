@@ -57,7 +57,7 @@ class TestTokenize(unittest.TestCase):
 
     def test_url_and_path_removal(self):
         toks = nc.tokenize(
-            "see https://example.com/foo/bar and /Users/domattioli/Projects/agents_for_dummies/tools/name.py for the mesh graph"
+            "see https://example.com/foo/bar and /Users/example/Projects/agents_for_dummies/tools/name.py for the mesh graph"
         )
         self.assertIn("mesh", toks)
         self.assertIn("graph", toks)
