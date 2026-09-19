@@ -224,6 +224,7 @@ __marimo__/
 *key*
 # source modules, not credentials (CI import errors otherwise)
 !workerbees/keys.py
+!agents_inc/keys.py
 !tests/test_keys.py
 !*.pub
 *secret*

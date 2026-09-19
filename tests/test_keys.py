@@ -25,7 +25,7 @@ class KeysTest(unittest.TestCase):
 
     def test_available_includes_required_and_stored_optional(self):
         setup_key("openrouter", self.env, prompt=lambda _: "k", opener=lambda u: None)
-        self.assertEqual(available_providers(self.env), {"claude", "codex", "openrouter"})
+        self.assertEqual(available_providers(self.env, extra_env_paths=[]), {"claude", "codex", "openrouter"})
 
     def test_unknown_provider_raises(self):
         with self.assertRaises(ValueError):

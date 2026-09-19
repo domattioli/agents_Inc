@@ -1,8 +1,8 @@
-"""DomI#12 mechanical check: did a delegate's nested sub-delegation actually
+"""Mechanical check (upstream-tracked issue, tag dropped): did a delegate's nested sub-delegation actually
 land on an allowlisted free/cheap model, and did it echo the required
 confirm-and-echo line?
 
-Root cause this closes (DomI#12): "use a free/cheap model" as bare prose is
+Root cause this closes (upstream issue): "use a free/cheap model" as bare prose is
 unenforceable -- observed a nested `Agent` call run on `claude-opus-5` despite
 that exact instruction. Prose alone can't catch a repeat; this script can,
 cheaply, by grepping the dispatch transcript after the fact.

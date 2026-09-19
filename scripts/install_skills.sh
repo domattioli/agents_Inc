@@ -39,19 +39,12 @@ while IFS= read -r line; do
     continue
   fi
 
-  if [[ "$source_field" == external-repo* ]]; then
-    src_path="$(echo "$source_field" | sed -E 's/external-repo[[:space:]]*//')"
-    if [[ ! -d "$src_path" ]]; then
-      echo "MISS  $name (external-repo source not found: $src_path)"
-      status=1
-      continue
-    fi
-    if [[ "$DRY_RUN" == 1 ]]; then
-      echo "WOULD-SYNC $name  <-  $src_path"
+  if [[ "$source_field" == optional-user-scope* ]]; then
+    user_skill_path="$HOME/.claude/skills/$name"
+    if [[ -d "$user_skill_path" ]]; then
+      echo "OK    $name (optional-user-scope, present)"
     else
-      rm -rf "$dest"
-      cp -R "$src_path" "$dest"
-      echo "SYNC  $name  <-  $src_path"
+      echo "OPTIONAL-MISSING $name"
     fi
     continue
   fi

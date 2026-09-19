@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.10+ standard library, Bash 3.2+, `unittest`, filesystem symlinks, JSON receipts/journal, Codex CLI.
 
-**Spec:** Operator-approved local-install carve-out from session 2026-09-13 plus Astra/Luna review. Supporting requirements: `docs/PLAN-MVP.md` sections 5–6 and `docs/adr/0003-workerbee-canonical-source-and-domi-distribution.md`. This plan does not resolve marketplace, private-runtime, release-signing, or DomI distribution ownership.
+**Spec:** Operator-approved local-install carve-out from session 2026-09-13 plus Astra/Luna review. Supporting requirements: `docs/PLAN-MVP.md` sections 5–6 and `docs/adr/0003-workerbee-canonical-source-and-distribution.md`. This plan does not resolve marketplace, private-runtime, release-signing, or upstream distribution ownership.
 
 ## Global Constraints
 
