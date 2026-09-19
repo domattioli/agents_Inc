@@ -326,6 +326,10 @@ bash scripts/install_skills.sh            # sync external-repo entries, verify v
 bash scripts/install_skills.sh --dry-run  # show what would change without touching anything
 ```
 
+**Both providers are optional.** Neither Claude nor OpenAI Codex is a hard prerequisite. `agents-inc install` no longer aborts when the `codex` CLI is missing: skills still install, the receipt records no Codex path, and the installer prints one `NOTE:` line per skipped provider. Pass `--without-codex` (install and repair) to skip Codex deliberately and silence that note. The installer also creates an empty, user-editable `~/.config/agents-inc/roster.json`; put model aliases there (or in `AGENTS_INC_MODEL_MAP`, a JSON object or file path) to override the built-in `luna`/`terra`/`sol`/`astra` slugs.
+
+**DelegateAgent MCP server.** `skills/codex-bridge/mcp/codex_agent_mcp.py` exposes a `DelegateAgent` tool that forwards a prompt to Codex; the model list comes from the same configurable map. By default only `luna` is exposed; add `astra`, `sol`, or `terra` (once you have tested them live) via `~/.config/agents-inc/roster.json`, `AGENTS_INC_MODEL_MAP`, or `CODEXAGENT_MODEL_MAP`. Registering it with Claude is a separate, explicit step, and the default run only prints the command: `bash skills/codex-bridge/mcp/install.sh` (add `--apply` to execute it). Check the server without Codex via `bash skills/codex-bridge/mcp/tests/smoke_mcp.sh --offline`.
+
 **Setup decision tree — follow the path that matches your setup:**
 
 ```

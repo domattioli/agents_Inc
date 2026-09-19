@@ -1,0 +1,64 @@
+name: portability
+
+on:
+  workflow_dispatch:
+
+jobs:
+  portability-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set HOME to temp directory
+        run: |
+          export HOME=$(mktemp -d)
+          echo "HOME=$HOME" >> $GITHUB_ENV
+
+      - name: Verify codex/claude/gemini absent from PATH
+        run: |
+          which codex && echo "ERROR: codex found in PATH" && exit 1 || echo "✓ codex absent"
+          which claude && echo "ERROR: claude found in PATH" && exit 1 || echo "✓ claude absent"
+          which gemini && echo "ERROR: gemini found in PATH" && exit 1 || echo "✓ gemini absent"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run install_skills.sh
+        run: bash scripts/install_skills.sh
+        env:
+          HOME: ${{ env.HOME }}
+
+      - name: Run pytest
+        run: python3 -m pytest tests -q 2>&1 | tee pytest.out
+        env:
+          HOME: ${{ env.HOME }}
+        continue-on-error: true
+
+      - name: Check pytest collection errors
+        run: |
+          if grep -q 'errors during collection' pytest.out; then
+            echo "FAIL: pytest collection errors detected"
+            exit 1
+          fi
+          echo "✓ No collection errors"
+
+      - name: Run governance_demo.py --fake
+        run: PYTHONPATH=. python3 tools/governance_demo.py --fake
+        env:
+          HOME: ${{ env.HOME }}
+
+      - name: Run smoke_mcp.sh --offline
+        run: bash skills/codex-bridge/mcp/tests/smoke_mcp.sh --offline
+        env:
+          HOME: ${{ env.HOME }}
+
+      - name: Assert no absolute paths in install scripts
+        run: |
+          if grep -rn '/Users/' skills.requirements.txt scripts/install_skills.sh; then
+            echo "FAIL: Found absolute /Users/ paths in scripts"
+            exit 1
+          fi
+          echo "✓ No /Users/ paths found"

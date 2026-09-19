@@ -23,6 +23,15 @@ def _eligible(model: str, task: str, *, require_good: bool = False) -> bool:
         return False
     return not require_good or task in profile.get("tasks_good", [])
 
+def _remap_codex(model: str, model_map: dict[str, str] | None = None) -> str:
+    """Apply a user nickname override (roster/env) to a routing.json codex slug, on read only."""
+    from .install.runtime import MODEL_ALIASES, load_model_map
+    model_map = load_model_map() if model_map is None else model_map
+    for nick, default in MODEL_ALIASES.items():
+        if model == default:
+            return model_map.get(nick, default)
+    return model
+
 def _provider_routes(provider: str, task: str, tier: str) -> list[Route]:
     if provider == "openrouter":
         named = [
@@ -38,6 +47,8 @@ def _provider_routes(provider: str, task: str, tier: str) -> list[Route]:
         return named
     configured = _TABLE["tiers"].get(tier, {}).get(provider)
     models = configured if isinstance(configured, list) else [configured]
+    if provider == "codex":
+        models = [_remap_codex(m) if m else m for m in models]
     kind = "cli" if provider in _TABLE["required"] else "http"
     return [Route(provider, model, tier, kind) for model in models
             if model and _eligible(model, task)]
