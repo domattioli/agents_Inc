@@ -19,27 +19,31 @@ if [[ "${1:-}" == "--legacy" ]]; then
     shift
 fi
 
-# Map phase id to skill directory
-declare -A SKILL_DIR_MAP=(
-    [constitution]="speckit-constitution"
-    [specify]="speckit-specify"
-    [clarify]="speckit-clarify"
-    [plan]="speckit-plan"
-    [tasks]="speckit-tasks"
-    [tasks-to-issues]="speckit-taskstoissues"
-    [split]="speckit-split"
-    [checklist]="speckit-checklist"
-    [analyze]="speckit-analyze"
-    [implement]="speckit-implement"
-    [commit]="speckit-git-commit"
-)
+# Map phase id to skill directory (bash 3.2-safe)
+get_skill_dir() {
+    local phase_id="$1"
+    case "$phase_id" in
+        constitution)    echo "speckit-constitution" ;;
+        specify)         echo "speckit-specify" ;;
+        clarify)         echo "speckit-clarify" ;;
+        plan)            echo "speckit-plan" ;;
+        tasks)           echo "speckit-tasks" ;;
+        tasks-to-issues) echo "speckit-taskstoissues" ;;
+        split)           echo "speckit-split" ;;
+        checklist)       echo "speckit-checklist" ;;
+        analyze)         echo "speckit-analyze" ;;
+        implement)       echo "speckit-implement" ;;
+        commit)          echo "speckit-git-commit" ;;
+        *)               return 1 ;;
+    esac
+}
 
 PASSED=0
 FAILED=0
 
 # Check each phase's skill exists
 for phase_id in "$@"; do
-    skill_dir="${SKILL_DIR_MAP[$phase_id]:-}"
+    skill_dir=$(get_skill_dir "$phase_id" 2>/dev/null) || skill_dir=""
 
     if [[ -z "$skill_dir" ]]; then
         echo "[MISS] Phase '$phase_id' not in map"

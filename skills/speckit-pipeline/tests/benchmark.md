@@ -1,6 +1,6 @@
 # Benchmark — `speckit-pipeline`
 
-> Generated from `templates/benchmark.md.tmpl` (mandate per DomI #21, 2026-05-18).
+> Generated from `templates/benchmark.md.tmpl` (mandate per upstream governance repo, 2026-05-18).
 > Every version bump in `MANIFEST.md` must add a row here justifying the bump with a measured delta.
 
 ## Metric
@@ -9,7 +9,7 @@
 
 ## Measurement protocol
 
-- **Fixture:** the DomI dogfood run that built this skill (spec `017-speckit-workflow`), plus any subsequent `speckit-pipeline` invocation.
+- **Fixture:** the upstream dogfood run that built this skill (spec `017-speckit-workflow`), plus any subsequent `speckit-pipeline` invocation.
 - **Procedure:** count operator-issued `/speckit-*` commands from feature description to `implement` completion, with and without the skill.
 - **Sample size:** 1 (this skill's own construction) for the v1.0 baseline; accumulate across real invocations for later rows.
 

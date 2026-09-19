@@ -2,7 +2,7 @@
 """Resolve a rung name to its dispatchable model slugs, parsed live from this
 repo's docs/governance/ROUTING-RANKING.md (table of record) -- never a
 hardcoded copy, so it can never drift from canon (agents_for_dummies-native
-addition to the DomI-forked speckit-pipeline, D35/D34).
+addition to the forked speckit-pipeline (fork of the upstream private governance repo's skill), D35/D34).
 
 Usage: resolve_rung.py <RungName> [--repo-root PATH]
   RungName: Executive | Orchestrator | Supervisor | Workhorse | Grunt

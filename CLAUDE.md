@@ -11,6 +11,8 @@ Formerly `agents_for_dummies` (renamed 2026-09-07; GitHub remote `github.com/dom
 
 **Enforcement:** Human docs get nested-notes + caveman lite + write-like-scientist before any commit. Machine docs = caveman ultra, no override. Upstream this table into every agent prompt; downstream tasks inherit.
 
+**Third-party wording skills are optional installs (D42).** `caveman`, `nested-notes`, `write-like-scientist` are user-scope third-party skills, never vendored here (`caveman`: github.com/JuliusBrussee/caveman, MIT except engine dirs under BSL-1.1). Installed → invoke (Skill tool call). Absent → state one line, e.g. `caveman NOT installed -> checked by hand`, apply the rules by hand, continue. Never claim activation without a successful Skill call. `ultra` is agents_Inc's OWN level choice for machine text, set by this table; not inherited from any other repo or tool default.
+
 ## Coding dispatch — labor rule (binding)
 
 Source: `docs/DECISIONS.md` D25/D26/**D27** (2026-09-06 CEO grill) + `docs/governance/ROUTING-RANKING.md` (rung table of record). Supersedes prior 3-tier cut (2026-09-05) — that text omitted the Orchestrator rung and the promotion gate.
@@ -42,7 +44,7 @@ Exception: explicit operator instruction overrides rung assignment.
 
 Every dispatch prompt, any delegate/rung/vendor, MUST include all 14. Full wording + rationale: `skills/workerbee/SKILL.md` Step 11 (sole owner of prose). Bare list here:
 
-1. caveman ultra, invoked (Skill tool call), not just adopted
+1. caveman ultra, invoked (Skill tool call), not just adopted — conditional on the third-party skill being installed (D42): absent → line `caveman NOT installed -> checked by hand` satisfies it
 2. strict success gate
 3. strict failure gate, stated separately from success
 4. grill clause — surface gaps/ambiguity, don't guess
@@ -57,16 +59,16 @@ Every dispatch prompt, any delegate/rung/vendor, MUST include all 14. Full wordi
 13. edit hygiene — surgical/targeted edit over full rewrite by default
 14. lesson-learned handling — tag `LESSON-CANDIDATE`, relay exactly one rung up, scout-checked vs canon before it reaches Executive
 
-Elements 10/11 conditional: explicit N/A satisfies them, silence does not. All others unconditional — missing = non-compliant.
+Elements 10/11 conditional: explicit N/A satisfies them, silence does not. Element 1 conditional on the caveman skill (D42): Skill-call form or the `caveman NOT installed -> checked by hand` line satisfies it, silence does not. All others unconditional — missing = non-compliant. The in-repo `check_dispatch_prompt.py` check itself stays mandatory.
 
-**Handoff lint gate (D40, 2026-09-17):** 14-element check ≠ handoff hygiene. Before send, run BOTH: `python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt>` (contract elements present) + DomI `handoff-lint` `python3 ~/.claude/skills/handoff-lint/scripts/handoff_lint.py <prompt>` (H1 padding / H2 provenance tags / H3 dangling refs / H4 goal+constraints+done+out-of-scope / H5 dupes / H6 paraphrased errs). Delegate report returned → `--profile report` before Step 2/3 verification; untagged claim = inference dressed as fact, reject. Lint + reject only — never rewrite, never touch hedges/reasoning (info loss). Skill user-scope from DomI (`skills.requirements.txt`), never vendored. Exit ≠ 0 → fix text, re-lint, then send; no gate bypass.
+**Handoff lint gate (D41, 2026-09-17; conditional per D42):** 14-element check ≠ handoff hygiene. Before send, run the in-repo check (mandatory): `python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt>` (contract elements present). Then the optional third-party `handoff-lint` tool: if `$HOME/.claude/skills/handoff-lint/scripts/handoff_lint.py` exists, run `python3 "$HOME/.claude/skills/handoff-lint/scripts/handoff_lint.py" <prompt>`; if absent, emit exactly one line `handoff-lint NOT installed -> H1-H6 checked by hand` and continue. `check_dispatch_prompt.py --with-handoff-lint` does both (warning to stderr, exit = 14-element verdict when tool absent). H1-H6 (perform by hand when tool absent): H1 social padding / H2 provenance tags `[verified]`/`[inferred]`/`[assumed]` on claims / H3 dangling refs with no in-message antecedent / H4 goal + constraints + done + out-of-scope present and non-empty / H5 exact or near-duplicate blocks / H6 paraphrased errors (quote verbatim) or unclosed fence. Delegate report returned → same gate, report direction (`--profile report` when the tool is installed, else H1-H6 by hand) before Step 2/3 verification; untagged claim = inference dressed as fact, reject. Lint + reject only — never rewrite, never touch hedges/reasoning (info loss). Tool is a user-scope third-party install (`skills.requirements.txt`), never vendored. Any failing check → fix text, re-check, then send; no gate bypass.
 
-**Cross-repo note (DomI#10):** this contract binds any dispatch touching agents_Inc work, including one issued from a session working in a different repo. That session has no other reason to know this file exists — fetch this section (or `skills/workerbee/SKILL.md` Step 11's paste-and-tick block, self-contained) before dispatching. agents_Inc cannot enforce this on a session it doesn't control; this note is the smallest fix reachable from this side. See `skills/workerbee/SKILL.md` Step 11 for the honest limit of what this closes.
+**Cross-repo note:** this contract binds any dispatch touching agents_Inc work, including one issued from a session working in a different repo. That session has no other reason to know this file exists — fetch this section (or `skills/workerbee/SKILL.md` Step 11's paste-and-tick block, self-contained) before dispatching. agents_Inc cannot enforce this on a session it doesn't control; this note is the smallest fix reachable from this side. See `skills/workerbee/SKILL.md` Step 11 for the honest limit of what this closes.
 
 ## Never
 
 - Read `.env` files or print keys.
-- Vendor DomI skills into consumer trees. Skills installed at user scope (`~/.claude/skills/`, `~/.claude/plugins/`) or fetched at CI runtime (read-only sparse checkout).
+- Vendor third-party or upstream skills into consumer trees. Skills installed at user scope (`~/.claude/skills/`, `~/.claude/plugins/`) or fetched at CI runtime (read-only sparse checkout).
 
 ## Truth sources (in order)
 

@@ -439,3 +439,14 @@ Source: operator instruction 2026-09-17, relaying a Fable 5.1 design from anothe
 - **Relation to the 14-element contract.** Complement, not replacement. `check_dispatch_prompt.py` verifies this repo's 14 elements are present; `handoff-lint` verifies generic handoff hygiene. Both run; not a 15th element (that would need its own ruling).
 - **Where.** Tool lives in DomI (`skills/handoff-lint/`, stdlib python, tests + smoke in DomI CI). Installed here at user scope via `skills.requirements.txt`, never vendored (CLAUDE.md § Never). Wiring: `CLAUDE.md` § Delegation prompt contract (gate paragraph), `skills/workerbee/SKILL.md` Step 11 (mechanical gate, both directions; v1.1.3 → v1.1.4), `CONTEXT.md` (glossary term "Handoff lint").
 - **Not done.** No hook or CI gate can force this on an external session dispatching into agents_Inc (same honest limit as DomI#10). No auto-fix path — by design, and none should be added.
+- **Superseded in part by D42.** Handoff-lint is now optional and no longer sourced from a private repo.
+
+## D42 — Third-party skill provenance, conditional caveman/handoff-lint, D41 citation fix, upstream decoupling (2026-09-18)
+
+Source: operator approval this session, 2026-09-18.
+
+- **Third-party provenance.** `grill-me` and `grill-with-docs` originate from github.com/mattpocock/skills (MIT). This repo's copies carried no attribution, so they are removed from `skills/` and re-listed as optional user-scope externals citing that upstream URL only. `caveman` originates from github.com/JuliusBrussee/caveman (MIT, except engine dirs under BSL-1.1) and is never vendored here.
+- **Conditional third-party tools.** Caveman is third-party and may not be installed, so delegation-prompt-contract element 1 becomes CONDITIONAL: if the caveman skill is installed, invoke it; if absent, emit the line `caveman NOT installed -> checked by hand` and continue. The handoff-lint gate gets the same treatment: if installed, run it; if absent, say so and continue. The in-repo `skills/workerbee/scripts/check_dispatch_prompt.py` check stays MANDATORY and unconditional. The softening applies only to those two third-party tools, never to the in-repo check.
+- **Constitution amendment.** Amends constitution P8, which called ten of the fourteen elements unconditional. Operator sign-off given this session. Constitution bumped 1.7.0 -> 1.8.0 (MINOR, widened scope on an existing principle).
+- **Label-collision fix.** `CLAUDE.md` and `skills/workerbee/SKILL.md` cited "D40" for the handoff-lint gate. D40 is an unrelated LESSON-CANDIDATE about a stale long-lived server process. The handoff-lint ruling is D41. The correct citation is D41; the stale "D40" references are corrected.
+- **Decoupling.** No path, URL, checkout, or name of the upstream private governance repo appears in canon or user-facing files. Historical entries in this file stay as written.
