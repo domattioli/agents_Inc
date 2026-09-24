@@ -378,10 +378,10 @@ skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
 3. Ask a cheaper model a side question from inside any Claude Code session, without switching sessions. The session model never runs, so the question costs about 1% of asking it directly:
 
 ```text
-! @haiku does the caveman plugin auto-update
+@haiku does the caveman plugin auto-update
 ```
 
-The answer prints into the conversation, so the session model sees it on your next prompt. Aliases, savings table and install: [docs/AT-ROUTE.md](docs/AT-ROUTE.md).
+The hook answers before the session model runs, so the session model spends zero tokens. Use `! @haiku ...` when you want the answer in context, at the cost of one session-model turn. Token comparison of every form: [docs/AT-ROUTE.md](docs/AT-ROUTE.md#which-form-saves-the-most-session-model-tokens). Aliases, savings table and install: [docs/AT-ROUTE.md](docs/AT-ROUTE.md).
 
 ### How it feels to use
 

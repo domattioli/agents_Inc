@@ -7,16 +7,31 @@ Smoke test: [`skills/codex-bridge/tests/at_route.smoke.sh`](../skills/codex-brid
 
 ## Lexicon
 
-Preferred form, from 2026-09-23: Claude Code's `!` prefix runs a shell command inside the session and prints its output into the conversation. No model turn runs, no hook framing appears, and the output is in context for your next prompt. Each alias is an executable on PATH.
+Default is the hook form. It is the only form that costs the session model nothing.
 
-| You type | Who answers | Notes |
-|---|---|---|
-| `! @haiku what does this flag do` | Haiku | Preferred. Output lands in the conversation, cyan box, no model turn. Also works mid-turn. |
-| `@haiku what does this flag do` | Haiku | Hook form. Blocked prompt, answer on stderr under Claude Code's yellow "blocked by hook" line. Lost if sent mid-turn. |
-| `@@haiku what does this flag do` | Haiku | Hook form. Answer injected as context and the session model relays it with an `haiku ▸` prefix. Costs a model turn. |
-| `~@haiku literal text` | Session model | Hook escape. Prompt reaches the session model as typed. |
+| You type | Who answers | Session model cost | Notes |
+|---|---|---|---|
+| `@haiku what does this flag do` | Haiku | zero | Default. Prompt is blocked, answer shown in a cyan box under Claude Code's yellow "blocked by hook" line. Not in context. |
+| `@@haiku what does this flag do` | Haiku | one turn | Answer injected as context, session model relays it with a `haiku ▸` prefix. |
+| `! @haiku what does this flag do` | Haiku | one turn | Shell form. Clean output in the conversation, in context, works mid-turn. Needs the symlinks under Install. |
+| `~@haiku literal text` | Session model | one turn | Escape. Prompt reaches the session model as typed. |
 
 Shell note for the `!` form: zsh expands `?` and `*` before the command runs, so `! @luna ready?` fails with `no matches found`. Quote the question, or add `setopt no_nomatch` to `~/.zshrc`.
+
+## Which form saves the most session-model tokens
+
+Measured 2026-09-23 from this session's transcript, about 195k tokens of context at the time. The delegate does not matter here; only whether the session model takes a turn.
+
+| form | session-model input | session-model output | turns |
+|---|---|---|---|
+| `@luna q` hook, exit 2 | 0 | 0 | 0 |
+| `! @luna q` shell | ~195k cache-read | ~20, a short ack | 1 |
+| `@@luna q` relay | ~195k cache-read | ~350 | 1 |
+| ask the session model directly | ~195k cache-read | ~580 | 1 |
+
+Every form except the hook triggers a session-model turn, and a turn re-reads the whole context. In a long session that read is the dominant cost, so the hook form is the only real saving. The other forms trade tokens for having the answer in context.
+
+Future work: a display path that shows the delegate's answer inline without a session-model turn and without the hook-block framing. Candidates are a status-line reader for the answers log, or a Claude Code change that lets a hook return operator-visible text on exit 0 without a model turn.
 
 Aliases, case-insensitive:
 
@@ -71,7 +86,7 @@ for a in haiku sonnet opus fable astra sol terra luna; do
 done
 ```
 
-The hook form is optional. It is what makes bare `@haiku` (no `!`) work.
+The hook form is the default. Add it to `~/.claude/settings.json` as shown above; the symlinks are only for the `!` form.
 
 
 Add the hook to `~/.claude/settings.json` under `hooks.UserPromptSubmit`. Put it after any hooks that must see every prompt, because an exit 2 from this hook stops later hooks too.
