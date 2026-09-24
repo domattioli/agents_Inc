@@ -1,6 +1,6 @@
 {
   "version": "2026-09-05.1",
-  "_note": "tasks_good/tasks_bad = raw per-model task quality, NOT the CLAUDE.md economic dispatch policy; the two axes need not agree.",
+  "_note": "tasks_good/tasks_bad = raw per-model task quality, NOT the AGENTS.md economic dispatch policy; the two axes need not agree.",
   "models": {
     "haiku": {
       "vendor": "anthropic",

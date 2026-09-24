@@ -6,7 +6,7 @@ description: Chain the spec-driven-development phases (specify → clarify → p
 ---
 
 > **FORK — NOT CANON, operator exception to the no-vendoring default (D35, 2026-09-07).**
-> Forked from `DomI@476e141` (`feat/pipeline-model-classes`, PR [domattioli/DomI#466](https://github.com/domattioli/DomI/pull/466), unmerged) so v1.5's new default-mode class dispatch can be fleshed out and tested against this repo's own `docs/governance/ROUTING-RANKING.md` before it becomes DomI's default for every consumer. This deliberately overrides DomI's own `CLAUDE.md` "Never vendor DomI skills into consumer trees" rule — see D35 for the exit criteria. Do not treat this copy as authoritative DomI canon; do not let it silently diverge and get treated as this repo's own original work.
+> Forked from `DomI@476e141` (`feat/pipeline-model-classes`, PR [domattioli/DomI#466](https://github.com/domattioli/DomI/pull/466), unmerged) so v1.5's new default-mode class dispatch can be fleshed out and tested against this repo's own `docs/governance/ROUTING-RANKING.md` before it becomes DomI's default for every consumer. This deliberately overrides DomI's own `AGENTS.md` "Never vendor DomI skills into consumer trees" rule — see D35 for the exit criteria. Do not treat this copy as authoritative DomI canon; do not let it silently diverge and get treated as this repo's own original work.
 
 # speckit-pipeline
 

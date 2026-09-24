@@ -34,7 +34,7 @@ Codex's constraint is a rate-limit window rather than a dollar amount. Heavy fan
 | High-volume mechanical triage over many small inputs | Gemini (`cheap` tier) | Free and fast; the work is shallow enough that tier quality does not bind |
 | Hard analysis over large material | Gemini (`digest` tier) | The `deep`/pro tier returns `limit: 0` on this account — it is not available on the free tier, verified 2026-09-02 |
 | Stuck debugging, independent second hypothesis | Codex | Can actually run and reproduce locally, not merely read |
-| **Writing or editing code** | **Haiku subagent** | Binding rule in the operator's `CLAUDE.md`. Not negotiable by this policy. |
+| **Writing or editing code** | **Haiku subagent** | Limited to small, narrow jobs by `AGENTS.md` "Project rules". |
 | Orchestration — decomposition, dispatch, holding the thread | Fable 5, falling back to Opus 5 | Orchestrator tier; the fallback applies when Fable is unavailable or its cost is unwarranted |
 | Planning, architecture, review, integration, verification | Claude main session | Requires conversation context, which cannot be exported |
 | Anything sensitive, proprietary, or personal | Codex or Claude only | Gemini free tier trains on input |
