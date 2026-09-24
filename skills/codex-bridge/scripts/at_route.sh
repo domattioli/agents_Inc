@@ -10,8 +10,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${AT_ROUTE_LOG:-$HOME/.codex-bridge/at_route.log}"
 TIMEOUT_S="${AT_ROUTE_TIMEOUT:-120}"
 
-input="$(cat)"
-prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
+# CLI mode: invoked as "@luna <question>" (symlink named after the alias) or
+# "at_route.sh luna <question>". Used with Claude Code's "!" prefix:
+#   ! @luna say hi
+# Output goes to stdout, exit 0, no hook framing, no model turn.
+CLI=0
+if [[ $# -gt 0 ]]; then
+  CLI=1
+  self="$(basename "${BASH_SOURCE[0]}")"
+  if [[ "$self" == @* ]]; then
+    prompt="${self} $*"
+  else
+    prompt="@$1 ${*:2}"
+  fi
+else
+  input="$(cat)"
+  prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
+fi
 [[ -z "$prompt" ]] && exit 0
 
 # Escape: ~@ prefix → exit 0, pass prompt to session model untouched
@@ -104,7 +119,9 @@ if [[ "$rc" -eq 0 ]]; then
     printf '%s┌─ %s (%s) · %ss ─%s\n' "$c" "$alias_name" "$model" "$elapsed" "$r"
     sed "s/^/${c}│ /; s/\$/${r}/" "$out_f"
     printf '%s└─%s\n' "$c" "$r"
-  } >&2
+  } > >(if [[ "$CLI" == 1 ]]; then cat; else cat >&2; fi)
+  wait
+  [[ "$CLI" == 1 ]] && exit 0
   exit 2
 else
   echo "[at_route] ${alias_name} call failed (exit ${rc}). Stderr:"

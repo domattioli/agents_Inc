@@ -7,12 +7,16 @@ Smoke test: [`skills/codex-bridge/tests/at_route.smoke.sh`](../skills/codex-brid
 
 ## Lexicon
 
-| You type | Who answers | Does the session model see it? |
+Preferred form, from 2026-09-23: Claude Code's `!` prefix runs a shell command inside the session and prints its output into the conversation. No model turn runs, no hook framing appears, and the output is in context for your next prompt. Each alias is an executable on PATH.
+
+| You type | Who answers | Notes |
 |---|---|---|
-| `@haiku what does this flag do?` | Haiku | No. Side question. Answer is shown to you only. |
-| `@@haiku what does this flag do?` | Haiku | Yes. Answer is injected as context and the session model relays it. |
-| `~@haiku literal text` | Session model | Escape. The prompt reaches the session model exactly as typed, including the `~@`. |
-| `plain prompt` | Session model | Normal turn. Hook stays silent. |
+| `! @haiku what does this flag do` | Haiku | Preferred. Output lands in the conversation, cyan box, no model turn. Also works mid-turn. |
+| `@haiku what does this flag do` | Haiku | Hook form. Blocked prompt, answer on stderr under Claude Code's yellow "blocked by hook" line. Lost if sent mid-turn. |
+| `@@haiku what does this flag do` | Haiku | Hook form. Answer injected as context and the session model relays it with an `haiku ▸` prefix. Costs a model turn. |
+| `~@haiku literal text` | Session model | Hook escape. Prompt reaches the session model as typed. |
+
+Shell note for the `!` form: zsh expands `?` and `*` before the command runs, so `! @luna ready?` fails with `no matches found`. Quote the question, or add `setopt no_nomatch` to `~/.zshrc`.
 
 Aliases, case-insensitive:
 
@@ -57,6 +61,18 @@ Recursion guard: the hook exports `AT_ROUTE_ACTIVE=1` around the nested `claude 
 Every call appends one line to `~/.codex-bridge/at_route.log`: UTC timestamp, alias, exit code, seconds.
 
 ## Install
+
+The `!` form needs one symlink per alias on PATH:
+
+```bash
+mkdir -p ~/.local/bin && cd ~/.local/bin
+for a in haiku sonnet opus fable astra sol terra luna; do
+  ln -sf /Users/domattioli/Projects/agents_Inc/skills/codex-bridge/scripts/at_route.sh "@$a"
+done
+```
+
+The hook form is optional. It is what makes bare `@haiku` (no `!`) work.
+
 
 Add the hook to `~/.claude/settings.json` under `hooks.UserPromptSubmit`. Put it after any hooks that must see every prompt, because an exit 2 from this hook stops later hooks too.
 
