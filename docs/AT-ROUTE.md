@@ -77,6 +77,7 @@ Environment overrides:
 | `AT_ROUTE_MODE` | `block` | `relay` makes single `@` behave like `@@` |
 | `AT_ROUTE_TIMEOUT` | `120` | Seconds before the delegate call is killed |
 | `AT_ROUTE_LOG` | `~/.codex-bridge/at_route.log` | Log path |
+| `AT_ROUTE_COLOR` | `1` | Cyan box in block mode. `0` for plain text. Claude Code passes the escape codes through; the yellow text above the box is Claude Code's own hook framing. |
 
 ## Known limits
 

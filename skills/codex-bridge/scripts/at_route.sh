@@ -89,10 +89,10 @@ if [[ "$rc" -eq 0 ]]; then
     exit 0
   fi
   {
-    # AT_ROUTE_COLOR=1 wraps the box in ANSI cyan; experimental, depends on
-    # whether Claude Code passes escape codes from hook stderr through.
+    # ANSI cyan box, on by default. Claude Code passes hook stderr escapes through
+    # (verified 2026-09-23). AT_ROUTE_COLOR=0 disables.
     c=""; r=""
-    if [[ "${AT_ROUTE_COLOR:-0}" == "1" ]]; then c=$'\033[36m'; r=$'\033[0m'; fi
+    if [[ "${AT_ROUTE_COLOR:-1}" == "1" ]]; then c=$'\033[36m'; r=$'\033[0m'; fi
     printf '%s┌─ %s (%s) · %ss ─%s\n' "$c" "$alias_name" "$model" "$elapsed" "$r"
     sed "s/^/${c}│ /; s/\$/${r}/" "$out_f"
     printf '%s└─%s\n' "$c" "$r"
