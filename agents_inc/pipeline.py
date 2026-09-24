@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 from .router import Route, pick_model
-from .policy import PolicyError, check_dispatch, is_authorized
-from .adapters import claude, codex
+from .policy import PolicyError, check_dispatch, is_authorized, is_local_authorized
+from .adapters import claude, codex, ollama
 from .adapters.base import run_worker, WorkerResult
 from .verifier import Report, verify, passed, paragraphs, check_draft
 from .keys import available_providers
@@ -163,16 +163,22 @@ def _cmd(route: Route, prompt: str, codex_executable: str | None = None) -> tupl
         return claude.build_cmd(route.model), prompt
     if route.provider == "codex":
         return codex.build_cmd(route.model, codex_executable), prompt
+    if route.provider == "ollama":
+        return ollama.build_cmd(route.model), prompt
     raise NotImplementedError(f"{route.provider}: http adapters land post-Phase-1")
 
 def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway, registry,
-                     confidential, gate_reason, parent_id, edge_type, run_budget=None, codex_executable=None):
+                     confidential, gate_reason, parent_id, edge_type, run_budget=None, codex_executable=None, worker_timeout_s=None):
     if route.provider == "codex" and not codex_executable:
         return None, None, False, False, {"reason": "WB_CLI_NOT_FOUND"}
     if mode == "off":
         nid = uuid.uuid4().hex
         d_ok = ledger.record_dispatch(workspace, node_id=nid, run_id=run_id, model=route.model, tier=route.tier, task="extract", provider=route.provider, parent_id=parent_id, edge_type=edge_type, gate_reason=gate_reason)
-        t0 = time.monotonic(); res = runner(cmd, stdin)
+        t0 = time.monotonic()
+        if route.provider == "ollama" and worker_timeout_s:
+            res = runner(cmd, stdin, timeout=worker_timeout_s)
+        else:
+            res = runner(cmd, stdin)
         r_ok = ledger.record_return(workspace, node_id=nid, status=res.status, seconds=time.monotonic()-t0, subscription_calls=1)
         return res, nid, d_ok, r_ok, None
     if mode not in ("shadow", "enforce"):
@@ -194,7 +200,7 @@ def _dispatch_worker(workspace, run_id, route, cmd, stdin, runner, mode, gateway
 def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confidential: bool = True,
           available: set[str] | None = None, review_enabled: bool = True, worker_tier: str = "grunt",
           worker_provider: str | None = None, runner=run_worker, max_corrections: int = 1,
-          gate_reason: str | None = None, run_budget: dict | None = None, *, governance_mode: str | None = None, registry=None, gateway=None,
+          gate_reason: str | None = None, run_budget: dict | None = None, local_only: bool = False, *, governance_mode: str | None = None, registry=None, gateway=None,
           codex_executable: str | None = None) -> BriefResult:
     gov_mode = governance_mode if governance_mode is not None else os.environ.get("WORKERBEES_GOVERNANCE", "off")
     if gov_mode not in ("off", "shadow", "enforce"):
@@ -208,8 +214,16 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     avail = available if available is not None else doctor.available(
         workspace, governance_mode=gov_mode, gateway=_gateway, registry=_registry,
         codex_executable=codex_executable)
-    route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider)
+    if local_only:
+        worker_provider = "ollama"
+        route = pick_model("extract", worker_tier, avail, is_authorized(workspace),
+                          prefer_provider=worker_provider, local_authorized=is_local_authorized(workspace), local_only=True)
+    else:
+        route = pick_model("extract", worker_tier, avail, is_authorized(workspace), prefer_provider=worker_provider,
+                          local_authorized=is_local_authorized(workspace))
     if route is None:
+        if local_only:
+            return BriefResult("blocked", receipt={"reason": "WB_LOCAL_UNAVAILABLE"})
         return BriefResult("blocked", receipt={"reason": "WB_NO_ELIGIBLE_ROUTE"})
     run_id = uuid.uuid4().hex
     try:
@@ -223,9 +237,15 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         cmd, stdin = _cmd(route, prompt, codex_executable)
     except (NotImplementedError, ValueError) as e:
         return BriefResult("blocked", route=route, receipt={"reason": str(e)})
+    worker_timeout = None
+    if route.provider == "ollama":
+        from .router import _TABLE
+        worker_timeout = _TABLE.get("local", {}).get("worker_timeout_s")
+
     res, worker_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
         workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-        gate_reason if route.tier == "executive" else None, None, None, run_budget, codex_executable)
+        gate_reason if route.tier == "executive" else None, None, None, run_budget, codex_executable,
+        worker_timeout_s=worker_timeout)
     if block_receipt:
         return BriefResult("blocked", route=route, receipt=block_receipt)
 
@@ -237,6 +257,9 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
     _bind_output(workspace, worker_node_id, draft, receipt)
     if status != "needs-review":
         return BriefResult(status, draft=draft, report=rep, route=route, receipt=receipt)
+    if local_only:
+        return BriefResult("returned", draft=draft, report=rep, route=route,
+                          receipt={**receipt, "content_review": "local_only_no_review"})
     if not review_enabled:
         return BriefResult("returned", draft=draft, report=rep, route=route,
                            receipt={**receipt, "content_review": "disabled"})
@@ -310,7 +333,8 @@ def brief(source_path: Path, source_id: str, mode: str, workspace: Path, confide
         # Record correction worker dispatch and return (D1 — corrects edge)
         res, correction_node_id, dispatch_ok, return_ok, block_receipt = _dispatch_worker(
             workspace, run_id, route, cmd, stdin, runner, gov_mode, _gateway, _registry, confidential,
-            None, worker_node_id, "corrects", run_budget, codex_executable)
+            None, worker_node_id, "corrects", run_budget, codex_executable,
+            worker_timeout_s=worker_timeout)
         if block_receipt:
             return BriefResult("blocked", route=route, receipt=block_receipt)
         if not dispatch_ok or not return_ok:

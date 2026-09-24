@@ -116,7 +116,7 @@ Executive decides gates, accepts or rejects results, resolves conflicts, and han
 
 Automation can prepare, route, record, verify, and close routine work. Phases marked unattended may run without a live operator; Executive gates remain required for authority, ambiguity, risk, and acceptance.
 
-Delegation and support flow (Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
+Delegation and support flow (Owner, Chief of Staff, Exec, Super, and Worker roles across the nine speckit phases; the Chief of Staff was called Interlocutor before D43, and the diagram image still uses the old label): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
 
 **Grilling.** CEO decision sessions only. Their output is a ruling in [docs/DECISIONS.md](docs/DECISIONS.md) or delegation context for the next action. It is not a packaged execution step.
 

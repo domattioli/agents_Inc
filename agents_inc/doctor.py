@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, re, time, uuid, os, subprocess
 from pathlib import Path
 from datetime import datetime
-from .adapters import claude, codex
+from .adapters import claude, codex, ollama
 from .adapters.base import run_worker
 from .keys import ENV_PATH, available_providers, REQUIRED
 from .router import _TABLE, _CATALOG
@@ -117,7 +117,20 @@ def available(workspace: Path, env_path: Path = ENV_PATH, max_age_s: int = 3600,
         cache = run(workspace, runner=runner, governance_mode=governance_mode, gateway=gateway, registry=registry,
                     codex_executable=codex_executable)
     ok_required = {p for p, r in cache["results"].items() if r["status"] == "ok"}
-    return (available_providers(env_path, extra_env_paths=extra_env_paths) - REQUIRED) | ok_required
+    avail = (available_providers(env_path, extra_env_paths=extra_env_paths) - REQUIRED) | ok_required
+
+    # Check ollama availability: opt-in + ready + no breaker
+    if os.environ.get("WORKERBEES_LOCAL") == "1":
+        default_model = _TABLE.get("tiers", {}).get("grunt", {}).get("ollama")
+        if default_model:
+            ready_ok, _ = ollama.ready(default_model)
+            if ready_ok:
+                state_dir = ollama._state_dir()
+                breaker_path = state_dir / "ollama.disabled"
+                if not breaker_path.exists():
+                    avail.add("ollama")
+
+    return avail
 
 def quota_paused(workspace: Path) -> list[str]:
     f = workspace / ".workerbees" / "doctor.json"
