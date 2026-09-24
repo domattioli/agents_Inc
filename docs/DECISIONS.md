@@ -461,3 +461,11 @@ Source: operator instruction 2026-09-22, verbatim: "right now you are the interl
 - **Authority.** No automatic Task Authority over the Executive's work. The CoS controls what reaches the operator and makes below-bar calls. Any model may hold the role; normally it is the host session.
 - **Changed.** `CONTEXT.md` (new term), `docs/governance/DELEGATION-MODEL.md` 1.0.0 → 1.1.0 (rename, charter, Mermaid), `skills/workerbee/SKILL.md` 1.2.1 → 1.3.0 (Step 4 always-on CoS triage; budget flash helper kept as an add-on), `README.md` role list.
 - **Not done.** `docs/assets/delegation-model.png` still shows "Interlocutor" until it is regenerated; the Mermaid source wins.
+
+## D44 — Main-session dispatches and the free-tier router (2026-09-23, status: accepted — operator ratified 2026-09-24)
+
+Source: spec 012 (free-tier routing), FR-014 and its Clarifications answer. Operator ratified 2026-09-24.
+
+- **Decision.** Main-session dispatches (the `Agent` tool and workerbee) do not consult the router. The harness cannot intercept an `Agent` tool call, so no router hook can run there.
+- **Governance.** Main-session free-tier use goes through `agent.sh submit --backend <free>`. `agent.sh` is a thin shim; `agent_runner.py:575-583` runs the `gask.sh`/`mask.sh`/`oask.sh` wrappers, whose exit traps report outcomes to backend health, so cooldowns and daily caps stay accurate.
+- **Scope.** Only the router's free-first ordering (spec 012 FR-010 to FR-012) is affected. Rung assignment for main-session dispatches still follows the coding-dispatch rules in `CLAUDE.md`.

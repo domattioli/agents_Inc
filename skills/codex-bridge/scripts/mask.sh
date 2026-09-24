@@ -15,6 +15,50 @@ KEY_FILE="$HOME/.config/devstral/api_key"
 AGENT_ID_FILE="$HOME/.config/devstral/agent_id"
 USAGE_LOG="$HOME/.codex-bridge/usage.jsonl"
 CONVERSATION_FILE="$HOME/.codex-bridge/mistral-conversation-id"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Exit-trap outcome reporting: the python block below writes the observed
+# HTTP status (if any) and response body to these temp files; the trap
+# classifies and reports them via free_health without changing mask's exit code.
+MASK_STATUS_FILE=$(mktemp)
+MASK_BODY_FILE=$(mktemp)
+export MASK_STATUS_FILE MASK_BODY_FILE
+mask_report_trap() {
+  local ec=$?
+  local status=""
+  [[ -s "$MASK_STATUS_FILE" ]] && status=$(cat "$MASK_STATUS_FILE")
+  local outcome="error"
+  local retry=""
+  if [[ -n "$status" ]]; then
+    local classify_out
+    classify_out=$(PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health classify \
+      --status "$status" --body-file "$MASK_BODY_FILE" 2>/dev/null) || classify_out=""
+    if [[ -n "$classify_out" ]]; then
+      outcome="${classify_out%% *}"
+      retry="${classify_out#* }"
+      [[ "$retry" == "-" ]] && retry=""
+    fi
+  fi
+  local retry_arg=()
+  [[ -n "$retry" ]] && retry_arg=(--retry-after "$retry")
+  local message=""
+  if [[ "$outcome" == "error" ]]; then
+    if [[ -s "$MASK_BODY_FILE" ]]; then
+      message=$(head -c 300 "$MASK_BODY_FILE")
+    else
+      message="Connection failed"
+    fi
+  fi
+  local message_arg=()
+  [[ -n "$message" ]] && message_arg=(--message "$message")
+  PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
+    --provider mistral --model "${MODEL:-unknown}" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" "${message_arg[@]+${message_arg[@]}}" \
+    >/dev/null 2>/tmp/mask_report_err.$$ || echo "mask: health report failed" >&2
+  rm -f /tmp/mask_report_err.$$ "$MASK_STATUS_FILE" "$MASK_BODY_FILE" 2>/dev/null
+  exit $ec
+}
+trap mask_report_trap EXIT
 
 MODEL=""
 TIER="code"
@@ -141,6 +185,22 @@ agent_id = os.environ.get("MISTRAL_AGENT_ID", "")
 request_timeout = float(os.environ["MASK_AGENT_TIMEOUT"] if agent else os.environ["MASK_TIMEOUT"])
 request_kind = "agent" if agent else "completion"
 
+mask_status_file = os.environ.get("MASK_STATUS_FILE", "")
+mask_body_file = os.environ.get("MASK_BODY_FILE", "")
+
+
+def _write_report_files(status_code, body_bytes):
+    """Best-effort: record HTTP status + body for the outer bash exit trap."""
+    try:
+        if mask_status_file:
+            with open(mask_status_file, "w", encoding="utf-8") as fh:
+                fh.write(str(status_code))
+        if mask_body_file:
+            with open(mask_body_file, "wb") as fh:
+                fh.write(body_bytes or b"")
+    except OSError:
+        pass
+
 file_blocks = []
 for path in sys.argv[1:]:
     if not os.path.isfile(path):
@@ -188,8 +248,10 @@ request = urllib.request.Request(
 try:
     with urllib.request.urlopen(request, timeout=request_timeout) as response:
         response_bytes = response.read()
+        _write_report_files(response.getcode() or 200, response_bytes)
 except urllib.error.HTTPError as exc:
     error_bytes = exc.read()
+    _write_report_files(exc.code, error_bytes)
     try:
         error_data = json.loads(error_bytes.decode("utf-8", errors="replace"))
         message = error_data.get("message") or error_data.get("detail") or str(error_data)
