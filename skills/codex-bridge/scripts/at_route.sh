@@ -34,7 +34,7 @@ fi
 [[ "$prompt" =~ ^~@ ]] && exit 0
 
 shopt -s nocasematch
-re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna)[[:space:]]+(.+)$'
+re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna|gemini|mistral)[[:space:]]+(.+)$'
 if [[ ! "$prompt" =~ $re ]]; then
   exit 0
 fi
@@ -53,6 +53,8 @@ case "$alias_name" in
   sol)    model="gpt-5.6-sol"; kind="codex" ;;
   terra)  model="gpt-5.6-terra"; kind="codex" ;;
   luna)   model="gpt-5.6-luna"; kind="codex" ;;
+  gemini) model="gemini-3.8-flash"; kind="gemini" ;;
+  mistral) model="codestral-latest"; kind="mistral" ;;
   *) exit 0 ;;
 esac
 
@@ -69,6 +71,14 @@ start=$SECONDS
 rc=0
 if [[ "$kind" == "claude" ]]; then
   AT_ROUTE_ACTIVE=1 run_with_timeout claude -p "$question" --model "$model" \
+    >"$out_f" 2>"$err_f" </dev/null || rc=$?
+elif [[ "$kind" == "gemini" ]]; then
+  AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/gask.sh" --tier digest "$question" \
+    >"$out_f" 2>"$err_f" </dev/null || rc=$?
+  # gask.sh prints upstream errors on stdout with exit 0
+  if [[ "$rc" -eq 0 ]] && grep -q '^gemini error' "$out_f"; then rc=1; cat "$out_f" >>"$err_f"; fi
+elif [[ "$kind" == "mistral" ]]; then
+  AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/mask.sh" --tier code "$question" \
     >"$out_f" 2>"$err_f" </dev/null || rc=$?
 else
   # Fresh thread per question. The persistent agent.sh thread accumulated

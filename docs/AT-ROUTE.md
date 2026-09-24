@@ -45,6 +45,8 @@ Aliases, case-insensitive:
 | `sol` | `gpt-5.6-sol` | codex-bridge daemon |
 | `terra` | `gpt-5.6-terra` | codex-bridge daemon |
 | `luna` | `gpt-5.6-luna` | codex-bridge daemon |
+| `gemini` | `gemini-3.8-flash` | `gask.sh --tier digest` |
+| `mistral` | `codestral-latest` | `mask.sh --tier code` |
 
 Default is the single `@` form. Use `@@` only when the next thing you ask the session model depends on the answer.
 
@@ -81,7 +83,7 @@ The `!` form needs one symlink per alias on PATH:
 
 ```bash
 mkdir -p ~/.local/bin && cd ~/.local/bin
-for a in haiku sonnet opus fable astra sol terra luna; do
+for a in haiku sonnet opus fable astra sol terra luna gemini mistral; do
   ln -sf /Users/domattioli/Projects/agents_Inc/skills/codex-bridge/scripts/at_route.sh "@$a"
 done
 ```
@@ -117,7 +119,8 @@ Environment overrides:
 - A side question leaves no trace in the session. If you want the session model to build on the answer, ask with `@@` or paste the answer in.
 - The daemon's `--workdir` must exist. If it is deleted, every Codex alias fails with a misleading `codex CLI not found on PATH` error from `bridge.py`. Restart the daemon from a stable directory.
 - A delegate can refuse. Haiku declined a joke prompt during testing. The refusal is shown to you like any other answer.
-- Gemini, Mistral and OpenRouter aliases are not wired yet. The bridge has `gask.sh`, `mask.sh` and `oask.sh`, so adding them is a small change in the alias table.
+- OpenRouter aliases are not wired yet. The bridge has `oask.sh`, so adding one is a small change in the alias table.
+- Gemini returns upstream 503 errors during demand spikes. The hook reports the failure and the session model answers instead.
 
 ## OpenAI bench
 
