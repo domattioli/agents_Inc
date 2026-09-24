@@ -77,10 +77,12 @@ Environment overrides:
 | `AT_ROUTE_MODE` | `block` | `relay` makes single `@` behave like `@@` |
 | `AT_ROUTE_TIMEOUT` | `120` | Seconds before the delegate call is killed |
 | `AT_ROUTE_LOG` | `~/.codex-bridge/at_route.log` | Log path |
+| `AT_ROUTE_ANSWERS` | `~/.codex-bridge/at_route_answers.log` | Transcript of every question and answer |
 | `AT_ROUTE_COLOR` | `1` | Cyan box in block mode. `0` for plain text. Claude Code passes the escape codes through; the yellow text above the box is Claude Code's own hook framing. |
 
 ## Known limits
 
+- A prompt sent while the session model is still working is queued, and Claude Code does not show hook stderr for queued prompts. The delegate still answers. Read missed answers with `tail -20 ~/.codex-bridge/at_route_answers.log`. Send side questions between turns to see them inline.
 - A side question leaves no trace in the session. If you want the session model to build on the answer, ask with `@@` or paste the answer in.
 - The daemon's `--workdir` must exist. If it is deleted, every Codex alias fails with a misleading `codex CLI not found on PATH` error from `bridge.py`. Restart the daemon from a stable directory.
 - A delegate can refuse. Haiku declined a joke prompt during testing. The refusal is shown to you like any other answer.

@@ -74,7 +74,15 @@ elapsed=$((SECONDS - start))
     printf '%s\t%s\t%s\t%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "$rc" "$elapsed" >>"$LOG_FILE"
 } 2>/dev/null || true
 
+# Every answer is also appended to a transcript, because Claude Code shows
+# hook stderr only between turns: a block-mode prompt sent mid-turn would
+# otherwise be lost. Read it with: tail -20 ~/.codex-bridge/at_route_answers.log
+ANS_LOG="${AT_ROUTE_ANSWERS:-${LOG_FILE%/*}/at_route_answers.log}"
 if [[ "$rc" -eq 0 ]]; then
+  {
+    printf '\n=== %s %s (%s) %ss\nQ: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "$model" "$elapsed" "$question"
+    cat "$out_f"
+  } >>"$ANS_LOG" 2>/dev/null || true
   # Exit 2 blocks the prompt: the main model never runs, stderr is shown to the
   # operator, and nothing enters the conversation. Zero main-model cost.
   # @@ prefix or AT_ROUTE_MODE=relay injects the answer as context (relay mode).

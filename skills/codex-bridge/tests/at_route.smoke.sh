@@ -6,6 +6,7 @@ HOOK="$HERE/../scripts/at_route.sh"
 TMP="$(mktemp -d -t at_route_smoke.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
+export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
 pass=0; total=8
 
