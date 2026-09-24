@@ -11,6 +11,7 @@ Smoke test: [`skills/codex-bridge/tests/at_route.smoke.sh`](../skills/codex-brid
 |---|---|---|
 | `@haiku what does this flag do?` | Haiku | No. Side question. Answer is shown to you only. |
 | `@@haiku what does this flag do?` | Haiku | Yes. Answer is injected as context and the session model relays it. |
+| `~@haiku literal text` | Session model | Escape. The prompt reaches the session model exactly as typed, including the `~@`. |
 | `plain prompt` | Session model | Normal turn. Hook stays silent. |
 
 Aliases, case-insensitive:
@@ -47,8 +48,8 @@ Latency for a short question: about 5 to 6 seconds for both Claude and Codex ali
 1. Claude Code runs every `UserPromptSubmit` hook before the session model sees your prompt, passing the prompt as JSON on stdin.
 2. The hook matches `^(@@?)(alias)\s+(question)$`. No match: exit 0, print nothing.
 3. Claude aliases run `claude -p "<question>" --model <id>`. Codex aliases run `agent.sh submit --backend codex --model <id> --wait`, then `agent.sh result <job id>` for the answer text.
-4. Single `@`: answer goes to stderr and the hook exits 2. Exit 2 blocks the prompt, so the session model never runs, and stderr is shown to you.
-5. Double `@@`: answer goes to stdout and the hook exits 0. Stdout becomes extra context for the session model, with a one-line instruction to relay it.
+4. Single `@`: answer goes to stderr and the hook exits 2. Exit 2 blocks the prompt, so the session model never runs, and stderr is shown to you. The answer is framed in a box whose top line names the delegate, its model id and the elapsed seconds, so it is never mistaken for a session-model reply.
+5. Double `@@`: answer goes to stdout and the hook exits 0. Stdout becomes extra context for the session model, with a one-line instruction to relay it. The instruction tells the session model to begin its reply with `<alias> ▸` and then the answer verbatim.
 6. On any failure the hook prints the error as context and exits 0, so the session model answers the question itself.
 
 Recursion guard: the hook exports `AT_ROUTE_ACTIVE=1` around the nested `claude -p` call and exits immediately if that variable is already set. Without it the nested call would fire the same hook again.

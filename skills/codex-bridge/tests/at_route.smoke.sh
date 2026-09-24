@@ -7,7 +7,7 @@ TMP="$(mktemp -d -t at_route_smoke.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=6
+pass=0; total=8
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
@@ -36,13 +36,12 @@ mkstub "$TMP/ok" 0
 # block mode (default): answer on stderr, exit 2, stdout empty
 err="$(echo '{"prompt":"@Haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
 out="$(echo '{"prompt":"@Haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>/dev/null)"
-if [[ $rc -eq 2 && -z "$out" && "$err" == *STUB-OK* && "$err" == *"haiku, "* ]]; then
+if [[ $rc -eq 2 && -z "$out" && "$err" == *"┌─ haiku (claude-haiku-4-5-20251001)"* && "$err" == *"│ STUB-OK"* && "$err" == *"└─"* ]]; then
   ok "d stub success (block)"; else fail d "rc=$rc out=$out err=$err"; fi
 
 # relay mode: answer on stdout, exit 0
-total=$((total + 1))
 out="$(echo '{"prompt":"@Haiku what is 2+2"}' | AT_ROUTE_MODE=relay PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
-if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] answer from haiku (claude-haiku-4-5-20251001)"* ]]; then
+if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from delegate haiku (claude-haiku-4-5-20251001)"* && "$out" == *"haiku ▸"* ]]; then
   ok "d2 stub success (relay)"; else fail d2 "rc=$rc out=$out"; fi
 
 # (e) stub exits 3
@@ -53,8 +52,12 @@ if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" == *stub-s
 
 # (f) shared mode: @@ forces relay regardless of AT_ROUTE_MODE
 out="$(echo '{"prompt":"@@haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
-if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] answer from haiku (claude-haiku-4-5-20251001)"* ]]; then
+if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from delegate haiku (claude-haiku-4-5-20251001)"* && "$out" == *"haiku ▸"* ]]; then
   ok "f @@ shared mode"; else fail f "rc=$rc out=$out"; fi
+
+# (g) escape: ~@ prefix exits silently, passes prompt to session model
+out="$(echo '{"prompt":"~@haiku literal"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
+[[ $rc -eq 0 && -z "$out" ]] && ok "g escape ~@" || fail g "rc=$rc out=$out"
 
 echo "$pass/$total PASS"
 [[ $pass -eq $total ]]

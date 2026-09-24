@@ -275,11 +275,12 @@ Measured on "explain database connection pooling in about 150 words", `claude -p
 
 ### Lexicon
 
-The hook recognizes two syntaxes, distinguished by the number of `@` symbols:
+The hook recognizes three syntaxes:
 
 | Syntax | Mode | Description |
 |---|---|---|
 | `@<alias> <question>` | Block | Side question. Main model never runs; answer shown to operator only on stderr. Zero main-model cost. |
 | `@@<alias> <question>` | Relay | Shared question. Answer injected into main model context. Main model relays the answer to the operator. |
+| `~@<alias> <question>` | Escape | Bypass the hook. Prompt passed to session model exactly as typed, including the `~@` prefix. |
 
 All aliases (haiku, sonnet, opus, fable, astra, sol, terra, luna) are case-insensitive. The `@@` prefix forces relay mode regardless of the `AT_ROUTE_MODE` environment variable. If a single `@` is used, the mode defaults to block unless the environment variable `AT_ROUTE_MODE=relay` is set.

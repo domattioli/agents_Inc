@@ -14,6 +14,9 @@ input="$(cat)"
 prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
 [[ -z "$prompt" ]] && exit 0
 
+# Escape: ~@ prefix → exit 0, pass prompt to session model untouched
+[[ "$prompt" =~ ^~@ ]] && exit 0
+
 shopt -s nocasematch
 re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna)[[:space:]]+(.+)$'
 if [[ ! "$prompt" =~ $re ]]; then
@@ -79,15 +82,16 @@ if [[ "$rc" -eq 0 ]]; then
   [[ "$prefix" == "@@" ]] && mode="relay"
   [[ "${AT_ROUTE_MODE:-}" == "relay" && "$mode" != "relay" ]] && mode="relay"
   if [[ "$mode" == "relay" ]]; then
-    echo "[at_route] answer from ${alias_name} (${model}) below. Relay it to operator verbatim. Do not re-answer, do not reason, do not add commentary beyond one line."
+    echo "[at_route] Answer from delegate ${alias_name} (${model}) below. Begin your reply with the literal prefix \"${alias_name} ▸ \" and then relay the answer verbatim. Do not re-answer, do not reason, do not add commentary."
     echo "---"
     cat "$out_f"
     echo "---"
     exit 0
   fi
   {
-    echo "${alias_name}, ${elapsed}s"
-    cat "$out_f"
+    echo "┌─ ${alias_name} (${model}) · ${elapsed}s ─"
+    sed 's/^/│ /' "$out_f"
+    echo "└─"
   } >&2
   exit 2
 else
