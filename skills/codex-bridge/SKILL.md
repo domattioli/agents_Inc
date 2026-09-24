@@ -227,3 +227,34 @@ The bridge uses your ChatGPT subscription, so rate limits and API restrictions a
 The token file at `~/.codex-bridge/token` grants shell-level access to codex-bridge operations. Protect it as you would an SSH key or API token. Do not commit it to version control.
 
 **Host-classifier gotcha (ultra-tier / high-autonomy delegates):** dispatching an ultra-tier delegate (e.g. `astra`) through codex-bridge/workerbee with `--approve-for-me` has been blocked by Claude Code's host permission classifier even when the same flag on a lower-tier delegate (`terra`/`luna`) was not blocked. Best-guess cause: auto-approve combined with autonomous git-push/PR authority reads as higher risk to the classifier. Fix observed: one live, explicit in-session operator approval ("i approve") unblocked it immediately, no code or flag change needed. **Do not loop retries on this block** — surface it and ask the operator for a live approval instead.
+
+## @-routing hook (at_route.sh)
+
+`scripts/at_route.sh` is a Claude Code `UserPromptSubmit` hook. When a prompt starts with `@<alias> <question>`, the hook sends the question to a cheaper model before the main model sees the prompt. It then prints the answer as extra context and tells the main model to relay it verbatim. Prompts that do not match are ignored, and the hook prints nothing.
+
+The alias match is case-insensitive:
+
+| Alias | Backend | Model ID |
+|---|---|---|
+| haiku | `claude -p` | `claude-haiku-4-5-20251001` |
+| sonnet | `claude -p` | `claude-sonnet-5` |
+| opus | `claude -p` | `claude-opus-5-5` |
+| fable | `claude -p` | `claude-fable-5-1` |
+| astra | `agent.sh submit --backend codex --wait` | `gpt-6-astra` |
+| sol | same | `gpt-5.6-sol` |
+| terra | same | `gpt-5.6-terra` |
+| luna | same | `gpt-5.6-luna` |
+
+Each call has a 120-second limit, enforced with `perl` `alarm` so that GNU `timeout` is not needed. If a call fails, the hook prints the exit code and the stderr output, and asks the main model to answer the question itself. The hook always exits 0, so it never blocks a prompt. Each call adds one line to `~/.codex-bridge/at_route.log` with the UTC timestamp, alias, exit code and elapsed seconds.
+
+**Recursion guard.** The nested `claude -p` call would trigger the same hook again. The hook runs every nested call with `AT_ROUTE_ACTIVE=1` and exits at once when it sees that variable.
+
+**Codex aliases are best effort.** `--backend codex --wait` is currently broken because the daemon cannot find `codex` on its PATH (see Codex Limits). Until that is fixed, expect astra, sol, terra and luna to take the failure path.
+
+**Install.** Copy or link the script to `~/.claude/scripts/at_route.sh`. Then, in `~/.claude/settings.json`, add this entry to `hooks.UserPromptSubmit[0].hooks[]` directly after the `term_width.sh` entry:
+
+```json
+{"type": "command", "command": "bash ~/.claude/scripts/at_route.sh", "timeout": 130}
+```
+
+The hook needs `jq`. Without `jq` it does nothing. Test it with `bash skills/codex-bridge/tests/at_route.smoke.sh`; the test stubs `claude` and never calls a real model.
