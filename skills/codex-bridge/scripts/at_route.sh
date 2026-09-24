@@ -6,7 +6,8 @@ set -euo pipefail
 [[ "${AT_ROUTE_ACTIVE:-}" == "1" ]] && exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks (~/.local/bin/@luna -> this file) so agent.sh is found.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 LOG_FILE="${AT_ROUTE_LOG:-$HOME/.codex-bridge/at_route.log}"
 TIMEOUT_S="${AT_ROUTE_TIMEOUT:-120}"
 
