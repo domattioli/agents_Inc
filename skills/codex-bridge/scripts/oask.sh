@@ -17,9 +17,18 @@ KEY_FILE="$KEY_DIR/openrouter-key"
 USAGE_LOG="$KEY_DIR/usage.jsonl"
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Defaults
-MODEL="${MODEL:-deepseek/deepseek-v4-flash-0731:free}"
+if [[ -z "${MODEL:-}" ]]; then
+  set +e
+  MODEL=$(PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health pick-default --provider openrouter --task "${TASK:-summarize}")
+  PICK_STATUS=$?
+  set -e
+  if [[ $PICK_STATUS -ne 0 ]]; then
+    exit 3
+  fi
+fi
 RAW=false
 OASK_TIMEOUT="${OASK_TIMEOUT:-180}"
 OASK_CONNECT_TIMEOUT="${OASK_CONNECT_TIMEOUT:-10}"
@@ -40,6 +49,36 @@ check_spend_guard() {
       ;;
   esac
 }
+
+# Exit-trap outcome reporting: classifies the last HTTP response (if any) and
+# reports it via free_health, without altering the wrapper's own exit code.
+OASK_ATTEMPTED=false
+OASK_REPORT_STATUS=""
+OASK_REPORT_BODY_FILE=""
+oask_report_trap() {
+  local ec=$?
+  [[ "$OASK_ATTEMPTED" == true ]] || exit $ec
+  local outcome="error"
+  local retry=""
+  if [[ -n "$OASK_REPORT_STATUS" ]]; then
+    local classify_out
+    classify_out=$(PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health classify \
+      --status "$OASK_REPORT_STATUS" --body-file "${OASK_REPORT_BODY_FILE:-/dev/null}" 2>/dev/null) || classify_out=""
+    if [[ -n "$classify_out" ]]; then
+      outcome="${classify_out%% *}"
+      retry="${classify_out#* }"
+      [[ "$retry" == "-" ]] && retry=""
+    fi
+  fi
+  local retry_arg=()
+  [[ -n "$retry" ]] && retry_arg=(--retry-after "$retry")
+  PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
+    --provider openrouter --model "$MODEL" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" \
+    >/dev/null 2>/tmp/oask_report_err.$$ || echo "oask: health report failed" >&2
+  rm -f /tmp/oask_report_err.$$ "$OASK_REPORT_BODY_FILE" 2>/dev/null
+  exit $ec
+}
+trap oask_report_trap EXIT
 
 # Load key from env or file
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]]; then
@@ -185,6 +224,7 @@ PYTHON
 )
 
 # Make request
+OASK_ATTEMPTED=true
 HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/oask_response.json \
   -m "$OASK_TIMEOUT" \
   --connect-timeout "$OASK_CONNECT_TIMEOUT" \
@@ -195,6 +235,9 @@ HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/oask_response.json \
   -d "$BODY")
 
 RESPONSE=$(cat /tmp/oask_response.json)
+OASK_REPORT_STATUS="$HTTP_CODE"
+OASK_REPORT_BODY_FILE=$(mktemp)
+cp /tmp/oask_response.json "$OASK_REPORT_BODY_FILE" 2>/dev/null || echo -n "$RESPONSE" > "$OASK_REPORT_BODY_FILE"
 rm -f /tmp/oask_response.json
 
 # Check HTTP status
