@@ -83,3 +83,7 @@ Environment overrides:
 - The daemon's `--workdir` must exist. If it is deleted, every Codex alias fails with a misleading `codex CLI not found on PATH` error from `bridge.py`. Restart the daemon from a stable directory.
 - A delegate can refuse. Haiku declined a joke prompt during testing. The refusal is shown to you like any other answer.
 - Gemini, Mistral and OpenRouter aliases are not wired yet. The bridge has `gask.sh`, `mask.sh` and `oask.sh`, so adding them is a small change in the alias table.
+
+## Prior art
+
+Survey of similar tools and what is new here: [AT-ROUTE-PRIOR-ART.md](AT-ROUTE-PRIOR-ART.md). Short version: Claude Code hooks that pick a model per session or per subagent exist, and `auto-model-router` uses a `#model=` prompt tag, but none blocks the prompt and answers from the hook. The `@` versus `@@` split and the shared Claude plus Codex alias table appear to be new.

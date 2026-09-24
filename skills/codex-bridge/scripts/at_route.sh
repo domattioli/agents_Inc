@@ -86,8 +86,7 @@ if [[ "$rc" -eq 0 ]]; then
     exit 0
   fi
   {
-    echo "[at_route] ${alias_name} (${model}), ${elapsed}s. Not in conversation context."
-    echo "---"
+    echo "${alias_name}, ${elapsed}s"
     cat "$out_f"
   } >&2
   exit 2
