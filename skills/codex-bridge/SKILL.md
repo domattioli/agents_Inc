@@ -251,6 +251,8 @@ Each call has a 120-second limit, enforced with `perl` `alarm` so that GNU `time
 
 **Codex aliases are best effort.** `--backend codex --wait` is currently broken because the daemon cannot find `codex` on its PATH (see Codex Limits). Until that is fixed, expect astra, sol, terra and luna to take the failure path.
 
+Update 2026-09-23: the "codex CLI not found on PATH" error was a misreport. `bridge.py` catches `FileNotFoundError` from `subprocess.run`, and that error also fires when the daemon `--workdir` no longer exists. Restart with `up.sh --workdir <existing dir>` and the Codex aliases work. The hook now reads the job id from `submit --wait` and prints `agent.sh result <id>`, which is the answer text.
+
 **Install.** Copy or link the script to `~/.claude/scripts/at_route.sh`. Then, in `~/.claude/settings.json`, add this entry to `hooks.UserPromptSubmit[0].hooks[]` directly after the `term_width.sh` entry:
 
 ```json

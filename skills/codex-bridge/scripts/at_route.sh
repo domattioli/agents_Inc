@@ -51,8 +51,17 @@ if [[ "$kind" == "claude" ]]; then
   AT_ROUTE_ACTIVE=1 run_with_timeout claude -p "$question" --model "$model" \
     >"$out_f" 2>"$err_f" </dev/null || rc=$?
 else
+  # submit --wait prints job metadata; the answer text comes from `agent.sh result <id>`.
   AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/agent.sh" submit --backend codex \
     --model "$model" --wait "$question" >"$out_f" 2>"$err_f" </dev/null || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    job_id="$(awk -F': ' '/^id: /{print $2; exit}' "$out_f")"
+    if [[ -n "$job_id" ]]; then
+      AT_ROUTE_ACTIVE=1 "$SCRIPT_DIR/agent.sh" result "$job_id" >"$out_f" 2>>"$err_f" </dev/null || rc=$?
+    else
+      rc=1; echo "no job id in submit output" >>"$err_f"
+    fi
+  fi
 fi
 elapsed=$((SECONDS - start))
 
