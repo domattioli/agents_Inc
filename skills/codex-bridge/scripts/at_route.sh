@@ -89,9 +89,13 @@ if [[ "$rc" -eq 0 ]]; then
     exit 0
   fi
   {
-    echo "┌─ ${alias_name} (${model}) · ${elapsed}s ─"
-    sed 's/^/│ /' "$out_f"
-    echo "└─"
+    # AT_ROUTE_COLOR=1 wraps the box in ANSI cyan; experimental, depends on
+    # whether Claude Code passes escape codes from hook stderr through.
+    c=""; r=""
+    if [[ "${AT_ROUTE_COLOR:-0}" == "1" ]]; then c=$'\033[36m'; r=$'\033[0m'; fi
+    printf '%s┌─ %s (%s) · %ss ─%s\n' "$c" "$alias_name" "$model" "$elapsed" "$r"
+    sed "s/^/${c}│ /; s/\$/${r}/" "$out_f"
+    printf '%s└─%s\n' "$c" "$r"
   } >&2
   exit 2
 else
