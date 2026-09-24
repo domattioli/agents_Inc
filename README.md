@@ -98,7 +98,7 @@ Real dispatch prompts add more than a model name. The full list is 14 required e
 - **Effort level** — `low|medium|high|xhigh|max` (Claude) or the same plus `ultra` (Codex), defaulting to medium if you don't name one.
 - **Scope boilerplate** — repo-scoped writes only, no commit/push, no credential or cross-repo writes; commit/push authority stays with the run root.
 
-Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `CLAUDE.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
+Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `AGENTS.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
