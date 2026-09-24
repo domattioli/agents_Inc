@@ -79,12 +79,14 @@ Every call appends one line to `~/.codex-bridge/at_route.log`: UTC timestamp, al
 
 ## Install
 
+Run `skills/codex-bridge/scripts/install_at_route.sh`. It copies the hook to `~/.claude/scripts/at_route.sh` and creates the `@alias` symlinks. The copy exists because the repo path changes with branch checkouts and a hook pointing into the working tree silently stopped firing on 2026-09-23. The copy locates the bridge scripts through `AT_ROUTE_BRIDGE_DIR` or the default checkout path. Re-run the installer after any edit to `at_route.sh`.
+
 The `!` form needs one symlink per alias on PATH:
 
 ```bash
 mkdir -p ~/.local/bin && cd ~/.local/bin
 for a in haiku sonnet opus fable astra sol terra luna gemini mistral; do
-  ln -sf /Users/domattioli/Projects/agents_Inc/skills/codex-bridge/scripts/at_route.sh "@$a"
+  ln -sf ~/.claude/scripts/at_route.sh "@$a"
 done
 ```
 
@@ -96,7 +98,7 @@ Add the hook to `~/.claude/settings.json` under `hooks.UserPromptSubmit`. Put it
 ```json
 {
   "type": "command",
-  "command": "bash /Users/domattioli/Projects/agents_Inc/skills/codex-bridge/scripts/at_route.sh",
+  "command": "bash ~/.claude/scripts/at_route.sh",
   "timeout": 130
 }
 ```

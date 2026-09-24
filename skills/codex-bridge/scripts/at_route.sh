@@ -8,6 +8,12 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 # Resolve symlinks (~/.local/bin/@luna -> this file) so agent.sh is found.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# The hook may be installed as a copy under ~/.claude/scripts so it survives
+# branch switches in the repo. Bridge scripts (ask.sh, gask.sh, mask.sh) are
+# then found via AT_ROUTE_BRIDGE_DIR or the default checkout path.
+if [[ ! -x "$SCRIPT_DIR/ask.sh" ]]; then
+  SCRIPT_DIR="${AT_ROUTE_BRIDGE_DIR:-$HOME/Projects/agents_Inc/skills/codex-bridge/scripts}"
+fi
 LOG_FILE="${AT_ROUTE_LOG:-$HOME/.codex-bridge/at_route.log}"
 TIMEOUT_S="${AT_ROUTE_TIMEOUT:-120}"
 
