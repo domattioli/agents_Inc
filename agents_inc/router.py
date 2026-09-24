@@ -55,7 +55,8 @@ def _provider_routes(provider: str, task: str, tier: str) -> list[Route]:
 
 def pick_model_chain(task: str, tier: str, available: set[str], workspace_authorized: bool,
                      exclude_provider: str | None = None,
-                     prefer_provider: str | None = None) -> tuple[Route, ...]:
+                     prefer_provider: str | None = None, local_authorized: bool = False,
+                     local_only: bool = False) -> tuple[Route, ...]:
     """Return bounded candidates in retry order. OpenRouter auto:free is always last."""
     if tier not in _TABLE["tiers"]:
         return ()
@@ -63,18 +64,29 @@ def pick_model_chain(task: str, tier: str, available: set[str], workspace_author
     if prefer_provider in order:
         order.remove(prefer_provider)
         order.insert(0, prefer_provider)
+
+    # If local_only, restrict to ollama only
+    if local_only:
+        order = ["ollama"]
+
     routes: list[Route] = []
     for provider in order:
         if provider not in available or provider == exclude_provider:
             continue
-        if provider in _TABLE["optional"]:
+        if provider == "ollama":
+            # ollama gated on local_authorized instead of workspace_authorized; explicit selection required
+            if not (prefer_provider == "ollama" or local_only) or not local_authorized or task not in _TABLE["optional_allowed_tasks"]:
+                continue
+        elif provider in _TABLE["optional"]:
             if not workspace_authorized or task not in _TABLE["optional_allowed_tasks"]:
                 continue
         routes.extend(_provider_routes(provider, task, tier))
     return tuple(routes)
 
 def pick_model(task: str, tier: str, available: set[str], workspace_authorized: bool,
-               exclude_provider: str | None = None, prefer_provider: str | None = None) -> Route | None:
+               exclude_provider: str | None = None, prefer_provider: str | None = None,
+               local_authorized: bool = False, local_only: bool = False) -> Route | None:
     chain = pick_model_chain(task, tier, available, workspace_authorized,
-                             exclude_provider, prefer_provider)
+                             exclude_provider, prefer_provider, local_authorized=local_authorized,
+                             local_only=local_only)
     return chain[0] if chain else None
