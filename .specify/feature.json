@@ -2,7 +2,8 @@
   "feature_directories": [
     "specs/002-dispatch-graph-ledger",
     "specs/003-governance-slice",
-    "specs/010-persistent-exec-session"
+    "specs/010-persistent-exec-session",
+    "specs/012-free-tier-routing"
   ],
-  "feature_directory": "specs/010-persistent-exec-session"
+  "feature_directory": "specs/012-free-tier-routing"
 }

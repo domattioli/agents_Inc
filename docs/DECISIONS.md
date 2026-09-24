@@ -450,3 +450,11 @@ Source: operator approval this session, 2026-09-18.
 - **Constitution amendment.** Amends constitution P8, which called ten of the fourteen elements unconditional. Operator sign-off given this session. Constitution bumped 1.7.0 -> 1.8.0 (MINOR, widened scope on an existing principle).
 - **Label-collision fix.** `CLAUDE.md` and `skills/workerbee/SKILL.md` cited "D40" for the handoff-lint gate. D40 is an unrelated LESSON-CANDIDATE about a stale long-lived server process. The handoff-lint ruling is D41. The correct citation is D41; the stale "D40" references are corrected.
 - **Decoupling.** No path, URL, checkout, or name of the upstream private governance repo appears in canon or user-facing files. Historical entries in this file stay as written.
+
+## D43 — Main-session dispatches and the free-tier router (2026-09-23, status: accepted — operator ratified 2026-09-24)
+
+Source: spec 012 (free-tier routing), FR-014 and its Clarifications answer. Operator ratified 2026-09-24.
+
+- **Decision.** Main-session dispatches (the `Agent` tool and workerbee) do not consult the router. The harness cannot intercept an `Agent` tool call, so no router hook can run there.
+- **Governance.** Main-session free-tier use goes through `agent.sh submit --backend <free>`. `agent.sh` is a thin shim; `agent_runner.py:575-583` runs the `gask.sh`/`mask.sh`/`oask.sh` wrappers, whose exit traps report outcomes to backend health, so cooldowns and daily caps stay accurate.
+- **Scope.** Only the router's free-first ordering (spec 012 FR-010 to FR-012) is affected. Rung assignment for main-session dispatches still follows the coding-dispatch rules in `CLAUDE.md`.

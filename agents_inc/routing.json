@@ -2,12 +2,14 @@
   "required": ["claude", "codex"],
   "optional": ["gemini", "mistral", "openrouter"],
   "tiers": {
-    "grunt":       {"claude": "haiku",  "codex": "gpt-5.6-luna", "gemini": "gemini-2.5-flash", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free"},
+    "grunt":       {"claude": "haiku",  "codex": "gpt-5.6-luna", "gemini": "gemini-flash-lite-latest", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free"},
     "workhorse":   {"claude": "sonnet", "codex": "gpt-5.6-terra"},
     "orchestrator":{"claude": "opus",   "codex": "gpt-5.6-sol"},
     "executive":   {"claude": "fable",  "codex": "gpt-6-astra"}
   },
-  "task_tier": {"extract": "grunt", "summarize": "grunt", "draft": "grunt", "review": "workhorse", "adjudicate": "executive"},
-  "optional_allowed_tasks": ["extract", "summarize"],
+  "task_tier": {"extract": "grunt", "summarize": "grunt", "draft": "grunt", "review": "workhorse", "adjudicate": "executive", "classify": "grunt"},
+  "optional_allowed_tasks": ["extract", "summarize", "classify"],
+  "free_order": ["mistral", "gemini", "openrouter"],
+  "daily_caps": {"mistral": 500, "gemini": 200, "openrouter": 50},
   "optional_provider_wrappers": {"gemini":"skills/codex-bridge/scripts/gask.sh","mistral":"skills/codex-bridge/scripts/mask.sh","openrouter":"skills/codex-bridge/scripts/oask.sh"}
 }
