@@ -375,7 +375,13 @@ Real streaming parity would need an MCP server wrapping codex-bridge and
 exposing a streaming tool — different infrastructure, out of scope for a
 discipline skill. Do not re-litigate it as a doc gap.
 
-### Step 4: Chief of Staff triage — every report, every mode
+### Step 4: Triage delegate reports through a flash model
+
+In budget mode, route completed delegate reports to a standing flash-tier
+interlocutor. Forward the report **verbatim** via message; surface only
+what it marks ESCALATE.
+
+### Step 5: Chief of Staff triage — every report, every mode
 
 Session talking to operator = Chief of Staff (CoS, D43; charter
 `docs/governance/DELEGATION-MODEL.md`). Exec/delegate report never reaches
