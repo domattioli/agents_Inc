@@ -33,9 +33,17 @@ out="$(echo '{"prompt":"@haiku hi"}' | PATH="$TMP/empty" /bin/bash "$HOOK")"; rc
 
 # (d) stub success
 mkstub "$TMP/ok" 0
-out="$(echo '{"prompt":"@Haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
+# block mode (default): answer on stderr, exit 2, stdout empty
+err="$(echo '{"prompt":"@Haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+out="$(echo '{"prompt":"@Haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>/dev/null)"
+if [[ $rc -eq 2 && -z "$out" && "$err" == *STUB-OK* && "$err" == *"[at_route] haiku (claude-haiku-4-5-20251001)"* ]]; then
+  ok "d stub success (block)"; else fail d "rc=$rc out=$out err=$err"; fi
+
+# relay mode: answer on stdout, exit 0
+total=$((total + 1))
+out="$(echo '{"prompt":"@Haiku what is 2+2"}' | AT_ROUTE_MODE=relay PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
 if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] answer from haiku (claude-haiku-4-5-20251001)"* ]]; then
-  ok "d stub success"; else fail d "rc=$rc out=$out"; fi
+  ok "d2 stub success (relay)"; else fail d2 "rc=$rc out=$out"; fi
 
 # (e) stub exits 3
 mkstub "$TMP/bad" 3

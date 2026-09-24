@@ -71,10 +71,22 @@ elapsed=$((SECONDS - start))
 } 2>/dev/null || true
 
 if [[ "$rc" -eq 0 ]]; then
-  echo "[at_route] answer from ${alias_name} (${model}) below. Relay it to operator verbatim. Do not re-answer, do not reason, do not add commentary beyond one line."
-  echo "---"
-  cat "$out_f"
-  echo "---"
+  # Exit 2 blocks the prompt: the main model never runs, stderr is shown to the
+  # operator, and nothing enters the conversation. Zero main-model cost.
+  # AT_ROUTE_MODE=relay restores the old behaviour (answer injected as context).
+  if [[ "${AT_ROUTE_MODE:-block}" == "relay" ]]; then
+    echo "[at_route] answer from ${alias_name} (${model}) below. Relay it to operator verbatim. Do not re-answer, do not reason, do not add commentary beyond one line."
+    echo "---"
+    cat "$out_f"
+    echo "---"
+    exit 0
+  fi
+  {
+    echo "[at_route] ${alias_name} (${model}), ${elapsed}s. Not in conversation context."
+    echo "---"
+    cat "$out_f"
+  } >&2
+  exit 2
 else
   echo "[at_route] ${alias_name} call failed (exit ${rc}). Stderr:"
   echo '```'

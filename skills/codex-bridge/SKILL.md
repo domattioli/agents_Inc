@@ -260,3 +260,15 @@ Update 2026-09-23: the "codex CLI not found on PATH" error was a misreport. `bri
 ```
 
 The hook needs `jq`. Without `jq` it does nothing. Test it with `bash skills/codex-bridge/tests/at_route.smoke.sh`; the test stubs `claude` and never calls a real model.
+
+### Block mode is the default (2026-09-23)
+
+A measured relay run showed the main model rewriting the delegate's answer instead of relaying it, and a verbatim relay still costs output tokens equal to the answer length. So the hook now exits 2 on success: the prompt is blocked, the main model never runs, and the answer is shown to the operator on stderr. Nothing enters the conversation context, so treat `@alias` as a side question. Set `AT_ROUTE_MODE=relay` in the hook's environment to restore context injection (exit 0, answer on stdout) when the answer must be visible to the main model.
+
+Measured on "explain database connection pooling in about 150 words", `claude -p --output-format json`:
+
+| path | main-model output tokens | cost USD |
+|---|---|---|
+| Fable direct | 582 | 0.78 |
+| Haiku via hook + Fable relay turn | 351 (Fable rewrote, did not relay) + Haiku 0.009 | 0.60 |
+| Haiku via hook, block mode | 0 | 0.009 |
