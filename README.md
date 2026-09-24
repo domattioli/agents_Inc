@@ -116,7 +116,7 @@ Executive decides gates, accepts or rejects results, resolves conflicts, and han
 
 Automation can prepare, route, record, verify, and close routine work. Phases marked unattended may run without a live operator; Executive gates remain required for authority, ambiguity, risk, and acceptance.
 
-Delegation and support flow (Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
+Delegation and support flow (Owner, Chief of Staff, Exec, Super, and Worker roles across the nine speckit phases; the Chief of Staff was called Interlocutor before D43, and the diagram image still uses the old label): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
 
 **Grilling.** CEO decision sessions only. Their output is a ruling in [docs/DECISIONS.md](docs/DECISIONS.md) or delegation context for the next action. It is not a packaged execution step.
 
@@ -375,6 +375,14 @@ The demo runs a fake worker and prints the resulting decision records.
 skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
 ```
 
+3. Ask a cheaper model a side question from inside any Claude Code session, without switching sessions. The session model never runs, so the question costs about 1% of asking it directly:
+
+```text
+@haiku does the caveman plugin auto-update
+```
+
+The hook answers before the session model runs, so the session model spends zero tokens. Use `! @haiku ...` when you want the answer in context, at the cost of one session-model turn. Token comparison of every form: [docs/AT-ROUTE.md](docs/AT-ROUTE.md#which-form-saves-the-most-session-model-tokens). Aliases, savings table and install: [docs/AT-ROUTE.md](docs/AT-ROUTE.md).
+
 ### How it feels to use
 
 **Current workflow (today)**
@@ -422,6 +430,7 @@ No LICENSE file exists yet.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Binding rulings, rationale, and evidence |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Continuing the work in a fresh session |
 | [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) | Full supervision discipline |
+| [docs/AT-ROUTE.md](docs/AT-ROUTE.md) | `@alias` side questions to a cheaper model from inside a session, with measured savings |
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 

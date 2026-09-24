@@ -1,6 +1,6 @@
 ---
 name: workerbee
-version: 1.2.1
+version: 1.3.0
 benchmark: unverified_delegate_claims_accepted_per_session
 description: Use when asked for astra, sol, terra, luna, or a Codex delegate. Claude Agent cannot select these Codex models; use the installed agents-inc launcher. Covers supervision and verification.
 ---
@@ -380,6 +380,22 @@ discipline skill. Do not re-litigate it as a doc gap.
 In budget mode, route completed delegate reports to a standing flash-tier
 interlocutor. Forward the report **verbatim** via message; surface only
 what it marks ESCALATE.
+
+### Step 5: Chief of Staff triage — every report, every mode
+
+Session talking to operator = Chief of Staff (CoS, D43; charter
+`docs/governance/DELEGATION-MODEL.md`). Exec/delegate report never reaches
+operator raw. CoS verifies (Steps 2-3), then re-projects into DECIDE
+(decision bar: irreversible | money | externally visible | scope/goals),
+HANDLED (CoS call, vetoable), UNDERSTAND (context, full depth one step
+away). Lead w/ DECIDE. Delegate rule breaks + GREEN-on-RED always surface.
+`accelerate` skill installed -> may render the instrument; absent -> apply
+these rules by hand.
+
+Budget mode add-on: CoS may route completed delegate reports to a standing
+flash-tier triage helper. Forward the report **verbatim** via message; the
+helper pre-sorts, CoS still verifies + owns final wording. Surface only
+what survives as DECIDE/honesty items.
 
 Give delegates a matching instruction: tag operator-facing items
 `NEEDS-OPERATOR`, phrased as a direct question. Everything else is
@@ -794,6 +810,7 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 | `codex-bridge` | The mechanism this skill supervises. That skill owns transport, routing (`route.sh`), per-provider timeouts, job state and retries. This skill owns tier choice, trust, and honesty. Do not reimplement its dispatch here |
 | `caveman` | Agent-facing dispatch prompts are written at `ultra` level — the reader is a model |
 | `nested-notes` | Structures the supervisor's report back to the operator |
+| `accelerate` | Optional. Renders the Chief of Staff DECIDE / HANDLED / UNDERSTAND instrument (Step 4) |
 | `act-autonomously` | Sibling discipline skill for unattended routines; overlapping subagent-budget concerns |
 
 ## Files
@@ -802,6 +819,8 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 - `tests/benchmark.md` — measured baseline per version
 
 ## Version History
+
+- **v1.3.0** (2026-09-22) — Step 4 generalized from budget-mode flash triage to always-on Chief of Staff triage (D43): verify, then DECIDE / HANDLED / UNDERSTAND re-projection; flash helper kept as budget add-on.
 
 - **v1.2.1** (2026-09-18) — DelegateAgent MCP tool clarification. Step 3b
   (item 1) now notes that `--backend codex --wait` is broken for luna; use

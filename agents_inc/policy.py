@@ -20,8 +20,21 @@ def is_authorized(workspace: Path) -> bool:
     except (json.JSONDecodeError, OSError):
         return False
 
+def is_local_authorized(workspace: Path) -> bool:
+    f = workspace / ".workerbees" / "authorization.json"
+    if not f.exists():
+        return False
+    try:
+        return bool(json.loads(f.read_text()).get("local_only"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
 def check_dispatch(route: Route, workspace: Path, confidential: bool) -> None:
-    if route.provider in _TABLE["optional"] and confidential and not is_authorized(workspace):
+    if route.provider == "ollama" and confidential and not is_local_authorized(workspace):
+        raise PolicyError(
+            f"WB_LOCAL_AUTH_REQUIRED: ollama may not receive confidential input; "
+            f"grant per-workspace local authorization in {workspace}/.workerbees/authorization.json")
+    if route.provider in _TABLE["optional"] and route.provider != "ollama" and confidential and not is_authorized(workspace):
         raise PolicyError(
             f"WB_WORKSPACE_AUTH_REQUIRED: {route.provider} may not receive confidential input; "
             f"grant per-workspace authorization in {workspace}/.workerbees/authorization.json")

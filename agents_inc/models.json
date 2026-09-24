@@ -365,6 +365,42 @@
       "ctx_hint": 32000,
       "cost_class": "free",
       "status": "unavailable"
+    },
+    "qwen2.5-coder:3b": {
+      "vendor": "ollama",
+      "provider": "ollama",
+      "tier": "grunt",
+      "tasks_good": ["extract", "summarize"],
+      "tasks_bad": ["review-of-record", "orchestrate", "draft"],
+      "ctx_hint": 4096,
+      "cost_class": "local",
+      "status": "available",
+      "egress": "none",
+      "train_on_input": null
+    },
+    "qwen2.5-coder:7b": {
+      "vendor": "ollama",
+      "provider": "ollama",
+      "tier": "grunt",
+      "tasks_good": ["extract", "summarize"],
+      "tasks_bad": ["review-of-record", "orchestrate", "draft"],
+      "ctx_hint": 4096,
+      "cost_class": "local",
+      "status": "available",
+      "egress": "none",
+      "train_on_input": null
+    },
+    "qwen3:8b": {
+      "vendor": "ollama",
+      "provider": "ollama",
+      "tier": "grunt",
+      "tasks_good": ["extract", "summarize"],
+      "tasks_bad": ["review-of-record", "orchestrate", "draft"],
+      "ctx_hint": 4096,
+      "cost_class": "local",
+      "status": "available",
+      "egress": "none",
+      "train_on_input": null
     }
   }
 }

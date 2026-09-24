@@ -451,7 +451,18 @@ Source: operator approval this session, 2026-09-18.
 - **Label-collision fix.** `CLAUDE.md` and `skills/workerbee/SKILL.md` cited "D40" for the handoff-lint gate. D40 is an unrelated LESSON-CANDIDATE about a stale long-lived server process. The handoff-lint ruling is D41. The correct citation is D41; the stale "D40" references are corrected.
 - **Decoupling.** No path, URL, checkout, or name of the upstream private governance repo appears in canon or user-facing files. Historical entries in this file stay as written.
 
-## D43 — Main-session dispatches and the free-tier router (2026-09-23, status: accepted — operator ratified 2026-09-24)
+## D43 — Interlocutor becomes Chief of Staff, with a report-triage charter (2026-09-22)
+
+Source: operator instruction 2026-09-22, verbatim: "right now you are the interlocutor between me and the project exec. youre my right hand man, my chief of staff. you take the exec's report and you figure out what is important to me. kinda like how the accelerate skill works. i want this encoded in the architecture of agents_Inc".
+
+- **Rename.** The delegation-model role "Interlocutor" becomes **Chief of Staff** (CoS). "Interlocutor" is a retired synonym. Spec 010 and other dated records keep the old word as history.
+- **Charter.** The CoS takes the Executive's report and decides what reaches the operator. It verifies claims before relaying them, then sorts every item into DECIDE, HANDLED, or UNDERSTAND. Only items that are irreversible, spend money, are externally visible, or change scope or goals are DECIDE items. The CoS decides everything else itself and says so, and the operator can veto. Nothing is dropped: full detail stays one step away. Delegate rule breaks and GREEN-on-RED reports always reach the operator.
+- **Method.** Taken from the `accelerate` decision-instrument doctrine. That skill is an optional user-scope install; the rules are restated in the charter so they bind without it.
+- **Authority.** No automatic Task Authority over the Executive's work. The CoS controls what reaches the operator and makes below-bar calls. Any model may hold the role; normally it is the host session.
+- **Changed.** `CONTEXT.md` (new term), `docs/governance/DELEGATION-MODEL.md` 1.0.0 → 1.1.0 (rename, charter, Mermaid), `skills/workerbee/SKILL.md` 1.2.1 → 1.3.0 (Step 4 always-on CoS triage; budget flash helper kept as an add-on), `README.md` role list.
+- **Not done.** `docs/assets/delegation-model.png` still shows "Interlocutor" until it is regenerated; the Mermaid source wins.
+
+## D44 — Main-session dispatches and the free-tier router (2026-09-23, status: accepted — operator ratified 2026-09-24)
 
 Source: spec 012 (free-tier routing), FR-014 and its Clarifications answer. Operator ratified 2026-09-24.
 
