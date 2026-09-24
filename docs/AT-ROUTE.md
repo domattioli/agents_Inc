@@ -104,6 +104,10 @@ Environment overrides:
 - A delegate can refuse. Haiku declined a joke prompt during testing. The refusal is shown to you like any other answer.
 - Gemini, Mistral and OpenRouter aliases are not wired yet. The bridge has `gask.sh`, `mask.sh` and `oask.sh`, so adding them is a small change in the alias table.
 
+## OpenAI bench
+
+48-call bench across luna, terra, sol and astra with latency and token tables: [AT-ROUTE-BENCH.md](AT-ROUTE-BENCH.md). Short version: about 26k input tokens per fresh call, 5 to 25 seconds, zero metered cost under the ChatGPT subscription.
+
 ## Prior art
 
 Survey of similar tools and what is new here: [AT-ROUTE-PRIOR-ART.md](AT-ROUTE-PRIOR-ART.md). Short version: Claude Code hooks that pick a model per session or per subagent exist, and `auto-model-router` uses a `#model=` prompt tag, but none blocks the prompt and answers from the hook. The `@` versus `@@` split and the shared Claude plus Codex alias table appear to be new.
