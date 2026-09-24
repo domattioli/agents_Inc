@@ -7,7 +7,7 @@ TMP="$(mktemp -d -t at_route_smoke.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=5
+pass=0; total=6
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
@@ -50,6 +50,11 @@ mkstub "$TMP/bad" 3
 out="$(echo '{"prompt":"@haiku hi"}' | PATH="$TMP/bad:$PATH" bash "$HOOK")"; rc=$?
 if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" == *stub-stderr* && "$out" == *"Answer the operator's question yourself."* ]]; then
   ok "e stub failure"; else fail e "rc=$rc out=$out"; fi
+
+# (f) shared mode: @@ forces relay regardless of AT_ROUTE_MODE
+out="$(echo '{"prompt":"@@haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] answer from haiku (claude-haiku-4-5-20251001)"* ]]; then
+  ok "f @@ shared mode"; else fail f "rc=$rc out=$out"; fi
 
 echo "$pass/$total PASS"
 [[ $pass -eq $total ]]

@@ -375,6 +375,14 @@ The demo runs a fake worker and prints the resulting decision records.
 skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
 ```
 
+3. Ask a cheaper model a side question from inside any Claude Code session, without switching sessions. The session model never runs, so the question costs about 1% of asking it directly:
+
+```text
+@haiku does the caveman plugin auto-update?
+```
+
+Use `@@haiku ...` when the session model should see the answer. Aliases, savings table and install: [docs/AT-ROUTE.md](docs/AT-ROUTE.md).
+
 ### How it feels to use
 
 **Current workflow (today)**
@@ -422,6 +430,7 @@ No LICENSE file exists yet.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Binding rulings, rationale, and evidence |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Continuing the work in a fresh session |
 | [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) | Full supervision discipline |
+| [docs/AT-ROUTE.md](docs/AT-ROUTE.md) | `@alias` side questions to a cheaper model from inside a session, with measured savings |
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 

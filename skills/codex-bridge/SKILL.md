@@ -272,3 +272,14 @@ Measured on "explain database connection pooling in about 150 words", `claude -p
 | Fable direct | 582 | 0.78 |
 | Haiku via hook + Fable relay turn | 351 (Fable rewrote, did not relay) + Haiku 0.009 | 0.60 |
 | Haiku via hook, block mode | 0 | 0.009 |
+
+### Lexicon
+
+The hook recognizes two syntaxes, distinguished by the number of `@` symbols:
+
+| Syntax | Mode | Description |
+|---|---|---|
+| `@<alias> <question>` | Block | Side question. Main model never runs; answer shown to operator only on stderr. Zero main-model cost. |
+| `@@<alias> <question>` | Relay | Shared question. Answer injected into main model context. Main model relays the answer to the operator. |
+
+All aliases (haiku, sonnet, opus, fable, astra, sol, terra, luna) are case-insensitive. The `@@` prefix forces relay mode regardless of the `AT_ROUTE_MODE` environment variable. If a single `@` is used, the mode defaults to block unless the environment variable `AT_ROUTE_MODE=relay` is set.

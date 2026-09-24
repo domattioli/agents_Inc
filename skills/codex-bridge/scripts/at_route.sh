@@ -15,12 +15,13 @@ prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
 [[ -z "$prompt" ]] && exit 0
 
 shopt -s nocasematch
-re='^@(haiku|sonnet|opus|fable|astra|sol|terra|luna)[[:space:]]+(.+)$'
+re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna)[[:space:]]+(.+)$'
 if [[ ! "$prompt" =~ $re ]]; then
   exit 0
 fi
-alias_name="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')"
-question="${BASH_REMATCH[2]}"
+prefix="${BASH_REMATCH[1]}"
+alias_name="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
+question="${BASH_REMATCH[3]}"
 shopt -u nocasematch
 
 kind="claude"
@@ -73,8 +74,11 @@ elapsed=$((SECONDS - start))
 if [[ "$rc" -eq 0 ]]; then
   # Exit 2 blocks the prompt: the main model never runs, stderr is shown to the
   # operator, and nothing enters the conversation. Zero main-model cost.
-  # AT_ROUTE_MODE=relay restores the old behaviour (answer injected as context).
-  if [[ "${AT_ROUTE_MODE:-block}" == "relay" ]]; then
+  # @@ prefix or AT_ROUTE_MODE=relay injects the answer as context (relay mode).
+  mode="block"
+  [[ "$prefix" == "@@" ]] && mode="relay"
+  [[ "${AT_ROUTE_MODE:-}" == "relay" && "$mode" != "relay" ]] && mode="relay"
+  if [[ "$mode" == "relay" ]]; then
     echo "[at_route] answer from ${alias_name} (${model}) below. Relay it to operator verbatim. Do not re-answer, do not reason, do not add commentary beyond one line."
     echo "---"
     cat "$out_f"
