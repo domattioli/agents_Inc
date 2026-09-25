@@ -44,7 +44,7 @@ Each row is an ordered fallback chain. Take the leftmost backend not in cooldown
 
 One row never moves regardless of budget pressure: **verification stays with me.** A backend that cannot see what another backend read is not an independent check, so the reviewer must never be drawn from the same pool as the author.
 
-Code authorship *does* move in budget mode. The operator ratified this on 2026-09-02, overriding the earlier Claude-only rule. The trade being accepted: external models write code without the repo conventions a Claude subagent inherits from `CLAUDE.md`, so their output needs closer review. That review is the price of the token saving, and it is mine to pay — which is why the verification row above stays fixed.
+Code authorship *does* move in budget mode. The operator ratified this on 2026-09-02, overriding the earlier Claude-only rule. The trade being accepted: external models write code without the repo conventions a Claude subagent inherits from `AGENTS.md`, so their output needs closer review. That review is the price of the token saving, and it is mine to pay — which is why the verification row above stays fixed.
 
 ## Pivot rules
 

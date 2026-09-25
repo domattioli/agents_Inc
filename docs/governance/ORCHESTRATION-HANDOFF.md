@@ -39,7 +39,7 @@ Then: CONTEXT.md rows for Agent/Capability/Relationship/Decision/Gateway; DECISI
 - `mistral` key expired (operator rotation) → skip.
 
 ## Escalate to fable (SendMessage / ask operator) ONLY when
-- 2 failed checks on same task, same delegate (operator ruling 2026-09-06: retired old 3-attempt count, unified w/ `CLAUDE.md` "Failed check" definition of record — one number, one definition, not two).
+- 2 failed checks on same task, same delegate (operator ruling 2026-09-06: retired old 3-attempt count, unified w/ `AGENTS.md` "Project rules" definition of record — one number, one definition, not two).
 - A spec/architecture conflict needs a ruling not in `docs/DECISIONS.md` or `CONTEXT.md`.
 - Test count drops or a previously green test goes red for unclear reason.
 - A change would touch `routing.json` semantics, D7/D9 policy, or delete/rewrite `ledger.py`.

@@ -116,7 +116,7 @@ Open a non-Claude vendor only on one of:
     here, stated concretely, not as a preference. Legitimate examples:
     1M-context single-blob digest (gemini digest); genuine cross-vendor
     blind second opinion where same-vendor correlation is the thing being
-    avoided; Claude quota-paused (= a failed attempt, per CLAUDE.md).
+    avoided; Claude quota-paused (= a failed attempt, per AGENTS.md).
 (c) **Declared budget modality.** The operator has put this run in budget
     mode. Budget mode opens the free grunts (gpt-5.4-mini, OpenRouter free,
     Gemini free, Mistral free) for workhorse/grunt slots; it does NOT open
@@ -588,7 +588,7 @@ Agent-facing text = `caveman ultra`. Reader is a model.
 10. **Second-opinion / wheel-spin justification, paid vendors only.** Second
     opinion or escalation to a **paid/subscribed** vendor (any Anthropic
     `Agent`-tool model; any Codex-account model — astra/sol/terra/luna) MUST
-    name which trigger fired + why. Triggers defined ONCE in `CLAUDE.md` labor
+    name which trigger fired + why. Triggers defined ONCE in `AGENTS.md` labor
     rule ("Failed check — definition of record"), not restated here.
     Promotion/escalation triggers: (a) 2 failed checks, same (task, delegate);
     (b) provider quota pause = 1 failed attempt; (c) Lead assigns w/ recorded
@@ -616,7 +616,7 @@ Agent-facing text = `caveman ultra`. Reader is a model.
     changes). Bans rewriting when a smaller edit gets the identical result,
     not rewriting outright.
 14. **Lesson-learned handling: relay up the chain, never sideways.** Delegate
-    surfacing a finding w/ canon-doc implications (`CLAUDE.md`/`CONTEXT.md`/
+    surfacing a finding w/ canon-doc implications (`AGENTS.md`/`CONTEXT.md`/
     `docs/DECISIONS.md`/any `SKILL.md`/constitution) tags it
     `LESSON-CANDIDATE` in its report, not buried in prose. Relays exactly one
     rung up (Grunt→Workhorse→Orchestrator→Executive), never skipping. Each
@@ -628,7 +628,7 @@ Agent-facing text = `caveman ultra`. Reader is a model.
     operator** — one concise paragraph: lesson, evidence, scout's
     dedup/contradiction result, target canon file. Executive may land
     small/minor doc fixes itself; anything material needs operator sign-off,
-    same bar as amending `CLAUDE.md` or the constitution. Not a GitHub issue —
+    same bar as amending `AGENTS.md` or the constitution. Not a GitHub issue —
     relay up the rung chain, not file sideways (operator ruling 2026-09-06).
 
 These 14 fold into, not replace, the shape below. 10 + 11 conditional; the
@@ -696,12 +696,12 @@ needs. Both, not either.
 **Cross-repo dispatch, external session (upstream incident B gap — honest limit, not a
 claimed fix).** Incident B's actual root cause: a session working in a
 *different* repo (the upstream private governance repo), dispatching work about an agents_Inc issue, never
-read agents_Inc's `CLAUDE.md` — it had no local reason to know this
+read agents_Inc's `AGENTS.md` — it had no local reason to know this
 contract existed. This repo cannot reach into another repo's session and
 force a read; no such enforcement mechanism exists here (no hook, no CI
 gate that runs against external repos). The only thing achievable from
 this side: make the contract self-contained and say plainly, in the
-canonical source (`CLAUDE.md` § Delegation prompt contract), that any
+canonical source (`AGENTS.md` § Delegation prompt contract), that any
 session — this repo or another — dispatching work that touches an
 agents_Inc issue/task MUST fetch and apply this section first. Paste-and-
 tick block above is written to be copy-pasted whole into a dispatch prompt
@@ -858,7 +858,7 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
   detectable after the fact. Also: incident B root cause (external-repo
   session, no local reason to read this contract) cannot be closed from
   this side alone — added an explicit cross-repo fetch-first note to
-  `CLAUDE.md` and here as the smallest reachable fix, and corrected
+  `AGENTS.md` and here as the smallest reachable fix, and corrected
   checklist item 1's `(or no-Skill-tool stated)` wording, which read as a
   blanket escape hatch not present in the original 14-point canon.
 - **v1.1** (2026-09-05) — Adds Step 1a (MODEL ROSTER: nickname → slug →
