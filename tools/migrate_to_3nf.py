@@ -26,7 +26,7 @@ def sha256_file(path: Path) -> str:
 
 def migrate_ledger(workspace: Path, store, source_id: str, dry_run: bool = False) -> dict:
     """Migrate JSONL ledger to 3NF store. Idempotent. Returns counts."""
-    from workerbees import ledger as ledger_module
+    from agents_inc import ledger as ledger_module
     import sqlite3
 
     ledger = ledger_module.load(workspace)
@@ -279,7 +279,7 @@ def main():
     source_id = combined_sha[:16]
 
     # Create or ensure artifact entry
-    from workerbees.store import Store
+    from agents_inc.store import Store
 
     with Store(db_path) as store:
         if not workspace.exists():

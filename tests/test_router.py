@@ -1,5 +1,5 @@
 import unittest
-from workerbees.router import pick_model, pick_model_chain, Route, _TABLE
+from agents_inc.router import pick_model, pick_model_chain, Route, _TABLE
 
 class RouterTest(unittest.TestCase):
     def test_cheap_extract_prefers_required_provider(self):
@@ -51,7 +51,7 @@ class RouterTest(unittest.TestCase):
         self.assertEqual([r.model for r in chain], ["gpt-5.6-terra"])
 
     def test_routing_top_level_keys_unchanged(self):
-        self.assertEqual(sorted(_TABLE), ["optional", "optional_allowed_tasks",
+        self.assertEqual(sorted(_TABLE), ["daily_caps", "free_order", "local", "optional", "optional_allowed_tasks",
             "optional_provider_wrappers", "required", "task_tier", "tiers"])
 
 if __name__ == "__main__":

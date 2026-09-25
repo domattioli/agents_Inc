@@ -4,7 +4,7 @@ Machine-facing doc. Caveman ultra.
 
 | Rule | Type | Use case | Negative case (must still prompt/deny) | Status |
 |---|---|---|---|---|
-| `Read(//Users/domattioli/.codex-bridge/**)` | Read | inspect codex-bridge config/logs/job state (`agent.sh`, usage db paths, job json) referenced across `skills/codex-bridge/` + `skills/workerbee/SKILL.md` | N/A — `Read(...)` scopes file-read only, no shell exec, no chaining vector. Tool-inherent safety, no adversarial probe needed | keep |
+| `Read(//Users/<you>/.codex-bridge/**)` | Read | inspect codex-bridge config/logs/job state (`agent.sh`, usage db paths, job json) referenced across `skills/codex-bridge/` + `skills/workerbee/SKILL.md` | N/A — `Read(...)` scopes file-read only, no shell exec, no chaining vector. Tool-inherent safety, no adversarial probe needed | keep |
 
 ## Removed 2026-09-06 (terra dispatch, feature 004)
 

@@ -5,14 +5,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from tests.test_gateway import FakeRegistry, fake_runner, make_envelope
-from workerbees.adapters.base import WorkerResult
-from workerbees.control import Control
-from workerbees.gateway import Gateway, GatewayResult
-from workerbees.envelope import Decision
-from workerbees.pipeline import _dispatch_worker
-from workerbees.policy import evaluate
-from workerbees.registry import Registry
-from workerbees.router import Route
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.control import Control
+from agents_inc.gateway import Gateway, GatewayResult
+from agents_inc.envelope import Decision
+from agents_inc.pipeline import _dispatch_worker
+from agents_inc.policy import evaluate
+from agents_inc.registry import Registry
+from agents_inc.router import Route
 
 
 class AstraGroup2Test(unittest.TestCase):

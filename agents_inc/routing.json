@@ -1,0 +1,35 @@
+{
+  "required": ["claude", "codex"],
+  "optional": ["gemini", "mistral", "openrouter", "ollama"],
+  "tiers": {
+    "grunt":       {"claude": "haiku",  "codex": "gpt-5.6-luna", "gemini": "gemini-flash-lite-latest", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free", "ollama": "qwen2.5-coder:3b"},
+    "workhorse":   {"claude": "sonnet", "codex": "gpt-5.6-terra"},
+    "orchestrator":{"claude": "opus",   "codex": "gpt-5.6-sol"},
+    "executive":   {"claude": "fable",  "codex": "gpt-6-astra"}
+  },
+  "task_tier": {"extract": "grunt", "summarize": "grunt", "draft": "grunt", "review": "workhorse", "adjudicate": "executive", "classify": "grunt"},
+  "optional_allowed_tasks": ["extract", "summarize", "classify"],
+  "free_order": ["mistral", "gemini", "openrouter"],
+  "daily_caps": {"mistral": 500, "gemini": 200, "openrouter": 50},
+  "optional_provider_wrappers": {"gemini":"skills/codex-bridge/scripts/gask.sh","mistral":"skills/codex-bridge/scripts/mask.sh","openrouter":"skills/codex-bridge/scripts/oask.sh"},
+  "local": {
+    "provider": "ollama",
+    "endpoint": "http://127.0.0.1:11434",
+    "opt_in_env": "WORKERBEES_LOCAL",
+    "models": ["qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen3:8b"],
+    "no_think_models": ["qwen3:8b"],
+    "num_ctx": 4096,
+    "max_input_tokens": 3072,
+    "num_predict": 512,
+    "connect_timeout_s": 2,
+    "deadline_s": 90,
+    "unload_verify_s": 5,
+    "worker_timeout_s": 100,
+    "watchdog_interval_s": 2,
+    "min_free_pct": 35,
+    "abort_free_pct": 25,
+    "max_swap_growth_pct": 2,
+    "model_headroom": 1.5,
+    "projection_margin_pct": 5
+  }
+}

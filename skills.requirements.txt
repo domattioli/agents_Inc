@@ -1,0 +1,31 @@
+# skills.requirements.txt
+# Agentic-AI analog of a Python requirements.txt: the runtime dependencies for
+# this repo are not pip packages, they are Claude Skill directories consumed
+# via SKILL.md. This file pins what version of each skill this repo expects
+# and where it came from, so drift is visible the same way a stale pip pin is.
+#
+# Format: <skill-name>==<version> ; source=<kind> [comments]
+# version is the skill's own SKILL.md frontmatter `version:` field, or
+# "unpinned" if that skill has not adopted the version field yet.
+#
+# Source kinds:
+# | kind | location | exit | notes |
+# |---|---|---|---|
+# | vendored | skills/<name>/ (repo tree) | OK | already present in this repo |
+# | optional-user-scope | $HOME/.claude/skills/<name> | OPTIONAL-MISSING (exit 0) | expected at user scope; absent = warning, not error |
+#
+# Install: bash scripts/install_skills.sh [--dry-run]
+# Reads this file and syncs vendored skills (verify present), checks optional-user-scope
+# (print status, no exit 1).
+
+codespace-exec==1.0.0        ; source=vendored (skills/codespace-exec)
+codex-bridge==1.0.0          ; source=vendored (skills/codex-bridge)
+doc-analysis==unpinned       ; source=vendored (skills/doc-analysis)
+grill-me==unpinned           ; source=optional-user-scope
+# https://github.com/mattpocock/skills (MIT, c55ee46)
+grill-with-docs==unpinned    ; source=optional-user-scope
+# https://github.com/mattpocock/skills (MIT, c55ee46)
+handoff-lint==1.0            ; source=optional-user-scope
+# D41 gate on every dispatch prompt + delegate report; user-scope install, never vendored
+speckit-pipeline==1.5-agents_Inc.2 ; source=vendored (operator exception D35, 2026-09-07 — see skills/speckit-pipeline/SKILL.md header)
+workerbee==1.1.4             ; source=vendored (skills/workerbee)
