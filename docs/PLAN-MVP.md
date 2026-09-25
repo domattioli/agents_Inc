@@ -4,7 +4,7 @@ Revised 2026-09-05 per docs/DECISIONS.md
 
 Author: gpt-6-astra, high effort, read-only. Dispatched 2026-09-05.
 Supervisor-verified citations: agent_runner.py:248, ask.sh:94, routing-policy.md:47,
-DomI session-resume / verify-independently / plugin-install-with-vendored-fallback, DomI CLAUDE.md:126.
+session-resume / verify-independently / plugin-install-with-vendored-fallback patterns from the author's private governance repo.
 Verified 2026-09-05: `--bare` disables OAuth (claude 2.1.261, `--bare -p` -> "Not logged in"). Unverified: external URL citations.
 
 **1. MVP CUT LINE**
@@ -60,9 +60,9 @@ Keep mechanism/judgment split -> add executable policy boundary. Prose chooses w
 | Memory adapter | Scoped retrieval, accepted facts, checkpoints | Documents/memory never become executable policy |
 | Governance | Spend cap, Workspace authorization, provider allowlist, data scope, acceptance requirements | Enforced before dispatch + artifact promotion |
 
-- Replace Codex transport -> direct CLI. Current runner calls `ask.sh`; wrapper posts localhost HTTP. Bridge removal requires adapter replacement, not file deletion alone. [runner:157](/Users/domattioli/Projects/workerbees/skills/codex-bridge/scripts/agent_runner.py:157), [ask.sh:94](/Users/domattioli/Projects/workerbees/skills/codex-bridge/scripts/ask.sh:94).
-- Replace `succeeded` meaning -> `returned`; Returned -> Worker process exited 0 and produced output, no correctness claim. Add `verified`, `needs-review`, `failed`, `interrupted`, `cancelled`; Verified requires Verifier + Reviewer gates. Current exit `0` promotes directly to `succeeded`. [runner:248](/Users/domattioli/Projects/workerbees/skills/codex-bridge/scripts/agent_runner.py:248).
-- Tier -> cheap / mid / frontier; model assignment by probe + benchmark. Rules route; failed checks promote within Spend cap, never Worker confidence. Optional provider missing key -> skip. Free -> zero incremental dollars per task. [routing-policy:47](/Users/domattioli/Projects/workerbees/skills/codex-bridge/reference/routing-policy.md:47).
+- Replace Codex transport -> direct CLI. Current runner calls `ask.sh`; wrapper posts localhost HTTP. Bridge removal requires adapter replacement, not file deletion alone.,.
+- Replace `succeeded` meaning -> `returned`; Returned -> Worker process exited 0 and produced output, no correctness claim. Add `verified`, `needs-review`, `failed`, `interrupted`, `cancelled`; Verified requires Verifier + Reviewer gates. Current exit `0` promotes directly to `succeeded`..
+- Tier -> cheap / mid / frontier; model assignment by probe + benchmark. Rules route; failed checks promote within Spend cap, never Worker confidence. Optional provider missing key -> skip. Free -> zero incremental dollars per task..
 - One active job/workspace; delegation depth `1`; fresh process. Follow-up -> new job referencing selected prior evidence.
 - Driver -> Host session dispatching a tool-free Worker. Reviewer -> different vendor than Worker, checks consequential claims against original sources. Verifier -> deterministic code. Driver owns acceptance after gates; every route obeys Spend cap + Workspace authorization.
 - Transient failure -> one bounded retry. Quota exhaustion -> pause job + tell user; no paid API path. Auth/policy failure -> stop affected dispatch; missing Optional provider key skips provider. Interrupted dispatch -> reconcile process/result before retry.
@@ -112,10 +112,10 @@ Exactly eight runtime skills; one canonical source. Host -> Claude Code AND Code
 | Name | Purpose | Loading | Portability / source |
 |---|---|---|---|
 | `workerbees` | Entry contract; Tier routing; Spend cap + Workspace authorization | Always, ≤180 tokens | Portable; distilled workerbee rules |
-| `workerbees-setup` | Install, doctor, repair; Required provider login; Optional provider key UX | On-demand, ≤500 | Portable; DomI fallback/verification pattern |
+| `workerbees-setup` | Install, doctor, repair; Required provider login; Optional provider key UX | On-demand, ≤500 | Portable; fallback/verification pattern |
 | `workerbees-delegate` | Tool-free Worker dispatch; Returned candidate; Reviewer handoff | On-demand, ≤400 | Portable; mechanism/judgment split |
-| `workerbees-memory` | Resume, remember, correct, checkpoint | On-demand, ≤300 | Portable; DomI `session-resume` pattern |
-| `workerbees-verify` | Verifier checks + Reviewer gates; evidence receipt | Every result, on-demand, ≤450 | Portable; DomI `verify-independently`, adapted beyond code |
+| `workerbees-memory` | Resume, remember, correct, checkpoint | On-demand, ≤300 | Portable; `session-resume` pattern |
+| `workerbees-verify` | Verifier checks + Reviewer gates; evidence receipt | Every result, on-demand, ≤450 | Portable; `verify-independently`, adapted beyond code |
 | `workerbees-lawyer` | Legal document rubric | Selected Mode only, ≤300 | Portable; new domain pack |
 | `workerbees-scientist` | Scientific document rubric | Selected Mode only, ≤300 | Portable; new domain pack |
 | `workerbees-engineer` | Engineering document rubric | Selected Mode only, ≤300 | Portable; new domain pack |
@@ -127,9 +127,9 @@ Exactly eight runtime skills; one canonical source. Host -> Claude Code AND Code
 - START-HERE -> caveman-lite + nested-notes first draft; then write-like-scientist pass. Human-skimmable; no AI slop. Cover both Hosts, both Acceptance users, Required provider login, Optional provider skip/key path, Spend cap, Workspace authorization, recovery.
 - Key handling -> local setup code only. Agent opens provider key page; user types key into hidden local terminal prompt; code writes user `.env`. No key in agent-visible output, logs, receipts, chat, or model prompts; no agent reads user `.env`.
 - MCP -> optional future adapter. No universal MCP assumption; no MCP setup in acceptance path.
-- DomI take: `session-resume` -> bounded continuity; `verify-independently` -> checks before Worker report; `plugin-install-with-vendored-fallback` -> explicit fallback + verification. [resume:45](/Users/domattioli/Projects/DomI/skills/session-resume/SKILL.md:45), [verify:72](/Users/domattioli/Projects/DomI/skills/verify-independently/SKILL.md:72), [fallback:39](/Users/domattioli/Projects/DomI/skills/plugin-install-with-vendored-fallback/SKILL.md:39).
-- Convert principles into Workerbees functionality; no copied DomI skill trees or live sync dependency. DomI explicitly permits conversion; forbids downstream vendoring. [CLAUDE.md:126](/Users/domattioli/Projects/DomI/CLAUDE.md:126).
-- Adapt deliberately: DomI verifier excludes documentation; its Stop hook measures command occurrence, not correctness. Neither ships unchanged. [skill:34](/Users/domattioli/Projects/DomI/skills/verify-independently/SKILL.md:34), [hook:8](/Users/domattioli/Projects/DomI/scripts/hooks/stop_verify_gap_guard.sh:8).
+- Governance-repo take: `session-resume` -> bounded continuity; `verify-independently` -> checks before Worker report; `plugin-install-with-vendored-fallback` -> explicit fallback + verification.,,.
+- Convert principles into Workerbees functionality; no copied skill trees or live sync dependency. The governance repo explicitly permits conversion; forbids downstream vendoring..
+- Adapt deliberately: Governance-repo verifier excludes documentation; its Stop hook measures command occurrence, not correctness. Neither ships unchanged.,.
 
 **6. INSTALL/BOOTSTRAP DESIGN**
 
@@ -208,7 +208,7 @@ State -> `PREFLIGHT -> STAGED -> VERIFIED -> ACTIVE`; required-check failure -> 
 - Mutation tests -> forged quote, missing exception, wrong denominator, stale source, swapped matter, fake success receipt, injected source instruction -> required failure.
 - Release gate -> zero false accepts on seeded faults; all required fixture fields accounted for. Publish measured coverage; no extrapolated accuracy promise.
 - Acceptance user proof -> Tim documents to cited brief AND Dom engineer/scientist tasks, day 1; both Hosts + Required providers exercised; sample defect caught; clean draft produced; fresh process recalls checkpoint; interrupted setup rerun preserves state; missing Optional provider keys never block.
-- Existing workerbee rule supplies core principle -> supervisor-owned checks, known-good + known-bad controls. [workerbee:191](/Users/domattioli/Projects/workerbees/skills/workerbee/SKILL.md:191).
+- Existing workerbee rule supplies core principle -> supervisor-owned checks, known-good + known-bad controls..
 
 **9. BUILD ORDER**
 

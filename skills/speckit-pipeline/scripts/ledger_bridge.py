@@ -27,7 +27,7 @@ RUNG-TO-SCHEMA-TIER (2026-09-07): originally this bridge worked around the
 ledger's SQLite schema hardcoding the pre-D27 `cheap/mid/frontier` vocabulary
 -- a D27 rung name in `tier` raised a silently-swallowed IntegrityError. That
 was fixed at the source the same day: `docs/governance/SCHEMA-3NF.md`,
-`workerbees/routing.json`, and `workerbees/models.json` now natively use
+`agents_inc/routing.json`, and `agents_inc/models.json` now natively use
 `grunt/workhorse/orchestrator/executive`. This bridge just normalizes a rung
 name (accepting the D34 `Supervisor` synonym) to that same vocabulary --
 no bucket-mapping, no information loss. The precise rung is still folded
@@ -43,7 +43,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT))
 
-from workerbees import ledger  # noqa: E402
+from agents_inc import ledger  # noqa: E402
 
 _VALID_RUNGS = {"executive", "orchestrator", "workhorse", "grunt"}
 _SYNONYMS = {"supervisor": "orchestrator"}  # D34

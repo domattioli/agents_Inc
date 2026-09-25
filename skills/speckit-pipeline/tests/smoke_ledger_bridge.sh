@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test for resolve_rung.py + ledger_bridge.py -- the agents_for_dummies
-# synergy pieces added to the DomI fork (D35). Exercises the full
+# synergy pieces added to the upstream fork (D35). Exercises the full
 # rung-resolve -> dispatch -> return flow against an isolated temp
 # workspace (never touches this repo's real .workerbees/ ledger) and
 # asserts the rung-to-schema-tier fix actually persists to SQLite.
@@ -71,7 +71,7 @@ WORKERBEES_STORE=both python3 "$SCRIPT_DIR/ledger_bridge.py" dispatch \
 LINT_OK="$(python3 -c "
 import sys; sys.path.insert(0, '$SCRIPT_DIR/../../..')
 from pathlib import Path
-from workerbees import ledger
+from agents_inc import ledger
 l = ledger.load(Path('$TMPWS'))
 print(ledger.lint(l, source='sqlite', workspace=Path('$TMPWS')))
 ")"
@@ -92,7 +92,7 @@ WORKERBEES_STORE=both python3 "$SCRIPT_DIR/ledger_bridge.py" dispatch \
 LINT_FLAGGED="$(python3 -c "
 import sys; sys.path.insert(0, '$SCRIPT_DIR/../../..')
 from pathlib import Path
-from workerbees import ledger
+from agents_inc import ledger
 l = ledger.load(Path('$TMPWS'))
 findings = ledger.lint(l, source='sqlite', workspace=Path('$TMPWS'))
 print(any('$EXEC_NODE_NOGATE' in str(f) for f in findings))

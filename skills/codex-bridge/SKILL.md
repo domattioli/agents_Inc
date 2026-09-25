@@ -1,15 +1,15 @@
 ---
 name: codex-bridge
-description: Start/stop/query the local Codex HTTP bridge and send prompts to a persistent OpenAI Codex session. Use to offload bulk file digestion, log triage, and second-opinion debugging to GPT instead of spending Claude context. Triggers — "start the codex bridge", "ask codex", "codex bridge status".
+description: Use for astra, sol, terra, luna, or a Codex delegate. Installed direct launcher is required; Claude Agent cannot select these models. Bridge commands remain source-only.
 version: 1.0.1
 benchmark: claude_tokens_saved_per_offloaded_task
 ---
 
 # Codex Bridge
 
-Run `skills/codex-bridge/scripts/check_models.sh` for a local-only model/credential availability table.
-
-The Codex Bridge is a local HTTP server that exposes OpenAI's Codex model (GPT-4 or GPT-3.5) as a persistent session with memory. Use it to preserve context across multiple prompts without burning your Claude token budget on bulk file reading, log triage, or debugging second opinions.
+The HTTP bridge is a deferred, source-checkout-only feature. The supported
+cross-project path is the installed `agents-inc` direct Codex launcher; it
+runs a read-only, isolated command and does not start, stop, or inspect a daemon.
 
 ## When to Use
 
@@ -154,6 +154,8 @@ In `CODEX_BRIDGE_MODE=ultra`, the runner refuses Anthropic names and follows `ro
 `submit` accepts additive flags so a Codex-backed role (Executive/Supervisor rung) can be re-engaged within one mandate without re-briefing, instead of `codex exec` cold-starting every call. Full spec: `specs/010-persistent-exec-session/`.
 
 ```bash
+# NOTE: --backend codex --wait is broken (bridge daemon can't see codex on PATH) and superseded by the delegate-agent MCP tool for luna; other codex models still use this async path until wired into delegate-agent.
+
 # First engagement opens the mandate + role; a fresh provider session starts.
 agent.sh submit --backend codex --model gpt-6-astra --mandate run-123 --role executive --wait "brief..."
 
@@ -225,3 +227,60 @@ The bridge uses your ChatGPT subscription, so rate limits and API restrictions a
 The token file at `~/.codex-bridge/token` grants shell-level access to codex-bridge operations. Protect it as you would an SSH key or API token. Do not commit it to version control.
 
 **Host-classifier gotcha (ultra-tier / high-autonomy delegates):** dispatching an ultra-tier delegate (e.g. `astra`) through codex-bridge/workerbee with `--approve-for-me` has been blocked by Claude Code's host permission classifier even when the same flag on a lower-tier delegate (`terra`/`luna`) was not blocked. Best-guess cause: auto-approve combined with autonomous git-push/PR authority reads as higher risk to the classifier. Fix observed: one live, explicit in-session operator approval ("i approve") unblocked it immediately, no code or flag change needed. **Do not loop retries on this block** — surface it and ask the operator for a live approval instead.
+
+## @-routing hook (at_route.sh)
+
+`scripts/at_route.sh` is a Claude Code `UserPromptSubmit` hook. When a prompt starts with `@<alias> <question>`, the hook sends the question to a cheaper model before the main model sees the prompt. It then prints the answer as extra context and tells the main model to relay it verbatim. Prompts that do not match are ignored, and the hook prints nothing.
+
+The alias match is case-insensitive:
+
+| Alias | Backend | Model ID |
+|---|---|---|
+| haiku | `claude -p` | `claude-haiku-4-5-20251001` |
+| sonnet | `claude -p` | `claude-sonnet-5` |
+| opus | `claude -p` | `claude-opus-5-5` |
+| fable | `claude -p` | `claude-fable-5-1` |
+| astra | `agent.sh submit --backend codex --wait` | `gpt-6-astra` |
+| sol | same | `gpt-5.6-sol` |
+| terra | same | `gpt-5.6-terra` |
+| luna | same | `gpt-5.6-luna` |
+
+Each call has a 120-second limit, enforced with `perl` `alarm` so that GNU `timeout` is not needed. If a call fails, the hook prints the exit code and the stderr output, and asks the main model to answer the question itself. The hook always exits 0, so it never blocks a prompt. Each call adds one line to `~/.codex-bridge/at_route.log` with the UTC timestamp, alias, exit code and elapsed seconds.
+
+**Recursion guard.** The nested `claude -p` call would trigger the same hook again. The hook runs every nested call with `AT_ROUTE_ACTIVE=1` and exits at once when it sees that variable.
+
+**Codex aliases are best effort.** `--backend codex --wait` is currently broken because the daemon cannot find `codex` on its PATH (see Codex Limits). Until that is fixed, expect astra, sol, terra and luna to take the failure path.
+
+Update 2026-09-23: the "codex CLI not found on PATH" error was a misreport. `bridge.py` catches `FileNotFoundError` from `subprocess.run`, and that error also fires when the daemon `--workdir` no longer exists. Restart with `up.sh --workdir <existing dir>` and the Codex aliases work. The hook now reads the job id from `submit --wait` and prints `agent.sh result <id>`, which is the answer text.
+
+**Install.** Copy or link the script to `~/.claude/scripts/at_route.sh`. Then, in `~/.claude/settings.json`, add this entry to `hooks.UserPromptSubmit[0].hooks[]` directly after the `term_width.sh` entry:
+
+```json
+{"type": "command", "command": "bash ~/.claude/scripts/at_route.sh", "timeout": 130}
+```
+
+The hook needs `jq`. Without `jq` it does nothing. Test it with `bash skills/codex-bridge/tests/at_route.smoke.sh`; the test stubs `claude` and never calls a real model.
+
+### Block mode is the default (2026-09-23)
+
+A measured relay run showed the main model rewriting the delegate's answer instead of relaying it, and a verbatim relay still costs output tokens equal to the answer length. So the hook now exits 2 on success: the prompt is blocked, the main model never runs, and the answer is shown to the operator on stderr. Nothing enters the conversation context, so treat `@alias` as a side question. Set `AT_ROUTE_MODE=relay` in the hook's environment to restore context injection (exit 0, answer on stdout) when the answer must be visible to the main model.
+
+Measured on "explain database connection pooling in about 150 words", `claude -p --output-format json`:
+
+| path | main-model output tokens | cost USD |
+|---|---|---|
+| Fable direct | 582 | 0.78 |
+| Haiku via hook + Fable relay turn | 351 (Fable rewrote, did not relay) + Haiku 0.009 | 0.60 |
+| Haiku via hook, block mode | 0 | 0.009 |
+
+### Lexicon
+
+The hook recognizes three syntaxes:
+
+| Syntax | Mode | Description |
+|---|---|---|
+| `@<alias> <question>` | Block | Side question. Main model never runs; answer shown to operator only on stderr. Zero main-model cost. |
+| `@@<alias> <question>` | Relay | Shared question. Answer injected into main model context. Main model relays the answer to the operator. |
+| `~@<alias> <question>` | Escape | Bypass the hook. Prompt passed to session model exactly as typed, including the `~@` prefix. |
+
+All aliases (haiku, sonnet, opus, fable, astra, sol, terra, luna) are case-insensitive. The `@@` prefix forces relay mode regardless of the `AT_ROUTE_MODE` environment variable. If a single `@` is used, the mode defaults to block unless the environment variable `AT_ROUTE_MODE=relay` is set.

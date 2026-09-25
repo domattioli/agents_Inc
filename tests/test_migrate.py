@@ -35,7 +35,7 @@ class TestMigration(unittest.TestCase):
 
         Returns: workspace path
         """
-        from workerbees import ledger as ledger_module
+        from agents_inc import ledger as ledger_module
 
         workspace = self.temp_path / f"fixture_{name}"
         workspace.mkdir(parents=True, exist_ok=True)
@@ -134,7 +134,7 @@ class TestMigration(unittest.TestCase):
         workspace = self._create_ledger_fixture("sample-b")
 
         # Load original JSONL ledger
-        from workerbees import ledger as ledger_module
+        from agents_inc import ledger as ledger_module
         ledger_jsonl = ledger_module.load(workspace)
         mermaid_jsonl = ledger_module.to_mermaid(ledger_jsonl)
 
@@ -156,7 +156,7 @@ class TestMigration(unittest.TestCase):
         workspace = self._create_ledger_fixture("sample-a")
 
         # Load original JSONL ledger
-        from workerbees import ledger as ledger_module
+        from agents_inc import ledger as ledger_module
         ledger_jsonl = ledger_module.load(workspace)
         mermaid_jsonl = ledger_module.to_mermaid(ledger_jsonl)
 
@@ -244,7 +244,7 @@ class TestMigration(unittest.TestCase):
         """Gate C: Rollup from JSONL equals rollup from migrated store."""
         workspace = self._create_ledger_fixture("sample-b")
 
-        from workerbees import ledger as ledger_module
+        from agents_inc import ledger as ledger_module
 
         # Compute rollup from original JSONL
         ledger_jsonl = ledger_module.load(workspace)
@@ -267,7 +267,7 @@ class TestMigration(unittest.TestCase):
         """Gate D: Parentless probe node with edge_type='probes' migrates intact."""
         workspace = self._create_ledger_fixture("sample-b")
 
-        from workerbees import ledger as ledger_module
+        from agents_inc import ledger as ledger_module
 
         # Migrate
         self._run_migration(workspace)

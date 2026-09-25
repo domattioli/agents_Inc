@@ -423,3 +423,49 @@ caveman-ultra (operator instruction):
 - rule going forward: before trusting ANY live-acceptance-run result against a long-lived server proc, check proc start-time >= last-commit-time of the file(s) it serves, OR force-restart first. Stale server = false positive/negative, indistinguishable from a real defect w/o this check.
 - canon-check: not yet checked vs prior LESSON-CANDIDATEs above (no budget at time of surfacing). flag only.
 - src: T040 execution, session 01JRnYrBKuQqFQQVYQZabPxP, full transcript `specs/010-persistent-exec-session/evidence/quickstart-2026-09-12.txt`.
+
+## D41 — Handoff lint gate on every dispatch prompt and delegate report (2026-09-17)
+
+Source: operator instruction 2026-09-17, relaying a Fable 5.1 design from another session on whether an Opus→Fable handoff "linter or pruner" should exist. Verdict encoded as given: yes, narrow, deterministic, lint-and-reject only.
+
+- **What.** Every dispatch prompt (down) and every delegate report (up) passes DomI `handoff-lint` before it is sent / before its claims are acted on. Six mechanical rules:
+  - H1 social padding (greetings, "great question", request restated back, closing offers)
+  - H2 provenance tags — every claim `[verified]` / `[inferred]` / `[assumed]`; an inference arriving as a fact is the worst handoff failure
+  - H3 dangling references — "the file", "as discussed", nothing self-contained in the message
+  - H4 task contract — goal, constraints, done, out of scope; missing fields fail rather than get guessed (dispatch profile only)
+  - H5 dedupe — identical blocks pasted twice, same instruction restated (restatements can conflict)
+  - H6 verbatim — errors paraphrased instead of quoted; unclosed code fence
+- **What it never does.** Rewrite the message (both sides must see the same text, or multi-agent debugging becomes archaeology). Touch hedges or reasoning (deleting "I'm not sure, but" deletes information; the *why* is what handles the unanticipated case). Judge truth or clarity — those stay with the models.
+- **Relation to the 14-element contract.** Complement, not replacement. `check_dispatch_prompt.py` verifies this repo's 14 elements are present; `handoff-lint` verifies generic handoff hygiene. Both run; not a 15th element (that would need its own ruling).
+- **Where.** Tool lives in DomI (`skills/handoff-lint/`, stdlib python, tests + smoke in DomI CI). Installed here at user scope via `skills.requirements.txt`, never vendored (CLAUDE.md § Never). Wiring: `CLAUDE.md` § Delegation prompt contract (gate paragraph), `skills/workerbee/SKILL.md` Step 11 (mechanical gate, both directions; v1.1.3 → v1.1.4), `CONTEXT.md` (glossary term "Handoff lint").
+- **Not done.** No hook or CI gate can force this on an external session dispatching into agents_Inc (same honest limit as DomI#10). No auto-fix path — by design, and none should be added.
+- **Superseded in part by D42.** Handoff-lint is now optional and no longer sourced from a private repo.
+
+## D42 — Third-party skill provenance, conditional caveman/handoff-lint, D41 citation fix, upstream decoupling (2026-09-18)
+
+Source: operator approval this session, 2026-09-18.
+
+- **Third-party provenance.** `grill-me` and `grill-with-docs` originate from github.com/mattpocock/skills (MIT). This repo's copies carried no attribution, so they are removed from `skills/` and re-listed as optional user-scope externals citing that upstream URL only. `caveman` originates from github.com/JuliusBrussee/caveman (MIT, except engine dirs under BSL-1.1) and is never vendored here.
+- **Conditional third-party tools.** Caveman is third-party and may not be installed, so delegation-prompt-contract element 1 becomes CONDITIONAL: if the caveman skill is installed, invoke it; if absent, emit the line `caveman NOT installed -> checked by hand` and continue. The handoff-lint gate gets the same treatment: if installed, run it; if absent, say so and continue. The in-repo `skills/workerbee/scripts/check_dispatch_prompt.py` check stays MANDATORY and unconditional. The softening applies only to those two third-party tools, never to the in-repo check.
+- **Constitution amendment.** Amends constitution P8, which called ten of the fourteen elements unconditional. Operator sign-off given this session. Constitution bumped 1.7.0 -> 1.8.0 (MINOR, widened scope on an existing principle).
+- **Label-collision fix.** `CLAUDE.md` and `skills/workerbee/SKILL.md` cited "D40" for the handoff-lint gate. D40 is an unrelated LESSON-CANDIDATE about a stale long-lived server process. The handoff-lint ruling is D41. The correct citation is D41; the stale "D40" references are corrected.
+- **Decoupling.** No path, URL, checkout, or name of the upstream private governance repo appears in canon or user-facing files. Historical entries in this file stay as written.
+
+## D43 — Interlocutor becomes Chief of Staff, with a report-triage charter (2026-09-22)
+
+Source: operator instruction 2026-09-22, verbatim: "right now you are the interlocutor between me and the project exec. youre my right hand man, my chief of staff. you take the exec's report and you figure out what is important to me. kinda like how the accelerate skill works. i want this encoded in the architecture of agents_Inc".
+
+- **Rename.** The delegation-model role "Interlocutor" becomes **Chief of Staff** (CoS). "Interlocutor" is a retired synonym. Spec 010 and other dated records keep the old word as history.
+- **Charter.** The CoS takes the Executive's report and decides what reaches the operator. It verifies claims before relaying them, then sorts every item into DECIDE, HANDLED, or UNDERSTAND. Only items that are irreversible, spend money, are externally visible, or change scope or goals are DECIDE items. The CoS decides everything else itself and says so, and the operator can veto. Nothing is dropped: full detail stays one step away. Delegate rule breaks and GREEN-on-RED reports always reach the operator.
+- **Method.** Taken from the `accelerate` decision-instrument doctrine. That skill is an optional user-scope install; the rules are restated in the charter so they bind without it.
+- **Authority.** No automatic Task Authority over the Executive's work. The CoS controls what reaches the operator and makes below-bar calls. Any model may hold the role; normally it is the host session.
+- **Changed.** `CONTEXT.md` (new term), `docs/governance/DELEGATION-MODEL.md` 1.0.0 → 1.1.0 (rename, charter, Mermaid), `skills/workerbee/SKILL.md` 1.2.1 → 1.3.0 (Step 4 always-on CoS triage; budget flash helper kept as an add-on), `README.md` role list.
+- **Not done.** `docs/assets/delegation-model.png` still shows "Interlocutor" until it is regenerated; the Mermaid source wins.
+
+## D44 — Main-session dispatches and the free-tier router (2026-09-23, status: accepted — operator ratified 2026-09-24)
+
+Source: spec 012 (free-tier routing), FR-014 and its Clarifications answer. Operator ratified 2026-09-24.
+
+- **Decision.** Main-session dispatches (the `Agent` tool and workerbee) do not consult the router. The harness cannot intercept an `Agent` tool call, so no router hook can run there.
+- **Governance.** Main-session free-tier use goes through `agent.sh submit --backend <free>`. `agent.sh` is a thin shim; `agent_runner.py:575-583` runs the `gask.sh`/`mask.sh`/`oask.sh` wrappers, whose exit traps report outcomes to backend health, so cooldowns and daily caps stay accurate.
+- **Scope.** Only the router's free-first ordering (spec 012 FR-010 to FR-012) is affected. Rung assignment for main-session dispatches still follows the coding-dispatch rules in `CLAUDE.md`.

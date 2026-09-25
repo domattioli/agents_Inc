@@ -222,6 +222,10 @@ __marimo__/
 # patterns. This project's whole premise is that keys live in files and
 # never reach a repo, a log, or a model prompt — so block them by shape.
 *key*
+# source modules, not credentials (CI import errors otherwise)
+!workerbees/keys.py
+!agents_inc/keys.py
+!tests/test_keys.py
 !*.pub
 *secret*
 *token*
