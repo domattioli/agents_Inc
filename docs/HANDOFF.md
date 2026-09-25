@@ -31,7 +31,7 @@
 3. `docs/HOW-IT-WORKS.md`: Describes the system in compressed form.
 4. `docs/START-HERE.md`: Explains the system to Tim.
 
-Do not read all 93 skills in `~/Projects/DomI`.
+Do not read every skill in the author's private governance repo.
 
 Mine `session-resume`, `verify-independently`, and `plugin-install-with-vendored-fallback` without vendoring them. Convert the principle instead.
 

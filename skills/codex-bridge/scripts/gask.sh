@@ -16,6 +16,39 @@ KEY_DIR="$HOME/.codex-bridge"
 KEY_FILE="$KEY_DIR/gemini-key"
 USAGE_LOG="$KEY_DIR/usage.jsonl"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Exit-trap outcome reporting state (merged with temp-file cleanup below).
+GASK_ATTEMPTED=false
+GASK_REPORT_STATUS=""
+GASK_REPORT_BODY_FILE=""
+GASK_CLEANUP_FILES=()
+gask_report_trap() {
+  local ec=$?
+  if [[ "$GASK_ATTEMPTED" == true ]]; then
+    local outcome="error"
+    local retry=""
+    if [[ -n "$GASK_REPORT_STATUS" ]]; then
+      local classify_out
+      classify_out=$(PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health classify \
+        --status "$GASK_REPORT_STATUS" --body-file "${GASK_REPORT_BODY_FILE:-/dev/null}" 2>/dev/null) || classify_out=""
+      if [[ -n "$classify_out" ]]; then
+        outcome="${classify_out%% *}"
+        retry="${classify_out#* }"
+        [[ "$retry" == "-" ]] && retry=""
+      fi
+    fi
+    local retry_arg=()
+    [[ -n "$retry" ]] && retry_arg=(--retry-after "$retry")
+    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
+      --provider gemini --model "${MODEL:-gemini-3.8-flash}" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" \
+      >/dev/null 2>/tmp/gask_report_err.$$ || echo "gask: health report failed" >&2
+    rm -f /tmp/gask_report_err.$$ 2>/dev/null
+  fi
+  rm -f "${GASK_CLEANUP_FILES[@]}" 2>/dev/null
+  exit $ec
+}
+trap gask_report_trap EXIT
 
 # Defaults
 MODEL=""
@@ -225,7 +258,7 @@ TOTAL_SIZE=$(echo "$BODY_OUTPUT" | jq -r '.size')
 # POST to Gemini API
 # Use temp file for body to avoid ARG_MAX overflow on large blobs
 BODY_FILE=$(mktemp)
-trap 'rm -f "$BODY_FILE"' EXIT
+GASK_CLEANUP_FILES+=("$BODY_FILE")
 echo -n "$BODY_JSON" > "$BODY_FILE"
 chmod 600 "$BODY_FILE"
 
@@ -234,8 +267,9 @@ ENDPOINT="https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generat
 # Capture response + HTTP code separately
 RESPONSE_FILE=$(mktemp)
 HTTP_CODE_FILE=$(mktemp)
-trap 'rm -f "$RESPONSE_FILE" "$HTTP_CODE_FILE"' EXIT
+GASK_CLEANUP_FILES+=("$RESPONSE_FILE" "$HTTP_CODE_FILE")
 
+GASK_ATTEMPTED=true
 set +e
 curl -s -o "$RESPONSE_FILE" -w '%{http_code}' \
   -H "Content-Type: application/json" \
@@ -259,10 +293,13 @@ fi
 
 HTTP_CODE=$(cat "$HTTP_CODE_FILE")
 RESPONSE=$(cat "$RESPONSE_FILE")
+GASK_REPORT_STATUS="$HTTP_CODE"
+GASK_REPORT_BODY_FILE="$RESPONSE_FILE"
 
 # Check transport failure (empty code or non-numeric)
 if [[ -z "$HTTP_CODE" ]] || ! [[ "$HTTP_CODE" =~ ^[0-9]{3}$ ]]; then
   echo "gemini error: cannot reach generativelanguage.googleapis.com" >&2
+  GASK_REPORT_STATUS=""
   exit 1
 fi
 

@@ -1,7 +1,7 @@
 import re
 import sqlite3
 import unittest
-from workerbees import schema
+from agents_inc import schema
 
 
 class TestSchema(unittest.TestCase):

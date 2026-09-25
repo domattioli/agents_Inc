@@ -1,0 +1,23 @@
+{
+  "error_404_unavailable_for_free": {
+    "status": 404,
+    "body": "{\"error\": {\"code\": \"model_unavailable\", \"message\": \"This model is unavailable for free\"}}"
+  },
+  "error_404_zdr": {
+    "status": 404,
+    "body": "{\"error\": {\"code\": \"endpoint_excluded\", \"message\": \"This endpoint is not available for your account. Check your zero-data-retention setting.\"}}"
+  },
+  "error_429_with_delay": {
+    "status": 429,
+    "body": "{\"error\": {\"code\": \"rate_limit_exceeded\", \"message\": \"Rate limit exceeded. Please retry in 53.02s\"}}",
+    "headers": {"Retry-After": "53"}
+  },
+  "error_429_no_delay": {
+    "status": 429,
+    "body": "{\"error\": {\"code\": \"rate_limit_exceeded\", \"message\": \"Rate limit exceeded.\"}}"
+  },
+  "error_503": {
+    "status": 503,
+    "body": "{\"error\": {\"code\": \"service_overloaded\", \"message\": \"Service temporarily unavailable. High demand.\"}}"
+  }
+}

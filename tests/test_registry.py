@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workerbees.registry import Registry, RegistryError, Agent, Capability, Relationship
+from agents_inc.registry import Registry, RegistryError, Agent, Capability, Relationship
 
 class TestRegistry(unittest.TestCase):
 

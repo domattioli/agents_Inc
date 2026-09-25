@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from workerbees.ledger import (
+from agents_inc.ledger import (
     Node, Finding, Ledger,
     record_dispatch, record_return, load,
     lint, to_json, from_json, to_mermaid, rollup

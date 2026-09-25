@@ -14,8 +14,8 @@ class TestModelsCatalog(unittest.TestCase):
     def setUpClass(cls):
         """Load models.json and routing.json once for all tests."""
         base_dir = Path(__file__).parent.parent
-        models_path = base_dir / "workerbees" / "models.json"
-        routing_path = base_dir / "workerbees" / "routing.json"
+        models_path = base_dir / "agents_inc" / "models.json"
+        routing_path = base_dir / "agents_inc" / "routing.json"
         doc_path = base_dir / "docs" / "free-openrouter-models.md"
 
         with open(models_path) as f:
@@ -66,7 +66,7 @@ class TestModelsCatalog(unittest.TestCase):
 
     def test_cost_class_values(self):
         """cost_class must be one of allowed values."""
-        allowed = {"free", "cheap", "mid", "premium"}
+        allowed = {"free", "cheap", "mid", "premium", "local"}
         for model_id, profile in self.models_data["models"].items():
             self.assertIn(
                 profile["cost_class"],

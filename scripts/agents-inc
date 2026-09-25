@@ -1,0 +1,3 @@
+#!/bin/sh
+# Developer bootstrap only. Installed launchers live in the active release.
+exec "${PYTHON:-python3}" -m agents_inc.install.cli "$@"

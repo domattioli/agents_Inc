@@ -79,6 +79,40 @@ Not an endorsement. A shape.
 - **Dispatch rule:** Decide what may leave the machine, write it down, and put forbidden paths in every dispatch prompt.
 - **Verification:** Use a hand-labeled sample scored the same way every time because law has no test suite.
 
+## Local provider: ollama (pilot)
+
+- Status
+  - **Off by default.** It runs only when `WORKERBEES_LOCAL=1` is set and the caller asks for it by name (`worker_provider="ollama"` or `local_only=True`).
+  - **Scope:** grunt tier, `extract` and `summarize` only. Never review, draft, or adjudication work.
+- Setup
+  - Install and start the server: `brew install ollama`, then `brew services start ollama` (macOS). On Linux, use the distribution package or the official installer.
+  - Pull the default model by hand: `ollama pull qwen2.5-coder:3b`. The larger allowlisted models (`qwen2.5-coder:7b`, `qwen3:8b`) are optional and suit hosts with more RAM. The pipeline never pulls, starts, or restarts anything.
+  - Set `OLLAMA_MAX_LOADED_MODELS=1` in the *server's* environment. The client cannot set it.
+- Confidential work
+  - Add `"local_only": true` to `<workspace>/.workerbees/authorization.json`.
+  - `optional_providers` does not authorize ollama for confidential input, and `local_only` does not authorize any remote provider.
+  - A `local_only=True` brief never falls back to a remote provider and skips the remote reviewer. If ollama is unavailable, the brief is blocked with `WB_LOCAL_UNAVAILABLE`.
+  - The catalog field `egress: "none"` is metadata only; no code reads it to grant access. `train_on_input` is `null` (unknown) until someone records the provider's terms.
+- Memory guards
+  - All limits are percentages of total RAM, so the same settings work on any machine. They live in `agents_inc/routing.json` under `local`.
+  - **Admission:** all three must hold before the model loads.
+    - Free RAM ≥ `min_free_pct` (35%).
+    - Free bytes ≥ model size × `model_headroom` (1.5).
+    - Projected free RAM after load ≥ `abort_free_pct` + `projection_margin_pct` (25% + 5%). Projected free = free % − (model size × 1.5 ÷ total RAM). A model too large for the host is rejected upfront instead of loading and then aborting.
+  - **Measured on a 16 GiB Apple M4 (2026-09-22):** loading a model cut free RAM by 1.3–1.4 × its file size.
+    - `qwen2.5-coder:7b`: free RAM fell from 60% to 22% and swap grew 2.5% of RAM, so every job aborted. The new projected check rejects it on this host.
+    - `qwen2.5-coder:3b`: free RAM low point 43%, no swap growth, 4 s per extract job. This is the default.
+  - **Watchdog (every 2 s):** abort, unload, and trip the breaker when free RAM falls below `abort_free_pct` (25%), when swap use grows by more than `max_swap_growth_pct` (2%) of total RAM, or when the 90 s deadline passes.
+  - **Per request:** `keep_alive: 0`, context 4096 tokens, input ≤ 3072 tokens (estimated as bytes ÷ 3; larger inputs are rejected, not truncated), output ≤ 512 tokens.
+  - **One job at a time:** a second request gets `WB_LOCAL_BUSY` instead of waiting.
+  - Memory telemetry comes from `sysctl` on macOS and `/proc/meminfo` on Linux. On other systems telemetry is unavailable, so every job is rejected.
+- Recovery
+  - After an abort, a deadline, an error, or an unload that cannot be confirmed, the adapter writes a breaker file and refuses further local jobs.
+  - Check memory with `ollama ps`, then clear the breaker with `python3 -m agents_inc.adapters.ollama --reset`.
+  - The breaker lives in `$AGENTS_INC_LOCAL_STATE`, or `~/.cache/agents-inc/local` by default.
+- Origin
+  - Agreed in a fable–astra consensus debate on 2026-09-22 (see `skills/consensus-debate`). The operator changed the memory limits from absolute GiB to percentages.
+
 ## Extensibility smells
 
 | smell | why it costs |
