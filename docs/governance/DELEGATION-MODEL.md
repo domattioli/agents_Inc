@@ -5,7 +5,7 @@ version: 1.1.0
 
 # Delegation model
 
-Machine-facing. Caveman ultra. Canonical figure for P2 (labor ladder) + speckit pipeline phase ownership. Cross-referenced from `AGENTS.md` and `.specify/memory/constitution.md` P2 — not restated there (P0).
+Machine-facing. Caveman ultra. Canonical figure for P2 (labor ladder) + speckit pipeline phase ownership. Cross-referenced from `AGENTS.md` and `DomI/specs/consumers/agents_Inc/memory/constitution.md` P2 — not restated there (P0).
 
 Example request used throughout: "add input validation to the export endpoint."
 
