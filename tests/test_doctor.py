@@ -1,28 +1,33 @@
 import json, subprocess, tempfile, unittest
 from pathlib import Path
-from workerbees import doctor
-from workerbees.adapters.base import WorkerResult
+from agents_inc import doctor
+from agents_inc.adapters.base import WorkerResult
 
 def fake(status, out="", err=""):
     def r(cmd, stdin_text, timeout=300, cwd=None): return WorkerResult(status, out, err, 0 if status=="returned" else 1)
     return r
 
 class DoctorTest(unittest.TestCase):
-    def setUp(self): self.ws = Path(tempfile.mkdtemp())
+    def setUp(self):
+        self.ws = Path(tempfile.mkdtemp())
+        self.codex = self.ws / "codex"
+        self.codex.touch()
     def test_pong_is_ok(self):
         self.assertEqual(doctor.probe_cli("claude", runner=fake("returned", "PONG"))["status"], "ok")
     def test_not_logged_in(self):
         self.assertEqual(doctor.probe_cli("claude", runner=fake("returned", "Not logged in · Please run /login"))["status"], "WB_AUTH_REQUIRED")
     def test_missing_cli(self):
-        self.assertEqual(doctor.probe_cli("codex", runner=fake("failed", "", "WB_CLI_NOT_FOUND: x"))["status"], "WB_CLI_NOT_FOUND")
+        self.assertEqual(doctor.probe_cli("codex", runner=fake("failed", "", "WB_CLI_NOT_FOUND: x"), codex_executable=str(self.codex))["status"], "WB_CLI_NOT_FOUND")
+    def test_codex_without_executable_fails_closed(self):
+        self.assertEqual(doctor.probe_cli("codex", runner=fake("returned", "PONG"))["status"], "WB_CLI_NOT_FOUND")
     def test_quota(self):
-        self.assertEqual(doctor.probe_cli("codex", runner=fake("paused", "", "usage limit"))["status"], "WB_QUOTA_EXHAUSTED")
+        self.assertEqual(doctor.probe_cli("codex", runner=fake("paused", "", "usage limit"), codex_executable=str(self.codex))["status"], "WB_QUOTA_EXHAUSTED")
     def test_run_writes_cache_and_available_skips_failed(self):
         calls = {"n": 0}
         def r(cmd, stdin_text, timeout=300, cwd=None):
             calls["n"] += 1
             return WorkerResult("returned", "PONG" if cmd[0] == "claude" else "Not logged in", "", 0)
-        doctor.run(self.ws, runner=r)
+        doctor.run(self.ws, runner=r, codex_executable=str(self.codex))
         cache = json.loads((self.ws / ".workerbees" / "doctor.json").read_text())
         self.assertEqual(cache["results"]["codex"]["status"], "WB_AUTH_REQUIRED")
         self.assertEqual(doctor.available(self.ws, env_path=self.ws / "no.env", extra_env_paths=[]), {"claude"})
@@ -30,7 +35,7 @@ class DoctorTest(unittest.TestCase):
         def r(cmd, stdin_text, timeout=300, cwd=None):
             if cmd[0] == "claude": return WorkerResult("paused", "", "usage limit", 1)
             else: return WorkerResult("returned", "PONG", "", 0)
-        result = doctor.run(self.ws, runner=r)
+        result = doctor.run(self.ws, runner=r, codex_executable=str(self.codex))
         self.assertIn("paused", result)
         self.assertEqual(result["paused"], ["claude"])
         paused = doctor.quota_paused(self.ws)
@@ -51,17 +56,19 @@ class DoctorTest(unittest.TestCase):
 class DoctorLedgerTest(unittest.TestCase):
     def setUp(self):
         self.ws = Path(tempfile.mkdtemp())
+        self.codex = self.ws / "codex"
+        self.codex.touch()
 
     def test_doctor_run_creates_ledger_with_probe_nodes(self):
         """T022: doctor.run() records N probe nodes with edge_type='probes'."""
-        from workerbees.ledger import load
+        from agents_inc.ledger import load
         
         calls = {"n": 0}
         def r(cmd, stdin_text, timeout=300, cwd=None):
             calls["n"] += 1
             return WorkerResult("returned", "PONG", "", 0)
         
-        doctor.run(self.ws, runner=r)
+        doctor.run(self.ws, runner=r, codex_executable=str(self.codex))
         ledger = load(self.ws)
         
         # Should have 2 nodes (claude and codex probes)

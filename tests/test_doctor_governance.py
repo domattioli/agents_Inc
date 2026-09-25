@@ -1,11 +1,12 @@
 """Governance integration tests for doctor.py probes."""
 import json, os, sqlite3, tempfile, unittest, shutil
 from pathlib import Path
-from workerbees import doctor
-from workerbees.adapters.base import WorkerResult
-from workerbees.registry import Registry
-from workerbees.gateway import Gateway
-from workerbees.router import Route
+from agents_inc import doctor
+from agents_inc.adapters.base import WorkerResult
+from agents_inc.registry import Registry
+from agents_inc.gateway import Gateway
+from agents_inc.router import Route
+from codex_testkit import CODEX_EXECUTABLE
 
 
 def counter_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
@@ -33,7 +34,7 @@ class DoctorGovernanceOffModeTest(unittest.TestCase):
 
     def test_off_mode_probe_unchanged(self):
         """Off mode probe_cli returns ok status, ledger node written by doctor."""
-        from workerbees.ledger import load as load_ledger
+        from agents_inc.ledger import load as load_ledger
         run_id = "test-run-1"
         result = doctor.probe_cli("claude", runner=counter_runner, workspace=self.ws,
                                  run_id=run_id, governance_mode="off")
@@ -51,7 +52,7 @@ class DoctorGovernanceOffModeTest(unittest.TestCase):
     def test_off_mode_run_unchanged(self):
         """Off mode run() writes cache, behavior unchanged."""
         result = doctor.run(self.ws, providers=("claude", "codex"), runner=counter_runner,
-                           governance_mode="off")
+                           governance_mode="off", codex_executable=str(CODEX_EXECUTABLE))
         self.assertIn("results", result)
         self.assertEqual(len(result["results"]), 2)
         cache_file = self.ws / ".workerbees" / "doctor.json"
@@ -73,7 +74,7 @@ class DoctorGovernanceShadowModeTest(unittest.TestCase):
 
     def test_shadow_mode_probe_runs_decision_recorded(self):
         """Shadow mode: probe runs, decision recorded in control.sqlite."""
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="shadow")
         run_id = "test-run-shadow"
         result = doctor.probe_cli("claude", runner=gateway_pong_runner, workspace=self.ws,
@@ -104,8 +105,8 @@ class DoctorGovernanceEnforceModeTest(unittest.TestCase):
 
     def test_enforce_allowed_probe_runs_one_node(self):
         """Enforce allowed: probe runs, exactly one node per probe, parent_id=None."""
-        from workerbees.ledger import load as load_ledger
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc.ledger import load as load_ledger
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
         run_id = "test-run-enforce"
         result = doctor.probe_cli("claude", runner=gateway_pong_runner, workspace=self.ws,
@@ -125,12 +126,13 @@ class DoctorGovernanceEnforceModeTest(unittest.TestCase):
 
     def test_enforce_allowed_run_multiple_probes(self):
         """Enforce allowed: run() with multiple providers creates one ledger node each."""
-        from workerbees.ledger import load as load_ledger
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc.ledger import load as load_ledger
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         result = doctor.run(self.ws, providers=("claude", "codex"), runner=gateway_pong_runner,
-                           governance_mode="enforce", gateway=gateway, registry=registry)
+                           governance_mode="enforce", gateway=gateway, registry=registry,
+                           codex_executable=str(CODEX_EXECUTABLE))
         self.assertIn("results", result)
         self.assertEqual(len(result["results"]), 2)
 
@@ -164,7 +166,7 @@ class DoctorGovernanceEnforceDeniedTest(unittest.TestCase):
         # Copy workerbees to temp dir and remove the doctor delegates_to edge
         temp_wb = self.ws / "workerbees_temp"
         shutil.copytree(
-            str(Path(__file__).resolve().parent.parent / "workerbees"),
+            str(Path(__file__).resolve().parent.parent / "agents_inc"),
             str(temp_wb)
         )
 
@@ -207,14 +209,14 @@ class DoctorNoBootstrapRecursionTest(unittest.TestCase):
     def test_no_available_call_in_enforce_mode(self):
         """Enforce mode probe_cli never calls doctor.available()."""
         import unittest.mock
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         def pong_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
             return WorkerResult("returned", "PONG", "", 0)
 
         # Patch doctor.available to assert it's not called
-        with unittest.mock.patch("workerbees.doctor.available", wraps=doctor.available) as mock_avail:
+        with unittest.mock.patch("agents_inc.doctor.available", wraps=doctor.available) as mock_avail:
             result = doctor.probe_cli("claude", runner=pong_runner, workspace=self.ws,
                                      run_id="test", governance_mode="enforce",
                                      gateway=gateway, registry=registry)
@@ -225,13 +227,13 @@ class DoctorNoBootstrapRecursionTest(unittest.TestCase):
     def test_no_available_call_in_run_enforce(self):
         """Enforce mode run() never calls doctor.available()."""
         import unittest.mock
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         def pong_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
             return WorkerResult("returned", "PONG", "", 0)
 
-        with unittest.mock.patch("workerbees.doctor.available", wraps=doctor.available) as mock_avail:
+        with unittest.mock.patch("agents_inc.doctor.available", wraps=doctor.available) as mock_avail:
             result = doctor.run(self.ws, providers=("claude",), runner=pong_runner,
                                governance_mode="enforce", gateway=gateway, registry=registry)
             self.assertEqual(result["results"]["claude"]["status"], "ok")
@@ -276,7 +278,7 @@ class DoctorGovernanceModeEnvTest(unittest.TestCase):
     def test_mode_from_environ(self):
         """governance_mode=None defaults to WORKERBEES_GOVERNANCE env var."""
         os.environ["WORKERBEES_GOVERNANCE"] = "off"
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="off")
 
         result = doctor.probe_cli("claude", runner=lambda *a, **k: WorkerResult("returned", "PONG", "", 0),
@@ -297,7 +299,7 @@ class DoctorAvailableGovernanceWiringTest(unittest.TestCase):
 
     def test_available_with_governance_params(self):
         """T1: doctor.available() accepts and forwards governance params."""
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         def pong_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
@@ -305,7 +307,7 @@ class DoctorAvailableGovernanceWiringTest(unittest.TestCase):
 
         # Should not raise AttributeError; should return a sane set
         result = doctor.available(self.ws, governance_mode="enforce", gateway=gateway, registry=registry,
-                                 runner=pong_runner)
+                                 runner=pong_runner, codex_executable=str(CODEX_EXECUTABLE))
         self.assertIsInstance(result, set)
 
 
@@ -346,8 +348,8 @@ class DoctorProbePickModelNoneGuardTest(unittest.TestCase):
     def test_probe_cli_route_none_guard(self):
         """T3: probe_cli returns WB_NO_ELIGIBLE_ROUTE when pick_model returns None."""
         import unittest.mock
-        from workerbees import router
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc import router
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         def pong_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
@@ -375,8 +377,8 @@ class DoctorProbePickModelNoneCallCounterTest(unittest.TestCase):
     def test_probe_cli_route_none_no_runner_calls(self):
         """T3: when pick_model returns None, runner should not be called."""
         import unittest.mock
-        from workerbees import router
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc import router
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
         gateway = Gateway(workspace=self.ws, registry=registry, mode="enforce")
 
         def counting_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
@@ -406,8 +408,8 @@ class DoctorAvailablePipelineE2ETest(unittest.TestCase):
 
     def test_pipeline_brief_enforce_mode_no_available_arg(self):
         """T4: pipeline.brief() in enforce mode without available= param."""
-        from workerbees import pipeline
-        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "workerbees"))
+        from agents_inc import pipeline
+        registry = Registry.load(str(Path(__file__).resolve().parent.parent / "agents_inc"))
 
         def pong_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
             # For extract task, return a valid JSON response
@@ -419,7 +421,7 @@ class DoctorAvailablePipelineE2ETest(unittest.TestCase):
             self.src, "test_source", "strict", self.ws,
             runner=pong_runner, governance_mode="enforce",
             gateway=Gateway(workspace=self.ws, registry=registry, mode="enforce"),
-            registry=registry
+            registry=registry, codex_executable=str(CODEX_EXECUTABLE)
         )
         # Should return a BriefResult with no AttributeError
         self.assertIsNotNone(result)

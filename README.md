@@ -1,13 +1,15 @@
 # agents_Inc
 
-Pool free model capacity with existing Claude and Codex subscriptions to increase accepted work per dollar without lowering the verification standard.
+A corporate organization for AI agents: an executive plans, supervisor delegates, workers work. This WIP's goal is to get more juice out of your agentic-AI subscription.
+
+![Delegation and support flow: Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases](docs/assets/delegation-model.png)
 
 ![Status: pre-MVP / WIP](https://img.shields.io/badge/status-pre--MVP%20%2F%20WIP-orange)
 [![Tests](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml/badge.svg)](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-blue)](https://github.com/domattioli/agents_Inc/issues)
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670101.svg)](https://doi.org/10.5281/zenodo.22670101)
 
 **How to use:** `PYTHONPATH=. python3 tools/governance_demo.py --fake` — exercises governed routing, policy checks, and ledger recording with no provider keys required; see [Getting started](#getting-started) for real-provider setup.
 
@@ -26,13 +28,11 @@ Pool free model capacity with existing Claude and Codex subscriptions to increas
 
 ## 1. Why pool model capacity
 
-Delegated work can look successful while being wrong. In this project's own build history, two defects (a wrong `resume` argument order, a missing `--skip-git-repo-check`) passed a subagent's own smoke tests and were only caught when a supervisor read the code directly ([specs/001-codex-delegation-regime/tasks.md](specs/001-codex-delegation-regime/tasks.md)).
+Delegated model work can look done while being wrong. A flat pool of agents has no structure for catching that, so `agents_Inc` borrows a [corporate org chart](docs/governance/DELEGATION-MODEL.md): Owner, Secretary, Executive, Supervisor, Worker. Authority and review sit at whichever rung fits, not whichever model answers first.
 
-`agents_Inc` pools free Gemini, Mistral, and OpenRouter capacity with already-paid Claude and Codex subscriptions. The goal is more accepted work per dollar. Cheap models handle eligible routine work. Costlier models supervise, review, and take over only when evidence justifies escalation.
+Each rung sees only what its job needs: contract down, artifact trail back. Grilling aligns the Secretary with the Owner on the request before the Executive instantiates the process. Speckit gates that request through spec, plan, tasks, review. Bindle keeps every run's output addressable.
 
-An accepted task must pass independent checks. Savings and accuracy have not yet been measured, so the project does not claim a savings percentage or quality improvement ([docs/PLAN-MVP.md](docs/PLAN-MVP.md)).
-
-Formerly `agents_for_dummies`. The repository was renamed on 2026-09-07 without rewriting its history.
+Cheap models take routine work; costlier models supervise. Each rung's Secretary, Executive, or Supervisor validates the work reporting up to it before passing it further. [Savings are unmeasured, so none are claimed.](docs/PLAN-MVP.md) This is a structure for trust, not a number.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
@@ -98,23 +98,27 @@ Real dispatch prompts add more than a model name. The full list is 14 required e
 - **Effort level** — `low|medium|high|xhigh|max` (Claude) or the same plus `ultra` (Codex), defaulting to medium if you don't name one.
 - **Scope boilerplate** — repo-scoped writes only, no commit/push, no credential or cross-repo writes; commit/push authority stays with the run root.
 
-Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See `AGENTS.md` and `skills/workerbee/SKILL.md` Step 11 for the complete, current list.
+Add whichever of these you care about; the rest of the contract's elements are filled in automatically. See [AGENTS.md](AGENTS.md) and [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) Step 11 for the complete, current list.
+
+### Patterns and anti-patterns
+
+**Pattern.** Grill first, name rungs second, dispatch third. The Secretary grills the Owner until the request is sharp — see [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md) for the grilling step in the org chart. Only once "this refactor" has a real scope does the Owner name rungs: "Use Fable 5 as Executive and Opus 5 as Orchestrator for this refactor." Only then does work start — Executive interprets the sharpened request, spins up an Orchestrator/Supervisor, and the Supervisor decomposes and dispatches against the rung table above. Each step depends on the one before it; skipping ahead breaks the chain.
+
+**Anti-pattern.** Naming rungs and dispatching on a vague request, with no grilling step. Someone says "fix the export bug," and the session immediately assigns Fable-as-Executive/Opus-as-Orchestrator and starts dispatching — without ever sharpening what "fix" means, what "export bug" refers to, which endpoint is involved, or what counts as done. The delegation prompt contract's success gate and failure gate get set on that same unsharpened request, so they end up vague or wrong. A delegate can then pass its own gate while missing the actual intent — the same failure class Section 1 warns about: delegated work that looks done while being wrong.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
 ## 3. How the speckit pipeline and grilling are adapted here
 
-This repo's custom speckit binding runs an autonomous phase chain: `skills/speckit-pipeline/scripts/resolve_rung.py` resolves each phase's rung name live against `docs/governance/ROUTING-RANKING.md` (fails closed on an unknown rung), and `ledger_bridge.py` passively records every dispatch and return in an append-only ledger; phases themselves still run through the `Agent` tool.
+This repo's custom speckit binding runs an autonomous phase chain: [skills/speckit-pipeline/scripts/resolve_rung.py](skills/speckit-pipeline/scripts/resolve_rung.py) resolves each phase's rung name live against [docs/governance/ROUTING-RANKING.md](docs/governance/ROUTING-RANKING.md) (fails closed on an unknown rung), and [skills/speckit-pipeline/scripts/ledger_bridge.py](skills/speckit-pipeline/scripts/ledger_bridge.py) passively records every dispatch and return in an append-only ledger; phases themselves still run through the `Agent` tool.
 
 Executive decides gates, accepts or rejects results, resolves conflicts, and handles irreversible acts. Workhorse executes coding, research, and synthesis per gate, reports evidence, and never self-accepts. Separation keeps acceptance independent of the worker's own confidence.
 
 Automation can prepare, route, record, verify, and close routine work. Phases marked unattended may run without a live operator; Executive gates remain required for authority, ambiguity, risk, and acceptance.
 
-![Delegation and support flow: Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases](docs/assets/delegation-model.png)
+Delegation and support flow (Owner, Chief of Staff, Exec, Super, and Worker roles across the nine speckit phases; the Chief of Staff was called Interlocutor before D43, and the diagram image still uses the old label): see the diagram at the [top of this README](#agents_inc). Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
 
-Machine-readable version (Mermaid + phase-actor table): [docs/governance/DELEGATION-MODEL.md](docs/governance/DELEGATION-MODEL.md).
-
-**Grilling.** CEO decision sessions only. Their output is a ruling in `docs/DECISIONS.md` or delegation context for the next action. It is not a packaged execution step.
+**Grilling.** CEO decision sessions only. Their output is a ruling in [docs/DECISIONS.md](docs/DECISIONS.md) or delegation context for the next action. It is not a packaged execution step.
 
 **Speckit pipeline phases (five-stage flow with ledger records):**
 
@@ -167,15 +171,15 @@ Phase 5: CLOSURE
 
 ## 4. How the governed pool works
 
-**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. `workerbees/router.py` enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in `routing.json` and checked before dispatch.
+**Routing** (selecting the vendor and rung for each task based on cost, capability, and policy) uses four rungs: Grunt, Workhorse, Orchestrator, and Executive. Each rung names one Claude model and one Codex model. Gemini, Mistral, and OpenRouter can enter only at Grunt, and only for `extract` and `summarize` tasks. [workerbees/router.py](workerbees/router.py) enforces that boundary and selects the vendor and model for each dispatch ([workerbees/routing.json](workerbees/routing.json), [workerbees/router.py](workerbees/router.py)). **Policy** (the governance rules that determine which models are allowed for which task classes and under what conditions) is encoded in [workerbees/routing.json](workerbees/routing.json) and checked before dispatch.
 
 Moving to a costlier rung requires a recorded reason: repeated failed checks or a provider quota pause. Worker confidence is not an escalation reason.
 
 Verification runs in this order:
 
-1. **Verifier** (deterministic code checks, no model call): `workerbees/verifier.py` checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
-2. **Reviewer** (cross-vendor semantic review, a model-based check): `workerbees/reviewer.py` performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
-3. **Ledger** (append-only audit trail recording every decision): `workerbees/ledger.py` records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
+1. **Verifier** (deterministic code checks, no model call): [workerbees/verifier.py](workerbees/verifier.py) checks cited claims against source text without calling a model — e.g., quote accuracy, file existence, hash match.
+2. **Reviewer** (cross-vendor semantic review, a model-based check): [workerbees/reviewer.py](workerbees/reviewer.py) performs semantic review using a different provider (different vendor from the worker, when possible). It returns `same_vendor` without making a model call when reviewer and worker providers match, signaling a need for manual review.
+3. **Ledger** (append-only audit trail recording every decision): [workerbees/ledger.py](workerbees/ledger.py) records dispatches, returns, reviews, and acceptance decisions in an append-only audit trail, dual-written by default to JSONL and SQLite for auditability and queryability.
 
 A worker's own PASS or FAIL is never the final verdict. Acceptance follows verifier and reviewer results recorded in the ledger ([workerbees/pipeline.py](workerbees/pipeline.py)).
 
@@ -260,12 +264,12 @@ Built and tested today:
 - An append-only JSONL and SQLite ledger.
 - A local SHA-256 content-addressed artifact store.
 - The governed dispatch gateway, including envelope, policy, registry, and budget checks.
-- The live `agent.sh`/`agent_runner.py` dispatch path (shells out to the Codex CLI directly; `bridge.py` is a separate HTTP path for a second device, see appendix).
+- The live [agent.sh](skills/codex-bridge/scripts/agent.sh)/[agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) dispatch path (shells out to the Codex CLI directly; [bridge.py](bridge.py) is a separate HTTP path for a second device, see appendix).
 - 462 automated tests passing locally with `python3 -m unittest discover -s tests`.
 
 `WORKERBEES_GOVERNANCE` still defaults to `off`. The governed path therefore exists but is not enabled by default ([workerbees/gateway.py](workerbees/gateway.py)).
 
-The `gask.sh`, `mask.sh`, and `oask.sh` scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
+The [gask.sh](skills/codex-bridge/scripts/gask.sh), [mask.sh](skills/codex-bridge/scripts/mask.sh), and [oask.sh](skills/codex-bridge/scripts/oask.sh) scripts are the free-tier legacy path. They still work when governance is off, are refused in governed lanes, and are planned to be folded into the governed dispatcher.
 
 Bindle Backend A is built: the local content-addressed artifact store captures and retrieves run output, and `WORKERBEES_ARTIFACTS` defaults to `local`. Backend B remains deferred; it requires an idempotent `finish_run` terminal event and a validated invoice mapping before any real `deislabs/bindle` installation or publication path.
 
@@ -279,11 +283,11 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 |---|---|---|---|
 | Claude Skills (SKILL.md format) | Yes | No — standard frontmatter | Packages routing and verification judgment as reusable prose (`skills/workerbee`, `skills/codex-bridge`) |
 | Claude subagents / Agent tool | No | — | Single-vendor; cannot enforce cross-vendor review by itself |
-| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard `routing.json` changes |
+| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard [routing.json](workerbees/routing.json) changes |
 | Model Context Protocol (MCP) | No | — | Dispatch uses an HTTP bridge and CLI wrapper |
-| OpenAI Codex CLI | Yes | Wrapped | `bridge.py` adds a persistent-thread HTTP session; `agent.sh` and `agent_runner.py` add a governed asynchronous job queue bound to the ledger |
+| OpenAI Codex CLI | Yes | Wrapped | [bridge.py](bridge.py) adds a persistent-thread HTTP session; [agent.sh](skills/codex-bridge/scripts/agent.sh) and [agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) add a governed asynchronous job queue bound to the ledger |
 | OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
-| Built here, no vendor equivalent | — | — | `ledger.py` (audit trail), `reviewer.py` (cross-vendor enforcement), `verifier.py` (deterministic pre-check), `artifacts.py` (content-addressed store), `router.py`/`routing.json` (tier and vendor routing) |
+| Built here, no vendor equivalent | — | — | [ledger.py](workerbees/ledger.py) (audit trail), [reviewer.py](workerbees/reviewer.py) (cross-vendor enforcement), [verifier.py](workerbees/verifier.py) (deterministic pre-check), [artifacts.py](workerbees/artifacts.py) (content-addressed store), [router.py](workerbees/router.py)/[routing.json](workerbees/routing.json) (tier and vendor routing) |
 
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
 
@@ -303,7 +307,7 @@ Tracked as open issues on this repo:
 
 - [#7](https://github.com/domattioli/agents_Inc/issues/7) — a CLI-agnostic dispatch mechanism, the inverse of `codex-bridge`, so Codex can drive the same workflow and call Claude models.
 - [#8](https://github.com/domattioli/agents_Inc/issues/8) — `astra` dispatch with `--approve-for-me` can hit host-classifier blocks that `terra`/`luna` do not.
-- [#6](https://github.com/domattioli/agents_Inc/issues/6) — `codex-bridge`'s `up.sh` hardcodes a stale pre-rename `BASE` path; `--workdir` doesn't override it.
+- [#6](https://github.com/domattioli/agents_Inc/issues/6) — `codex-bridge`'s [up.sh](skills/codex-bridge/scripts/up.sh) hardcodes a stale pre-rename `BASE` path; `--workdir` doesn't override it.
 - [#4](https://github.com/domattioli/agents_Inc/issues/4) — a dispatch-prompt style-compression template, with findings and a validation plan.
 - [#3](https://github.com/domattioli/agents_Inc/issues/3) — brainstorm: mandate the speckit workflow for Supervisor-rung work.
 
@@ -314,6 +318,17 @@ Tracked as open issues on this repo:
 ### Install and configure providers
 
 Run the project from the repository root. Its Python code uses the standard library, so there is no Python package-install step.
+
+**Skill dependencies.** This repo's runtime dependencies are Claude Skills, not pip packages. [`skills.requirements.txt`](skills.requirements.txt) is the agentic-AI analog of `requirements.txt` — it pins each skill's version and source (vendored in this repo, or an external repo it was copied from). Refresh/verify with:
+
+```bash
+bash scripts/install_skills.sh            # sync external-repo entries, verify vendored ones present
+bash scripts/install_skills.sh --dry-run  # show what would change without touching anything
+```
+
+**Both providers are optional.** Neither Claude nor OpenAI Codex is a hard prerequisite. `agents-inc install` no longer aborts when the `codex` CLI is missing: skills still install, the receipt records no Codex path, and the installer prints one `NOTE:` line per skipped provider. Pass `--without-codex` (install and repair) to skip Codex deliberately and silence that note. The installer also creates an empty, user-editable `~/.config/agents-inc/roster.json`; put model aliases there (or in `AGENTS_INC_MODEL_MAP`, a JSON object or file path) to override the built-in `luna`/`terra`/`sol`/`astra` slugs.
+
+**DelegateAgent MCP server.** `skills/codex-bridge/mcp/codex_agent_mcp.py` exposes a `DelegateAgent` tool that forwards a prompt to Codex; the model list comes from the same configurable map. By default only `luna` is exposed; add `astra`, `sol`, or `terra` (once you have tested them live) via `~/.config/agents-inc/roster.json`, `AGENTS_INC_MODEL_MAP`, or `CODEXAGENT_MODEL_MAP`. Registering it with Claude is a separate, explicit step, and the default run only prints the command: `bash skills/codex-bridge/mcp/install.sh` (add `--apply` to execute it). Check the server without Codex via `bash skills/codex-bridge/mcp/tests/smoke_mcp.sh --offline`.
 
 **Setup decision tree — follow the path that matches your setup:**
 
@@ -359,6 +374,14 @@ The demo runs a fake worker and prints the resulting decision records.
 ```bash
 skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
 ```
+
+3. Ask a cheaper model a side question from inside any Claude Code session, without switching sessions. The session model never runs, so the question costs about 1% of asking it directly:
+
+```text
+@haiku does the caveman plugin auto-update
+```
+
+The hook answers before the session model runs, so the session model spends zero tokens. Use `! @haiku ...` when you want the answer in context, at the cost of one session-model turn. Token comparison of every form: [docs/AT-ROUTE.md](docs/AT-ROUTE.md#which-form-saves-the-most-session-model-tokens). Aliases, savings table and install: [docs/AT-ROUTE.md](docs/AT-ROUTE.md).
 
 ### How it feels to use
 
@@ -407,12 +430,13 @@ No LICENSE file exists yet.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Binding rulings, rationale, and evidence |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Continuing the work in a fresh session |
 | [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) | Full supervision discipline |
+| [docs/AT-ROUTE.md](docs/AT-ROUTE.md) | `@alias` side questions to a cheaper model from inside a session, with measured savings |
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
 ## 10. Appendix: HTTP bridge
 
-`bridge.py` exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests ([bridge.py](bridge.py)).
+[bridge.py](bridge.py) exposes the local `codex` CLI over authenticated HTTP for a second device. It is peripheral to the MVP and uses one serialized Codex thread across requests.
 
 <details>
 <summary>Bridge API reference</summary>

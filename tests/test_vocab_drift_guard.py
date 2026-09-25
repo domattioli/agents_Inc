@@ -1,4 +1,4 @@
-"""Over-engineering remediation (D37): D36 found workerbees/models.json and
+"""Over-engineering remediation (D37): D36 found agents_inc/models.json and
 routing.json had silently drifted from docs/governance/ROUTING-RANKING.md's
 rung table for an unknown period (opus unreachable, sol/luna cross-rung
 mixed, terra missing) -- caught only by a manual audit, not by any test.
@@ -25,20 +25,20 @@ def _valid_rungs() -> set[str]:
 class VocabDriftGuardTest(unittest.TestCase):
     def test_models_json_tiers_match_canon(self):
         valid = _valid_rungs()
-        models = json.loads((REPO_ROOT / "workerbees" / "models.json").read_text())["models"]
+        models = json.loads((REPO_ROOT / "agents_inc" / "models.json").read_text())["models"]
         bad = {name: m.get("tier") for name, m in models.items()
                if isinstance(m, dict) and m.get("tier") not in valid}
         self.assertEqual(bad, {}, f"models.json tier drifted from ROUTING-RANKING.md rungs {sorted(valid)}: {bad}")
 
     def test_routing_json_tier_keys_match_canon(self):
         valid = _valid_rungs()
-        routing = json.loads((REPO_ROOT / "workerbees" / "routing.json").read_text())
+        routing = json.loads((REPO_ROOT / "agents_inc" / "routing.json").read_text())
         tier_keys = set(routing.get("tiers", {}))
         self.assertTrue(tier_keys <= valid, f"routing.json tiers key drifted: {tier_keys - valid}")
 
     def test_routing_json_task_tier_values_match_canon(self):
         valid = _valid_rungs()
-        routing = json.loads((REPO_ROOT / "workerbees" / "routing.json").read_text())
+        routing = json.loads((REPO_ROOT / "agents_inc" / "routing.json").read_text())
         bad = {task: tier for task, tier in routing.get("task_tier", {}).items() if tier not in valid}
         self.assertEqual(bad, {}, f"routing.json task_tier drifted: {bad}")
 
