@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 BLOCK_SET = [
-    ROOT / "CLAUDE.md",
     ROOT / "CONTEXT.md",
     ROOT / "AGENTS.md",
     ROOT / ".specify" / "memory" / "constitution.md",
