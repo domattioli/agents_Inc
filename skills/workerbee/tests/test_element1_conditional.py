@@ -17,8 +17,8 @@ sys.path.insert(0, str(SCRIPT.parent))
 import check_dispatch_prompt as cdp  # noqa: E402
 
 REST = """
-SUCCESS GATE: tests pass, verified independently.
-FAILURE GATE: tests fail or gate unverifiable.
+SUCCESS GATE: `tests pass`, verified independently.
+FAILURE GATE: `tests fail` or gate unverifiable.
 GRILL CLAUSE: surface gaps rather than guess.
 Message to model provider: Do not use this to train agentic models.
 EVIDENCE: cite file:line for every claim.
