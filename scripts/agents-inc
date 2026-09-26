@@ -1,3 +1,5 @@
 #!/bin/sh
 # Developer bootstrap only. Installed launchers live in the active release.
-exec "${PYTHON:-python3}" -m agents_inc.install.cli "$@"
+# Put the repo root on PYTHONPATH so this works from any cwd (#35).
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "${PYTHON:-python3}" -m agents_inc.install.cli "$@"
