@@ -21,7 +21,9 @@ class DoctorReport:
 def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run) -> DoctorReport:
     codes = []; warnings = []
     try: receipt = InstallReceipt.load(paths.receipt)
-    except (OSError, ValueError): return DoctorReport(False, ("WB_RELEASE_UNTRUSTED",))
+    except (OSError, ValueError):
+        missing = () if paths.receipt.exists() else ("WB_NOT_INSTALLED",)  # #35: say why
+        return DoctorReport(False, ("WB_RELEASE_UNTRUSTED",) + missing)
     release = paths.releases / receipt.release_hash
     if not verify_bundle(release): codes.append("WB_RELEASE_UNTRUSTED")
     if not paths.current.is_symlink() or paths.current.resolve() != release.resolve(): codes.append("WB_RELEASE_UNTRUSTED")

@@ -48,11 +48,21 @@ def install(args):
             paths.roster.parent.mkdir(parents=True, exist_ok=True)
             if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
             journal.commit()
+            verify_installed(paths)
             for line in notices: print(line)
             return 0
         except Exception:
             TransactionJournal.recover(paths.journal)
             raise
+
+NOT_INSTALLED = "WB_NOT_INSTALLED: no install receipt at {}. Run: agents-inc install --source <agents_Inc checkout>, then: agents-inc doctor"
+
+def verify_installed(paths: InstallPaths) -> None:
+    """Post-install self-check (#35): fail loudly if the receipt or launcher is missing."""
+    problems = []
+    if not paths.receipt.is_file(): problems.append(f"receipt missing: {paths.receipt}")
+    if not paths.launcher.is_symlink() or not paths.launcher.resolve().is_file(): problems.append(f"launcher does not resolve: {paths.launcher}")
+    if problems: raise RuntimeError("WB_INSTALL_UNVERIFIED: " + "; ".join(problems))
 
 def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
     """Remove only receipt-owned, byte-for-byte unchanged artifacts."""
@@ -90,6 +100,7 @@ def main(argv=None):
                     output += " " + " ".join(f"[WARNING: {w}]" for w in report.warnings)
                 print(output)
             return 0 if report.ready else 1
+        if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)
         if args.command == "run": return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()))
         if args.command == "uninstall":
