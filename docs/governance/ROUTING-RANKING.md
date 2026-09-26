@@ -37,6 +37,6 @@ elif normal research, coding, synthesis, or document work: Sonnet 5 <-> Terra
 else:                                                      Haiku 4.5 <-> Luna
 ```
 
-Second opinion: send the task to the paired model without showing the first answer. A Supervisor compares both outputs afterward.
+Second opinion: send the task to the paired model without showing the first answer. A Supervisor compares both outputs afterward. Claude Code `/advisor` and the `@model` router do not satisfy this column: `/advisor` sees the first answer, and neither writes a ledger node (see CONTEXT.md, Advisor / @model).
 
 Source: CEO message, 2026-09-06, citing openai.com positioning of Astra as frontier tier and GPT-5.6 as a family spanning capability and efficiency.
