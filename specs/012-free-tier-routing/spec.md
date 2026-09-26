@@ -24,7 +24,7 @@
 Answered by the main session on operator instruction ("you are to answer the clarify questions").
 
 - Q: Does free-first ordering apply always, or only in budget modality? → A: Only when budget modality is active (CLAUDE.md "Modality": budget opens free grunts for grunt slots). Ideal modality keeps today's order. Modality is read from an environment variable; default stays ideal.
-- Q: Order among free providers when several are healthy? → A: Mistral, then Gemini (cheap tier), then OpenRouter. Matches the 2026-09-23 probe results and both advisor opinions (fable, astra).
+- Q: Order among free providers when several are healthy? → A: Mistral, then Gemini (cheap tier), then OpenRouter. Matches the 2026-09-23 probe results and both second opinions (fable, astra).
 - Q: Default Gemini tier for routed grunt calls? → A: cheap (gemini-flash-lite-latest). The default flash model returned 503.
 - Q: Default daily caps before any probe? → A: Mistral 500, Gemini 200, OpenRouter 50 (replaced by the probed value when available). Operator-editable in the routing config.
 - Q: Modality variable name? → A: `AGENTS_INC_MODALITY` (`budget` | `ideal`, default `ideal`).
