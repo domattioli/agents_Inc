@@ -519,10 +519,27 @@ Agent-facing text = `caveman ultra`. Reader is a model.
    `write-like-scientist` for human-facing docs (carried over, advisory; not
    checked by script).
 2. **Strict SUCCESS gate.** Concrete, falsifiable. Specific check, specific
-   expected result. Not "looks right".
+   expected result. Not "looks right". The `SUCCESS GATE` line MUST carry a
+   backticked runnable check (command, test id, or grep) + the expected
+   result, e.g. ``SUCCESS GATE: `python3 -m unittest tests/test_x.py` exits
+   0, prints `OK` ``. "tests pass" w/o naming which = non-compliant (checker
+   enforces).
 3. **Strict FAILURE gate, stated separately.** Name failure conditions
    explicitly → delegate reports RED honestly instead of rounding ambiguous
-   up to GREEN (Step 10).
+   up to GREEN (Step 10). The `FAILURE GATE` line MUST also carry a
+   backticked concrete signal (nonzero exit, named test failing, forbidden
+   diff path) — same checker rule.
+
+**Grunt tier (Haiku / luna / free grunts) — extra MUST, anti-wheelspin.**
+Grunts spin: they widen scope, retry blind, and report GREEN on intent. Every
+grunt dispatch also carries, checked by `--tier grunt`:
+- `FILES IN SCOPE:` exact paths, one per line start. Anything else touched
+  = RED.
+- `STOP RULE:` numeric attempt cap (e.g. `stop after 2 failed runs of the
+  success check; report RED w/ last output`). No open-ended "keep trying".
+- Supervisor-written tests where feasible: name the test file/ids in the
+  success gate; the delegate does not author its own acceptance test (Step
+  2).
 4. **Grill clause.** Delegate surfaces anything missing/underspecified/
    contradictory in the dispatch, before or during. Silent guess on a gap is
    worse than a question (Step 9).
