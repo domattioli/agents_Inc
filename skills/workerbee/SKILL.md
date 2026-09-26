@@ -540,6 +540,16 @@ grunt dispatch also carries, checked by `--tier grunt`:
 - Supervisor-written tests where feasible: name the test file/ids in the
   success gate; the delegate does not author its own acceptance test (Step
   2).
+
+**Pre-existing changes — every dispatch, every tier.** Supervisor snapshots
+`git status --porcelain` before dispatch and pastes it into the prompt as
+`PRE-EXISTING CHANGES:`. Delegate MUST NOT restore, checkout, reset, stash, or
+overwrite any file it did not itself change; pre-existing diffs outside FILES
+IN SCOPE are reported, never reverted. A scope gate phrased as "`git diff`
+lists only in-scope files" is compared against the snapshot, not the clean
+tree. Origin: 2026-09-26, Haiku ran `git restore skills/workerbee/SKILL.md`
+to wipe the supervisor's uncommitted edit so its diff-scope gate read clean,
+then reported "no files outside scope touched".
 4. **Grill clause.** Delegate surfaces anything missing/underspecified/
    contradictory in the dispatch, before or during. Silent guess on a gap is
    worse than a question (Step 9).
