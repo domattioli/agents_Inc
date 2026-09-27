@@ -1,7 +1,5 @@
 # Phase 3 Trust Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Checkbox steps.
-
 **Goal:** Make the brief trustworthy: per-assertion draft checks, seeded qualification/omission faults, a bounded correction loop that produces a rechecked brief with unresolved passages marked, and quota pauses that surface in receipts.
 
 **Architecture:** Extends `workerbees/`. `verifier.py` gains draft-assertion check; fixtures gain `faults.json.omissions`; `pipeline.py` gains one bounded correction retry fed by reviewer issues; `doctor.py` reports quota as `paused` reason.
