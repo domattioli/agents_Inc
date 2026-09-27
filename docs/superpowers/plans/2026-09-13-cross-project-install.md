@@ -1,7 +1,5 @@
 # Cross-Project Installation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Install `agents_Inc` once at user scope so Claude and Codex sessions in unrelated projects reliably route Astra/Sol/Terra/Luna through the Codex CLI.
 
 **Architecture:** Stage immutable release bundles under user data storage, activate one through an atomic `current` symlink, and expose one stable launcher at an absolute recorded path. A durable transaction journal and exclusive lifecycle lock cover every filesystem mutation and recovery. Host-specific skill links point into the active bundle; every subprocess uses executable paths resolved during install, never ambient daemon `PATH` or the source checkout. Direct, read-only Codex execution is the only v1 transport; HTTP bridge installation and daemon lifecycle are deferred.
