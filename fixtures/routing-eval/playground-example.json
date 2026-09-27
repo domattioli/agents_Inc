@@ -1,0 +1,41 @@
+{
+  "model": "jev-latest",
+  "state": {
+    "task": "Add a verdict field (PASS, FAIL, ESCALATED) to the dispatch ledger schema, write it on return, and update the SQLite dual-write."
+  },
+  "questions": {
+    "rung": {
+      "type": "choice",
+      "instructions": "Which class of AI model should handle `task`?",
+      "criteria": {
+        "free_grunt": "Text in, text out, no tools needed: summarize, label, translate, or extract from pasted text.",
+        "grunt": "Small, well-scoped job that needs tools, such as a rename, a one-file fix, running tests, or listing files.",
+        "workhorse": "Normal coding, research, synthesis, or document work across a few files.",
+        "orchestrator": "Complex planning, large coding, or splitting the work across several agents.",
+        "executive": "Irreversible, high-risk, or strategically important: deletes, publishing, credentials, final decisions.",
+        "unclear": "The task text is too vague to tell what work is asked."
+      }
+    },
+    "irreversible": {
+      "type": "noul",
+      "instructions": "Does `task` ask for an action that cannot be undone, such as deleting data, publishing, force-pushing, or sending a message?"
+    },
+    "multi_file": {
+      "type": "noul",
+      "instructions": "Does `task` require changing more than one file or component?"
+    },
+    "done_stated": {
+      "type": "noul",
+      "instructions": "Does `task` state what finished work looks like?"
+    },
+    "scope": {
+      "type": "score",
+      "instructions": "How large is the change `task` asks for?",
+      "criteria": [
+        "A single small edit or a read-only lookup",
+        "A contained change in one area, under a day of work",
+        "A change across several components or repos"
+      ]
+    }
+  }
+}
