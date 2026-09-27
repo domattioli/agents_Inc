@@ -1,7 +1,5 @@
 # Phase 2 Gates Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Reach `verified` honestly: other-vendor Reviewer, hardened Worker isolation, login preflight that the router respects, and a measured Tim+Dom pilot against an all-frontier baseline.
 
 **Architecture:** Extends `workerbees/` from Phase 1. New modules `reviewer.py`, `doctor.py`, `bench.py`; adapters gain isolation flags; router gains a `skip` set fed by doctor results. Pipeline status ladder becomes `returned → needs-review → verified`.
