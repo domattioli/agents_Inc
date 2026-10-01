@@ -5,6 +5,8 @@ from pathlib import Path
 from .bundle import activate, stage_bundle
 from .discovery import install_skill_links, restore_skill_links
 from .doctor import check_install
+from .host_wiring import install_host_wiring, remove_host_wiring
+from . import hook as host_hook
 from .paths import InstallPaths
 from .receipt import InstallReceipt, OwnedPath
 from .runtime import resolve_executable, run_codex
@@ -20,11 +22,15 @@ def install_convenience_launcher(paths: InstallPaths, journal=None) -> OwnedPath
     paths.launcher.parent.mkdir(parents=True, exist_ok=True)
     if paths.launcher.exists() or paths.launcher.is_symlink():
         if paths.launcher.is_symlink() and paths.launcher.resolve() == desired.resolve():
-            return OwnedPath(paths.launcher, "symlink")
+            return OwnedPath(paths.launcher, "symlink", None, os.readlink(paths.launcher))
         raise RuntimeError(f"WB_CONFIG_CONFLICT: foreign launcher path {paths.launcher}")
     if journal: journal.apply("symlink", paths.launcher, None, str(desired), lambda: paths.launcher.symlink_to(desired))
     else: paths.launcher.symlink_to(desired)
     return OwnedPath(paths.launcher, "symlink", None, str(desired))
+
+def _prior_owned(paths: InstallPaths) -> tuple:
+    try: return InstallReceipt.load(paths.receipt).owned_paths if paths.receipt.exists() else ()
+    except (OSError, ValueError): return ()
 
 def install(args):
     paths = _paths()
@@ -39,11 +45,14 @@ def install(args):
                 try: codex = resolve_executable("codex", os.environ.get("PATH"))
                 except FileNotFoundError:
                     notices.append("NOTE: codex CLI not found -> Codex delegation unavailable; skills installed anyway. Re-run after installing codex, or pass --without-codex to silence.")
-            receipt = InstallReceipt(staged.digest, Path(sys.executable).resolve(), codex)
+            # Carry prior ownership forward, or repair sees its own links as foreign paths.
+            receipt = InstallReceipt(staged.digest, Path(sys.executable).resolve(), codex, _prior_owned(paths))
             receipt = activate(staged, paths, receipt, journal)
             receipt = install_skill_links(paths, staged.path, receipt, args.adopt_existing_workerbee, journal)
             launcher = install_convenience_launcher(paths, journal)
-            receipt = InstallReceipt(receipt.release_hash, receipt.python_path, receipt.codex_path, receipt.owned_paths + (launcher,), receipt.prior_release)
+            owned = tuple(item for item in receipt.owned_paths if item.path != launcher.path) + (launcher,)
+            receipt = InstallReceipt(receipt.release_hash, receipt.python_path, receipt.codex_path, owned, receipt.prior_release)
+            if not getattr(args, "no_host_wiring", False): receipt = install_host_wiring(paths, receipt, journal)
             journal.apply("receipt", paths.receipt, None, None, lambda: receipt.save_atomic(paths.receipt))
             paths.roster.parent.mkdir(parents=True, exist_ok=True)
             if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
@@ -70,6 +79,7 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
         TransactionJournal.recover(paths.journal)
         journal = TransactionJournal(paths.journal).begin("uninstall")
         retained = restore_skill_links(paths, receipt, journal)
+        remove_host_wiring(paths, receipt, journal)
         for item in receipt.owned_paths:
             if item.kind != "symlink" or item.path in retained or not item.path.is_symlink(): continue
             if item.target is None or os.readlink(item.path) != item.target:
@@ -82,14 +92,16 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
-    p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true")
+    p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
-    p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true")
+    p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
+    p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
         if args.command == "install": return install(args)
+        if args.command == "hook": return host_hook.run(paths, args.event, args.host)
         if args.command == "doctor":
             report = check_install(paths, args.live_model)
             if args.json:
