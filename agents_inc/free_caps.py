@@ -163,7 +163,8 @@ def probe_openrouter(from_file: str | None = None) -> dict:
         data = fixture.get("data", {})
     else:
         # Fetch from live API
-        api_key = os.environ.get("OPEN_ROUTER_API_KEY") or _read_openrouter_key()
+        api_key = (os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPEN_ROUTER_API_KEY")
+                   or _read_openrouter_key())
         if not api_key:
             raise RuntimeError("No OpenRouter API key found")
 

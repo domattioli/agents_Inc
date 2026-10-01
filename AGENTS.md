@@ -18,7 +18,7 @@
 
 ## Setup, test, and run
 
-The Python code uses the standard library and has no package-install step. Use Python 3.9 or later and Bash 3.2 or later. Real dispatch also needs authenticated Claude Code and Codex CLIs. Gemini, Mistral, and OpenRouter credentials are optional.
+The Python code uses the standard library and has no package-install step. Use Python 3.10 or later and Bash 3.2 or later. Real dispatch also needs authenticated Claude Code and Codex CLIs. Gemini, Mistral, and OpenRouter credentials are optional.
 
 Run the full test suite:
 

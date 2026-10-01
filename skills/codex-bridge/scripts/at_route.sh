@@ -8,9 +8,9 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 # Resolve symlinks (~/.local/bin/@luna -> this file) so agent.sh is found.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-# The hook may be installed as a copy under ~/.claude/scripts so it survives
-# branch switches in the repo. Bridge scripts (ask.sh, gask.sh, mask.sh) are
-# then found via AT_ROUTE_BRIDGE_DIR or the default checkout path.
+# The installed copy lives in the release bundle beside ask.sh. For ad-hoc
+# copies (e.g., development), bridge scripts are found via AT_ROUTE_BRIDGE_DIR
+# or the default checkout path.
 if [[ ! -x "$SCRIPT_DIR/ask.sh" ]]; then
   SCRIPT_DIR="${AT_ROUTE_BRIDGE_DIR:-$HOME/Projects/agents_Inc/skills/codex-bridge/scripts}"
 fi
@@ -40,7 +40,7 @@ fi
 [[ "$prompt" =~ ^~@ ]] && exit 0
 
 shopt -s nocasematch
-re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna|gemini|mistral)[[:space:]]+(.+)$'
+re='^(@@?)(haiku|sonnet|opus|fable|astra|sol|terra|luna|gemini|mistral|openrouter)[[:space:]]+(.+)$'
 if [[ ! "$prompt" =~ $re ]]; then
   exit 0
 fi
@@ -61,6 +61,7 @@ case "$alias_name" in
   luna)   model="gpt-5.6-luna"; kind="codex" ;;
   gemini) model="gemini-3.8-flash"; kind="gemini" ;;
   mistral) model="codestral-latest"; kind="mistral" ;;
+  openrouter) model="unknown model"; kind="openrouter" ;;
   *) exit 0 ;;
 esac
 
@@ -76,7 +77,7 @@ run_with_timeout() {
 start=$SECONDS
 rc=0
 if [[ "$kind" == "claude" ]]; then
-  AT_ROUTE_ACTIVE=1 run_with_timeout claude -p "$question" --model "$model" \
+  AT_ROUTE_ACTIVE=1 run_with_timeout claude -p "$question" --model "$model" --tools "Read,Grep,Glob" --disallowedTools "Edit,Write,Bash,NotebookEdit" --strict-mcp-config \
     >"$out_f" 2>"$err_f" </dev/null || rc=$?
 elif [[ "$kind" == "gemini" ]]; then
   AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/gask.sh" --tier digest "$question" \
@@ -86,6 +87,14 @@ elif [[ "$kind" == "gemini" ]]; then
 elif [[ "$kind" == "mistral" ]]; then
   AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/mask.sh" --tier code "$question" \
     >"$out_f" 2>"$err_f" </dev/null || rc=$?
+elif [[ "$kind" == "openrouter" ]]; then
+  AT_ROUTE_ACTIVE=1 run_with_timeout env -u MODEL "$SCRIPT_DIR/oask.sh" "$question" \
+    >"$out_f" 2>"$err_f" </dev/null || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    # Parse the model from stderr: [openrouter MODEL | ...]
+    model="$(grep '^\[openrouter' "$err_f" 2>/dev/null | tail -1 | sed -n 's/^\[openrouter \([^ |]*\) .*/\1/p' || true)"
+    [[ -n "$model" ]] || model="unknown model"
+  fi
 else
   # Fresh thread per question. The persistent agent.sh thread accumulated
   # 442k input tokens per call by the 6th question (measured 2026-09-23);
@@ -143,7 +152,11 @@ if [[ "$rc" -eq 0 ]]; then
   [[ "$CLI" == 1 ]] && exit 0
   exit 2
 else
-  echo "[at_route] ${alias_name} call failed (exit ${rc}). Stderr:"
+  if [[ "$rc" -eq 142 ]]; then
+    echo "[at_route] ${alias_name} call timed out after ${TIMEOUT_S}s (exit 142). Partial files may exist in the working tree: run \`git status\` before answering."
+  else
+    echo "[at_route] ${alias_name} call failed (exit ${rc}). Stderr:"
+  fi
   echo '```'
   cat "$err_f"
   echo '```'

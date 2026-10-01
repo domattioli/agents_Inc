@@ -47,6 +47,7 @@ Aliases, case-insensitive:
 | `luna` | `gpt-5.6-luna` | codex-bridge daemon |
 | `gemini` | `gemini-3.8-flash` | `gask.sh --tier digest` |
 | `mistral` | `codestral-latest` | `mask.sh --tier code` |
+| `openrouter` | free tier via `oask.sh` | OpenRouter |
 
 Default is the single `@` form. Use `@@` only when the next thing you ask the session model depends on the answer.
 
@@ -79,31 +80,41 @@ Every call appends one line to `~/.codex-bridge/at_route.log`: UTC timestamp, al
 
 ## Install
 
-Run `skills/codex-bridge/scripts/install_at_route.sh`. It copies the hook to `~/.claude/scripts/at_route.sh` and creates the `@alias` symlinks. The copy exists because the repo path changes with branch checkouts and a hook pointing into the working tree silently stopped firing on 2026-09-23. The copy locates the bridge scripts through `AT_ROUTE_BRIDGE_DIR` or the default checkout path. Re-run the installer after any edit to `at_route.sh`.
+Run `agents-inc install --source <agents_Inc checkout>` or `agents-inc repair --source <agents_Inc checkout>` to install the hook and the alias links. The installer writes the hook entry to `~/.claude/settings.json`, creates the symlinks under `~/.local/bin`, and manages a journal so an interrupted install can be rolled back.
 
-The `!` form needs one symlink per alias on PATH:
+The hook runs from the installed release, reached through `~/.local/share/agents-inc/current/skills/codex-bridge/scripts/at_route.sh`. This path survives branch checkouts and is covered by the bundle hash check.
 
-```bash
-mkdir -p ~/.local/bin && cd ~/.local/bin
-for a in haiku sonnet opus fable astra sol terra luna gemini mistral; do
-  ln -sf ~/.claude/scripts/at_route.sh "@$a"
-done
-```
-
-The hook form is the default. Add it to `~/.claude/settings.json` as shown above; the symlinks are only for the `!` form.
-
-
-Add the hook to `~/.claude/settings.json` under `hooks.UserPromptSubmit`. Put it after any hooks that must see every prompt, because an exit 2 from this hook stops later hooks too.
+The settings hook entry is receipt-owned and points to the installed path with a timeout of 130 seconds (must exceed the default `AT_ROUTE_TIMEOUT` of 120 seconds; raise the timeout if you raise `AT_ROUTE_TIMEOUT`):
 
 ```json
 {
   "type": "command",
-  "command": "bash ~/.claude/scripts/at_route.sh",
+  "command": "bash ~/.local/share/agents-inc/current/skills/codex-bridge/scripts/at_route.sh",
   "timeout": 130
 }
 ```
 
+The `@alias` links (11 total: `haiku sonnet opus fable astra sol terra luna gemini mistral openrouter`) are created in `~/.local/bin` and point to the same installed path. They are receipt-owned and removed by uninstall.
+
+If you have a legacy `~/.claude/scripts/at_route.sh` copy, the installer replaces its settings line with the new entry, relinks the aliases, and removes the legacy file with a journaled backup. The legacy-file backup is kept under `~/.local/state/agents-inc/backups/` for manual restore if needed; journal recovery of an interrupted install restores it automatically.
+
+`agents-inc doctor` checks for drift between the installed hook and the source checkout's `skills/codex-bridge/scripts/at_route.sh`. It warns with `WB_HOOK_DRIFT` when the installed copy differs, or `WB_HOOK_DRIFT_UNCHECKED` when the source checkout is unknown or missing. Doctor stays READY; these are warnings only.
+
 Requirements: `jq`, `perl` (for the portable 120-second timeout), the `claude` CLI on PATH. Codex aliases also need the bridge daemon running: `skills/codex-bridge/scripts/up.sh --workdir <an existing directory>`.
+
+### Read-only tool set for routed Claude calls
+
+Every Claude alias (`haiku`, `sonnet`, `opus`, `fable`) routes the question through `claude -p` with a read-only tool restriction. The routed model can read any file the caller can read but cannot create files, modify files, or run shell commands. Allowed tools: `Read`, `Grep`, `Glob`. Denied tools: `Edit`, `Write`, `Bash`, `NotebookEdit`. No MCP servers are reachable. This restriction prevents routed calls from leaving partial or corrupted files in your working tree.
+
+### Timeout behavior
+
+Every routed call runs under a 120-second timeout by default (set by `AT_ROUTE_TIMEOUT`). When the timeout fires (exit code 142), the failure block names the timeout in seconds, warns that partial files may exist in your working tree, and tells you to run `git status` to inspect the state:
+
+```
+[at_route] <alias> call timed out after 120s (exit 142). Partial files may exist in the working tree: run `git status` before answering.
+```
+
+This replaces the earlier cryptic `exit 142` message and helps distinguish a timeout from other failures.
 
 Environment overrides:
 

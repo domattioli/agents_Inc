@@ -37,3 +37,27 @@ class CliTest(unittest.TestCase):
             self.assertEqual(paths.launcher.readlink(), Path("/replacement"))
             self.assertTrue(paths.receipt.exists())
             self.assertIn(paths.launcher, retained)
+
+
+class RepairTest(unittest.TestCase):
+    def test_repair_over_existing_install_keeps_ownership(self):
+        import argparse
+        from agents_inc.install import cli
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "source"; (source / "agents_inc").mkdir(parents=True)
+            (source / "agents_inc" / "models.json").write_text("{}")
+            for name in ("workerbee", "codex-bridge"):
+                (source / "skills" / name).mkdir(parents=True); (source / "skills" / name / "SKILL.md").write_text("x")
+            home = Path(raw) / "home"; (home / ".claude").mkdir(parents=True)
+            paths = InstallPaths.for_home(home)
+            args = argparse.Namespace(source=str(source), adopt_existing_workerbee=False, without_codex=True, no_host_wiring=False)
+            with mock.patch.object(cli, "_paths", return_value=paths):
+                self.assertEqual(cli.install(args), 0)
+                (source / "skills" / "workerbee" / "SKILL.md").write_text("y")  # new release
+                self.assertEqual(cli.install(args), 0)
+            receipt = InstallReceipt.load(paths.receipt)
+            owned = [item.path for item in receipt.owned_paths]
+            self.assertEqual(len(owned), len(set(owned)))
+            self.assertIn(paths.launcher, owned)
+            self.assertIn(home / ".claude/AGENTS.md", owned)

@@ -3,6 +3,8 @@ from pathlib import Path
 from unittest import mock
 from agents_inc.install import doctor
 from agents_inc.install.paths import InstallPaths
+from agents_inc.install.host_wiring import install_host_wiring
+from agents_inc.install.receipt import InstallReceipt
 
 
 class _R:
@@ -18,6 +20,7 @@ def _run(codex_path):
         for root in (paths.claude_skills, paths.codex_skills):
             root.mkdir(parents=True, exist_ok=True)
             for n in ("workerbee", "codex-bridge"): (root / n).symlink_to(rel)
+        install_host_wiring(paths, InstallReceipt("a" * 64, Path("/usr/bin/python3"), None))
         with mock.patch.object(doctor.InstallReceipt, "load", return_value=_R(codex_path)), \
              mock.patch.object(doctor, "verify_bundle", return_value=True):
             return doctor.check_install(paths)
