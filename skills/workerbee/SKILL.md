@@ -2,7 +2,7 @@
 name: workerbee
 version: 1.3.0
 benchmark: unverified_delegate_claims_accepted_per_session
-description: Use when asked for astra, sol, terra, luna, or a Codex delegate. Claude Agent cannot select these Codex models; use the installed agents-inc launcher. Covers supervision and verification.
+description: Use before delegating any task, spawning a subagent, or asking another model for a second opinion, and whenever astra, sol, terra, luna, Codex, Gemini, Mistral, or OpenRouter is named. agents-inc routes all delegation across providers; Claude's Agent tool cannot reach non-Claude models. Covers routing, supervision, and verification.
 ---
 
 # workerbee

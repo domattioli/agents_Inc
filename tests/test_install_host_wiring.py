@@ -1,0 +1,105 @@
+import io
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from agents_inc.install import hook
+from agents_inc.install.host_wiring import BEGIN, END, install_host_wiring, remove_host_wiring, remove_block, upsert_block, wiring_problems
+from agents_inc.install.paths import InstallPaths
+from agents_inc.install.receipt import InstallReceipt
+from agents_inc.install.transaction import TransactionJournal
+
+
+def _receipt():
+    return InstallReceipt("a" * 64, Path("/usr/bin/python3"), None)
+
+
+class HostWiringTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.home = Path(self.tmp.name) / "home"
+        self.paths = InstallPaths.for_home(self.home)
+
+    def tearDown(self): self.tmp.cleanup()
+
+    def _hosts(self, *names):
+        for name in names: (self.home / f".{name}").mkdir(parents=True, exist_ok=True)
+
+    def test_block_upsert_is_idempotent_and_preserves_user_text(self):
+        block = f"{BEGIN}\nrule\n{END}\n"
+        once = upsert_block("# mine\n\nkeep me\n", block)
+        self.assertEqual(upsert_block(once, block), once)
+        self.assertIn("keep me", once)
+        self.assertEqual(remove_block(once), "# mine\n\nkeep me\n")
+
+    def test_block_upsert_replaces_stale_block_in_place(self):
+        text = f"head\n\n{BEGIN}\nold\n{END}\n\ntail\n"
+        updated = upsert_block(text, f"{BEGIN}\nnew\n{END}\n")
+        self.assertEqual(updated, f"head\n\n{BEGIN}\nnew\n{END}\n\ntail\n")
+
+    def test_only_detected_hosts_are_wired(self):
+        self._hosts("claude")
+        receipt = install_host_wiring(self.paths, _receipt())
+        self.assertTrue((self.home / ".claude/AGENTS.md").exists())
+        self.assertFalse((self.home / ".codex").exists())
+        self.assertFalse((self.home / ".gemini").exists())
+        self.assertEqual({item.kind for item in receipt.owned_paths}, {"block", "hooks"})
+
+    def test_hooks_merge_with_foreign_hooks_and_reinstall_does_not_duplicate(self):
+        self._hosts("claude", "codex")
+        settings = self.home / ".claude/settings.json"
+        settings.write_text(json.dumps({"model": "x", "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "foreign.sh"}]}]}}))
+        install_host_wiring(self.paths, _receipt()); install_host_wiring(self.paths, _receipt())
+        config = json.loads(settings.read_text())
+        commands = [h["command"] for g in config["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertEqual(config["model"], "x")
+        self.assertEqual(commands.count("foreign.sh"), 1)
+        self.assertEqual(sum("hook session-start" in c for c in commands), 1)
+        self.assertEqual(config["hooks"]["PreToolUse"][0]["matcher"], "Agent|Task")
+        codex = json.loads((self.home / ".codex/hooks.json").read_text())
+        self.assertNotIn("PreToolUse", codex["hooks"])  # nudge is Claude-only
+        self.assertEqual(wiring_problems(self.paths), [])
+
+    def test_gemini_reads_agents_md_and_keeps_existing_names(self):
+        self._hosts("gemini")
+        (self.home / ".gemini/settings.json").write_text(json.dumps({"context": {"fileName": "GEMINI.md"}, "security": {}}))
+        install_host_wiring(self.paths, _receipt())
+        config = json.loads((self.home / ".gemini/settings.json").read_text())
+        self.assertEqual(config["context"]["fileName"], ["AGENTS.md", "GEMINI.md"])
+        self.assertIn("security", config)
+        self.assertIn(BEGIN, (self.home / ".gemini/AGENTS.md").read_text())
+
+    def test_uninstall_removes_only_owned_content(self):
+        self._hosts("claude", "codex")
+        (self.home / ".claude/AGENTS.md").write_text("# user rules\n")
+        receipt = install_host_wiring(self.paths, _receipt())
+        remove_host_wiring(self.paths, receipt)
+        self.assertEqual((self.home / ".claude/AGENTS.md").read_text(), "# user rules\n")
+        self.assertFalse((self.home / ".codex/AGENTS.md").exists())  # block-only file created by us
+        self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text()), {"hooks": {}})
+        self.assertEqual(sorted(wiring_problems(self.paths)), ["claude:hooks", "claude:instructions", "codex:hooks", "codex:instructions"])
+
+    def test_journal_recovery_restores_predecessor_bytes(self):
+        self._hosts("claude")
+        target = self.home / ".claude/AGENTS.md"; target.write_text("original\n")
+        journal = TransactionJournal(self.paths.journal).begin("install")
+        install_host_wiring(self.paths, _receipt(), journal)
+        self.assertIn(BEGIN, target.read_text())
+        TransactionJournal.recover(self.paths.journal)  # uncommitted: roll back
+        self.assertEqual(target.read_text(), "original\n")
+        self.assertFalse((self.home / ".claude/settings.json").exists())
+
+    def test_agent_nudge_fires_once_per_session(self):
+        first = hook.agent_nudge(self.paths, {"session_id": "s1"})
+        self.assertIn("agents-inc", json.loads(first)["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(hook.agent_nudge(self.paths, {"session_id": "s1"}), "")
+        self.assertNotEqual(hook.agent_nudge(self.paths, {"session_id": "s2"}), "")
+
+    def test_hook_never_fails_on_bad_input(self):
+        self.assertEqual(hook.run(self.paths, "agent-nudge", None, io.StringIO("not json")), 0)
+        self.assertEqual(hook.run(self.paths, "session-start", "codex", io.StringIO("")), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

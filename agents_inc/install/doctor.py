@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 from .bundle import verify_bundle
+from .host_wiring import wiring_problems
 from .paths import InstallPaths
 from .receipt import InstallReceipt
 from .runtime import build_codex_argv
@@ -32,6 +33,8 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     for root in (paths.claude_skills, paths.codex_skills):
         for name in ("workerbee", "codex-bridge"):
             if not (root / name).is_symlink(): codes.append("WB_SKILL_MISSING")
+    # Skills load lazily; without the always-on block and hooks no session learns to delegate.
+    if wiring_problems(paths): codes.append("WB_HOST_UNWIRED")
     live = None
     if live_model and not codes and receipt.codex_path is not None:
         models = json.loads((release / "agents_inc/models.json").read_text()).get("models", {})
