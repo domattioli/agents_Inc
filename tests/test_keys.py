@@ -51,3 +51,71 @@ class KeysTest(unittest.TestCase):
         result = available_providers(self.env, extra_env_paths=[missing])
         self.assertIn("mistral", result)
         self.assertIn("claude", result)
+
+
+# Spec 014 (#22): OpenRouter key-name alias and key-store paths, both modules.
+# Fake sentinel values in temp files only; the real .env is never opened or written.
+import contextlib
+import inspect
+import io
+from unittest import mock
+
+import agents_inc.keys as agents_keys
+import workerbees.keys as workerbees_keys
+
+SENTINEL = "FAKE-SENTINEL-" + "q" * 24
+
+
+class OpenRouterAliasAndPathsTest(unittest.TestCase):
+    MODULES = (agents_keys, workerbees_keys)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def _env(self, text):
+        path = self.tmp / f"{len(list(self.tmp.iterdir()))}.env"
+        path.write_text(text)
+        return path
+
+    def test_both_spellings_give_openrouter_in_both_modules(self):
+        for mod in self.MODULES:
+            for name in ("OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY"):
+                with self.subTest(module=mod.__name__, name=name):
+                    out, err = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        result = mod.available_providers(self._env(f"{name}={SENTINEL}\n"), extra_env_paths=[])
+                    self.assertIn("openrouter", result)
+                    self.assertNotIn("open_router", result)
+                    self.assertNotIn(SENTINEL, out.getvalue() + err.getvalue() + repr(result))
+
+    def test_default_store_is_workerbees_path_in_both_modules(self):
+        for mod in self.MODULES:
+            with self.subTest(module=mod.__name__):
+                self.assertEqual(mod.ENV_PATH.parts[-3:], (".config", "workerbees", ".env"))
+                default = inspect.signature(mod.setup_key).parameters["env_path"].default
+                self.assertEqual(Path(default).parts[-3:], (".config", "workerbees", ".env"))
+
+    def test_default_scan_reads_both_store_paths(self):
+        home = self.tmp / "home"
+        new = home / ".config" / "workerbees" / ".env"
+        old = home / ".config" / "agents_inc" / ".env"
+        for path, name in ((new, "GEMINI_API_KEY"), (old, "MISTRAL_API_KEY")):
+            path.parent.mkdir(parents=True)
+            path.write_text(f"{name}={SENTINEL}\n")
+        for mod in self.MODULES:
+            with self.subTest(module=mod.__name__):
+                with mock.patch.dict(os.environ, {"HOME": str(home)}), mock.patch.object(mod, "ENV_PATH", new):
+                    result = mod.available_providers(mod.ENV_PATH, extra_env_paths=[])
+                self.assertIn("gemini", result)
+                self.assertIn("mistral", result)
+
+    def test_setup_key_keeps_canonical_name(self):
+        for mod in self.MODULES:
+            with self.subTest(module=mod.__name__):
+                env = self.tmp / f"{mod.__name__}.env"
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    status = mod.setup_key("openrouter", env, prompt=lambda _: SENTINEL, opener=lambda u: None)
+                self.assertEqual(status, "stored")
+                self.assertTrue(env.read_text().startswith("OPENROUTER_API_KEY="))
+                self.assertNotIn(SENTINEL, out.getvalue() + status)
