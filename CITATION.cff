@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "agents_Inc"
+abstract: "Governed multi-agent dispatch and verification layer that pools Claude, Codex, Gemini, Mistral, and OpenRouter capacity."
+type: software
+authors:
+  - family-names: "Mattioli"
+    given-names: "Dominik"
+version: 0.1.0
+date-released: 2026-10-01
+doi: 10.5281/zenodo.22670100
+repository-code: "https://github.com/domattioli/agents_Inc"
+keywords:
+  - claude-code
+  - multi-agent
+  - model-pooling
+  - governance

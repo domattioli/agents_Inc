@@ -1,7 +1,5 @@
 # Phase 1 Pilot Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Markdown sources in, cited brief out, every quote machine-checked, routed through cheap models with a hard $0 cap, runnable from Claude Code or Codex.
 
 **Architecture:** Stdlib-only Python package `workerbees/` (router, adapters, verifier, pipeline, policy, keys). Workers are tool-free CLI invocations fed on stdin. Deterministic verifier gates before any model reviewer. Existing `skills/codex-bridge/scripts/agent_runner.py` remains the job ledger; Phase 1 adds the library it will call in Phase 3.

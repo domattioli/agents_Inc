@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=8
+pass=0; total=19
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
@@ -59,6 +59,109 @@ if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from del
 # (g) escape: ~@ prefix exits silently, passes prompt to session model
 out="$(echo '{"prompt":"~@haiku literal"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
 [[ $rc -eq 0 && -z "$out" ]] && ok "g escape ~@" || fail g "rc=$rc out=$out"
+
+# --- spec 013 cases (h-p). Stubs only; no real model calls. ---
+# argv-recording claude stub
+mkdir -p "$TMP/argv"
+cat >"$TMP/argv/claude" <<'STUB'
+#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a"; done >"$ARGV_FILE"
+echo STUB-OK
+exit 0
+STUB
+chmod +x "$TMP/argv/claude"
+ro_ok() { # $1 = argv file
+  local f="$1"
+  grep -qx -- '--tools' "$f" && grep -A1 -x -- '--tools' "$f" | tail -1 | grep -qx 'Read,Grep,Glob' &&
+  grep -qx -- '--disallowedTools' "$f" &&
+  grep -A1 -x -- '--disallowedTools' "$f" | tail -1 | grep -q Edit &&
+  grep -A1 -x -- '--disallowedTools' "$f" | tail -1 | grep -q Write &&
+  grep -A1 -x -- '--disallowedTools' "$f" | tail -1 | grep -q Bash &&
+  grep -A1 -x -- '--disallowedTools' "$f" | tail -1 | grep -q NotebookEdit &&
+  grep -qx -- '--strict-mcp-config' "$f"
+}
+
+# (h) read-only restriction on every Claude alias, hook mode
+hfail=""
+for a in haiku sonnet opus fable; do
+  export ARGV_FILE="$TMP/argv/$a.txt"; rm -f "$ARGV_FILE"
+  echo "{\"prompt\":\"@$a hi\"}" | PATH="$TMP/argv:$PATH" bash "$HOOK" >/dev/null 2>&1
+  ro_ok "$ARGV_FILE" || hfail="$hfail $a"
+done
+[[ -z "$hfail" ]] && ok "h read-only flags (hook, 4 aliases)" || fail h "missing read-only flags for:$hfail"
+
+# (h2) same restriction in CLI mode
+export ARGV_FILE="$TMP/argv/cli.txt"; rm -f "$ARGV_FILE"
+PATH="$TMP/argv:$PATH" bash "$HOOK" opus hi >/dev/null 2>&1
+ro_ok "$ARGV_FILE" && ok "h2 read-only flags (CLI)" || fail h2 "argv=$(tr '\n' ' ' <"$ARGV_FILE" 2>/dev/null)"
+
+# (i) timeout names itself
+mkdir -p "$TMP/slow"
+printf '#!/bin/sh\nsleep 3\necho late\n' >"$TMP/slow/claude"; chmod +x "$TMP/slow/claude"
+out="$(echo '{"prompt":"@haiku hi"}' | AT_ROUTE_TIMEOUT=1 PATH="$TMP/slow:$PATH" bash "$HOOK" 2>/dev/null)"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"timed out after 1s"* && "$out" == *"Partial files may exist"* && "$out" == *"git status"* ]]; then
+  ok "i timeout message"; else fail i "rc=$rc out=$out"; fi
+
+# (j) fast non-alarm failure is not called a timeout
+out="$(echo '{"prompt":"@haiku hi"}' | PATH="$TMP/bad:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" != *"timed out"* ]]; then
+  ok "j non-timeout failure wording"; else fail j "rc=$rc out=$out"; fi
+
+# openrouter: temp copy of the hook beside stub bridge scripts
+B="$TMP/bridge"; mkdir -p "$B"
+cp "$HOOK" "$B/at_route.sh"; chmod +x "$B/at_route.sh"
+printf '#!/bin/sh\nexit 0\n' >"$B/ask.sh"; chmod +x "$B/ask.sh"
+mkoask() { # $1 = mode: ok | nomodel | fail | slow
+  cat >"$B/oask.sh" <<STUB
+#!/bin/sh
+printf '%s\n' "\${MODEL-UNSET}" >"$TMP/oask_model.txt"
+case "$1" in
+  ok) echo OR-ANSWER; echo '[openrouter vendor/model:free | in 1 out 1]' >&2 ;;
+  nomodel) echo OR-ANSWER ;;
+  fail) echo "oask: REFUSED" >&2; exit 3 ;;
+  slow) sleep 3; echo late ;;
+esac
+STUB
+  chmod +x "$B/oask.sh"
+}
+
+# (k) @openrouter header shows the model oask.sh reports
+mkoask ok
+err="$(echo '{"prompt":"@openrouter hi"}' | bash "$B/at_route.sh" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"┌─ openrouter (vendor/model:free)"* && "$err" == *"│ OR-ANSWER"* ]]; then
+  ok "k openrouter header"; else fail k "rc=$rc err=$err"; fi
+
+# (l) inherited MODEL never reaches oask.sh
+rm -f "$TMP/oask_model.txt"
+echo '{"prompt":"@openrouter hi"}' | MODEL=openai/gpt-4o-mini bash "$B/at_route.sh" >/dev/null 2>&1
+got="$(cat "$TMP/oask_model.txt" 2>/dev/null)"
+[[ "$got" == "UNSET" ]] && ok "l MODEL cleared" || fail l "oask saw MODEL=$got"
+
+# (m) oask.sh refusal gives the failover block
+mkoask fail
+out="$(echo '{"prompt":"@openrouter hi"}' | bash "$B/at_route.sh")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"openrouter call failed (exit 3)"* && "$out" == *"Answer the operator's question yourself."* ]]; then
+  ok "m openrouter failover"; else fail m "rc=$rc out=$out"; fi
+
+# (n) @@openrouter relays
+mkoask ok
+out="$(echo '{"prompt":"@@openrouter hi"}' | bash "$B/at_route.sh")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"[at_route] Answer from delegate openrouter (vendor/model:free)"* && "$out" == *OR-ANSWER* ]]; then
+  ok "n @@openrouter relay"; else fail n "rc=$rc out=$out"; fi
+
+# (o) no model line gives "unknown model"
+mkoask nomodel
+err="$(echo '{"prompt":"@openrouter hi"}' | bash "$B/at_route.sh" 2>&1 >/dev/null)"; rc=$?
+[[ $rc -eq 2 && "$err" == *"┌─ openrouter (unknown model)"* ]] && ok "o unknown model header" || fail o "rc=$rc err=$err"
+
+# (p) CLI mode through an @openrouter link, plus timeout on a non-Claude alias
+mkoask ok
+ln -sf "$B/at_route.sh" "$B/@openrouter"
+out="$("$B/@openrouter" hi 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 && "$out" == *"┌─ openrouter (vendor/model:free)"* ]] && ok "p CLI @openrouter" || fail p "rc=$rc out=$out"
+mkoask slow
+out="$(echo '{"prompt":"@openrouter hi"}' | AT_ROUTE_TIMEOUT=1 bash "$B/at_route.sh" 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 && "$out" == *"timed out after 1s"* ]] && ok "p2 openrouter timeout" || fail p2 "rc=$rc out=$out"
 
 echo "$pass/$total PASS"
 [[ $pass -eq $total ]]

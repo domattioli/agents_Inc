@@ -75,12 +75,20 @@ oask_report_trap() {
   PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
     --provider openrouter --model "$MODEL" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" \
     >/dev/null 2>/tmp/oask_report_err.$$ || echo "oask: health report failed" >&2
+  if [[ "$outcome" != "withdrawn" ]] && [[ "$outcome" != "zdr" ]]; then
+    local result="ok"
+    [[ "$outcome" != "ok" ]] && result="transient"
+    local msg="$outcome"
+    [[ -n "${OASK_REPORT_STATUS:-}" ]] && msg="$outcome http $OASK_REPORT_STATUS"
+    CODEX_BRIDGE_MODE=standard bash "$SCRIPT_DIR/route.sh" report openrouter "$result" "$msg" >/dev/null 2>&1 || true
+  fi
   rm -f /tmp/oask_report_err.$$ "$OASK_REPORT_BODY_FILE" 2>/dev/null
   exit $ec
 }
 trap oask_report_trap EXIT
 
-# Load key from env or file
+# Load key from env or file; OPENROUTER_API_KEY wins over the legacy OPEN_ROUTER_API_KEY name
+OPEN_ROUTER_API_KEY="${OPENROUTER_API_KEY:-${OPEN_ROUTER_API_KEY:-}}"
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]]; then
   if [[ -f "$KEY_FILE" ]]; then
     OPEN_ROUTER_API_KEY=$(cat "$KEY_FILE")
@@ -90,7 +98,8 @@ fi
 # Fallback: read from ~/Projects/.env if key is missing/empty/placeholder
 if [[ -z "${OPEN_ROUTER_API_KEY:-}" ]] || [[ ${#OPEN_ROUTER_API_KEY} -lt 20 ]]; then
   if [[ -f "$HOME/Projects/.env" ]]; then
-    ENV_KEY=$(grep -m1 -E '^(OPEN_ROUTER_API_KEY|OPENROUTER_API_KEY)=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
+    ENV_KEY=$(grep -m1 -E '^OPENROUTER_API_KEY=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
+    [[ -n "$ENV_KEY" ]] || ENV_KEY=$(grep -m1 -E '^OPEN_ROUTER_API_KEY=' "$HOME/Projects/.env" 2>/dev/null | cut -d= -f2- || true)
     if [[ -n "$ENV_KEY" ]]; then
       ENV_KEY="${ENV_KEY%\"}"
       ENV_KEY="${ENV_KEY#\"}"

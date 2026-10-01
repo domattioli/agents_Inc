@@ -1,9 +1,9 @@
-"""T003: check a dispatch prompt text file for the 14-element delegation contract.
+"""T003: check a dispatch prompt text file for the 14-element delegation contract and contract-reference compliance.
 
-Usage: python3 check_dispatch_prompt.py <prompt_file> [--with-handoff-lint] [--tier grunt]
+Usage: python3 check_dispatch_prompt.py <prompt_file> [--with-handoff-lint] [--tier grunt] [--transport file|bare]
        python3 check_dispatch_prompt.py <report_file> --with-handoff-lint --profile report
 Exit 0 + prints "COMPLIANT" if all 14 elements present (and tier requirements met).
-Exit 1 + prints missing element numbers if not.
+Exit 1 + prints missing element numbers if not, or NON-COMPLIANT for contract violations.
 
 --with-handoff-lint also runs the optional third-party handoff-lint tool from
 $HOME/.claude/skills/handoff-lint/scripts/handoff_lint.py when it exists. When
@@ -13,6 +13,10 @@ STDERR (STDOUT stays the machine-parseable verdict) and the exit code is the
 not a prompt: the 14-element check is skipped and only handoff-lint runs.
 
 --tier grunt adds Grunt-tier requirements: "files in scope:" and "stop rule:" with digit.
+
+--transport file|bare (default file): when bare, rejects CONTRACT: references (bare API cannot read files).
+When file, tries to read contract file (expanded ~, relative to cwd then prompt file dir); unreadable = NON-COMPLIANT.
+Contract text is appended to prompt for checking, but element 5 (training opt-out) must appear in prompt itself.
 
 Element 1 (caveman) is conditional on the third-party skill: either the Skill-call
 form (`caveman ultra`) or the emulation form
@@ -29,6 +33,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 CONDITIONAL = {10, 11}
 GATE_ELEMENTS = {2, 3}
@@ -57,19 +62,31 @@ def _lines_with(text_lower: str, keyword: str) -> list[str]:
     return [ln for ln in text_lower.splitlines() if keyword in ln]
 
 
-def check(text: str, tier: str | None = None) -> list[int | str]:
+def check(text: str, tier: str | None = None, prompt_text: str | None = None) -> list[int | str]:
     """Return list of missing element numbers (1-14) and tier-specific requirements.
 
     For tier="grunt", also check for "files in scope:" and "stop rule:" with digit.
     Missing tier requirements added as strings: "files-in-scope", "stop-rule".
+
+    When prompt_text is given (contract loaded from external file), element 5 is checked
+    only against prompt_text, not against text (prompt + contract). Other elements check text.
     """
     lower = text.lower()
     missing: list[int | str] = []
 
+    # Element 5 requires special handling when contract is external
+    element_5_source = prompt_text.lower() if prompt_text else lower
+
     for num, keywords in KEYWORDS.items():
+        # For element 5 with external contract, check only prompt_text
+        if num == 5 and prompt_text:
+            check_text = element_5_source
+        else:
+            check_text = lower
+
         matched_lines: list[str] = []
         for kw in keywords:
-            matched_lines.extend(_lines_with(lower, kw))
+            matched_lines.extend(_lines_with(check_text, kw))
 
         if not matched_lines:
             missing.append(num)
@@ -139,6 +156,7 @@ def main() -> int:
     args = [a for a in args if a != "--with-handoff-lint"]
     profile = None
     tier = None
+    transport = "file"
     if "--profile" in args:
         k = args.index("--profile")
         if k + 1 >= len(args):
@@ -153,20 +171,68 @@ def main() -> int:
             return 2
         tier = args[k + 1]
         del args[k:k + 2]
+    if "--transport" in args:
+        k = args.index("--transport")
+        if k + 1 >= len(args):
+            print("--transport needs a value", file=sys.stderr)
+            return 2
+        transport = args[k + 1]
+        del args[k:k + 2]
     if len(args) != 1 or (profile and not with_lint):
-        print("usage: check_dispatch_prompt.py <prompt_file> [--with-handoff-lint [--profile report]] [--tier grunt]",
+        print("usage: check_dispatch_prompt.py <prompt_file> [--with-handoff-lint [--profile report]] [--tier grunt] [--transport file|bare]",
               file=sys.stderr)
         return 2
-    text = open(args[0], encoding="utf-8").read()
+
+    prompt_file = args[0]
+    text = open(prompt_file, encoding="utf-8").read()
     if profile == "report":
         # delegate report, not a prompt: 14-element check does not apply.
-        return 1 if run_handoff_lint(args[0], profile) else 0
-    missing = check(text, tier=tier)
+        return 1 if run_handoff_lint(prompt_file, profile) else 0
+
+    # Check for CONTRACT: lines
+    contract_lines = [ln.strip() for ln in text.splitlines() if ln.strip().lower().startswith("contract:")]
+    contract_text = ""
+
+    if contract_lines:
+        if transport == "bare":
+            print("NON-COMPLIANT contract-reference-on-bare-transport: bare-API delegates cannot read files; paste the header")
+            return 1
+
+        # transport is "file": try to read contract files
+        for contract_line in contract_lines:
+            # Extract path after "contract:"
+            path_str = contract_line[9:].strip()  # Skip "contract:" (9 chars)
+
+            # Expand ~ and try to read
+            expanded_path = os.path.expanduser(path_str)
+            contract_path = None
+
+            # Try as given (relative to cwd)
+            try:
+                contract_path = Path(expanded_path)
+                contract_text += contract_path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                # Try relative to prompt file's directory
+                prompt_dir = Path(prompt_file).resolve().parent
+                contract_path = prompt_dir / expanded_path
+                try:
+                    contract_text += contract_path.read_text(encoding="utf-8")
+                except FileNotFoundError:
+                    print(f"NON-COMPLIANT contract-unreadable: {path_str}")
+                    return 1
+
+    # If contract text was loaded, append it to prompt for checking (except element 5)
+    if contract_text:
+        full_text = text + "\n" + contract_text
+        missing = check(full_text, tier=tier, prompt_text=text)
+    else:
+        missing = check(text, tier=tier)
+
     if not missing:
         print("COMPLIANT")
     else:
         print(f"NON-COMPLIANT missing elements: {missing}")
-    lint_rc = run_handoff_lint(args[0], profile) if with_lint else 0
+    lint_rc = run_handoff_lint(prompt_file, profile) if with_lint else 0
     return 1 if (missing or lint_rc) else 0
 
 
