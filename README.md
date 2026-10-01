@@ -6,7 +6,7 @@ A corporate organization for AI agents: an executive plans, supervisor delegates
 
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
 [![Tests](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml/badge.svg)](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml)
-![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-blue)](https://github.com/domattioli/agents_Inc/issues)
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)
@@ -411,7 +411,7 @@ The hook answers before the session model runs, so the session model spends zero
 
 ### Requirements
 
-- Python 3.9 or later. The test suite also runs on Python 3.14 ([specs/001-codex-delegation-regime/plan.md](specs/001-codex-delegation-regime/plan.md), [specs/002-dispatch-graph-ledger/plan.md](specs/002-dispatch-graph-ledger/plan.md)).
+- Python 3.10 or later. The test suite also runs on Python 3.14 ([specs/001-codex-delegation-regime/plan.md](specs/001-codex-delegation-regime/plan.md), [specs/002-dispatch-graph-ledger/plan.md](specs/002-dispatch-graph-ledger/plan.md)).
 - Bash 3.2 or later. The lifecycle and client scripts support macOS system Bash.
 - Claude Code CLI, authenticated through an Anthropic subscription.
 - Codex CLI, authenticated through a ChatGPT/OpenAI account.
