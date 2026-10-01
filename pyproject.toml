@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "agents-inc"
 version = "0.1.0"
 description = "Governed multi-agent dispatch and verification layer"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
