@@ -1,10 +1,17 @@
 """Durable write-ahead journal for every installer lifecycle mutation."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
+
+
+def _file_matches(target: Path, digest: str | None) -> bool:
+    if digest is None: return not target.exists()
+    return target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == digest
 
 
 class LifecycleLock:
@@ -51,8 +58,14 @@ class TransactionJournal:
             target, predecessor = Path(op["target"]), op.get("predecessor")
             # A crash between mutation and applied-marker leaves intent=false.
             # Revert only when the on-disk result proves our mutation happened.
-            proven = op.get("applied") or (op.get("operation") == "symlink" and target.is_symlink() and os.readlink(target) == op.get("result"))
+            proven = op.get("applied") or (op.get("operation") == "symlink" and target.is_symlink() and os.readlink(target) == op.get("result")) \
+                or (op.get("operation") == "file" and _file_matches(target, op.get("result")))
             if not proven: continue
+            if op.get("operation") == "file":
+                # predecessor is a byte-exact backup path, or None when the file did not exist.
+                if predecessor is not None: shutil.copy2(predecessor, target)
+                elif target.exists(): target.unlink()
+                continue
             if op.get("operation") in {"symlink", "unlink"}:
                 if target.is_symlink(): target.unlink()
                 if predecessor is not None:
