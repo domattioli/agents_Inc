@@ -182,6 +182,23 @@ not through `Agent`. Session `33338e35-4ce9-43db-8cf0-624adf37e136`
 2026-09-05. Do not assume a vendor nickname is a Claude tier without
 checking Step 1a first.
 
+**Dispatch names tell the truth.** A Claude `Agent`/`Task` dispatch is named
+with a rung (Grunt, Workhorse, Orchestrator) or a Claude model name (haiku,
+sonnet, opus). A Codex persona name (`astra`, `sol`, `terra`, `luna`) appears
+only on a dispatch that reaches a Codex model through agents-inc. The owned
+`PreToolUse` hook denies an `Agent`/`Task` description that begins with a
+persona name; renaming does not change the execution model. A Claude
+supervisor of a Codex worker puts its own rung first and names the worker
+later: "Workhorse supervises luna parser fix", not "luna: parser fix".
+
+**State the hierarchy before the first dispatch.** When an operator turn
+names two roles without an explicit order, or names models that differ from
+the ladder, say one line to the operator before the first dispatch:
+`Hierarchy: Executive = <name> (<model>, top); Supervisor = <name> (<model>, reports to Executive)`.
+The order is D34: Executive above Supervisor (= Orchestrator). Use words, not
+the `>` glyph; #14 began with `>` read as "less than". Operator-named models
+override the ladder default; state the conflict, do not resolve it silently.
+
 #### Step 1a: MODEL ROSTER — nickname → slug → dispatch command
 
 Verified against this machine 2026-09-05 (`which`, config files — do not
@@ -311,6 +328,17 @@ Real catches from one session: a reported 0.664s that measured 0.461s; a
 "gap closed" report that left the single most-used model still unpriced;
 row labels silently dropped from a live UI while the alignment gate stayed
 green. None of these were dishonesty. All were a delegate grading itself.
+
+**Recover a stopped delegate.** Do not read its whole transcript. Run
+`python3 skills/workerbee/scripts/recover_transcript.py <transcript.jsonl>`;
+it prints at most 4,000 characters (`--max-chars N` to change): files written
+by Write/Edit/MultiEdit/NotebookEdit, the last text, the last error, and the
+final status. Bash writes are not tracked; check `git status` too.
+
+**Duplicate warning.** When the hook adds "agents-inc duplicate warning", the
+same description and prompt are already in flight from another session. Check
+that session before re-dispatching. For intentional fan-out, add the line
+`agents-inc: fan-out` to each prompt.
 
 ### Step 3a: Poll every dispatch. Default on.
 
