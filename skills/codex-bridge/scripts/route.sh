@@ -228,9 +228,12 @@ backend = sys.argv[2]
 result = sys.argv[3]
 message = sys.argv[4] if len(sys.argv) > 4 else ""
 
+data.setdefault(backend, {"status": "ok", "cooldown_until": None, "last_error": None, "last_checked": None})
+
 if result == 'ok':
     data[backend]['status'] = 'ok'
     data[backend]['cooldown_until'] = None
+    data[backend]['last_error'] = None
 elif result == 'transient':
     data[backend]['status'] = 'degraded'
 elif result == 'quota':
@@ -246,7 +249,7 @@ elif result == 'quota':
         cooldown_time = now + timedelta(minutes=60)
         data[backend]['cooldown_until'] = cooldown_time.isoformat()
 
-if message:
+if result != 'ok' and message:
     data[backend]['last_error'] = message[:200]
 data[backend]['last_checked'] = datetime.now(timezone.utc).isoformat()
 
@@ -271,17 +274,19 @@ import json
 import sys
 from datetime import datetime, timezone
 
+FRESH_WINDOW_H = 24
 data = json.loads(sys.argv[1])
 now = datetime.now(timezone.utc)
 
-print("Backend           Status      Cooldown Remaining     Last Error")
-print("-" * 85)
+print("Backend           Status      Cooldown Remaining     Age          Last Error")
+print("-" * 95)
 
 for backend in ["gemini-flash", "gemini-flash-lite", "codex", "mistral", "openrouter", "haiku", "sonnet", "opus", "fable"]:
     info = data.get(backend, {})
     status = info.get('status', 'unknown')
     cooldown_str = info.get('cooldown_until')
     last_error = info.get('last_error', '')
+    last_checked_str = info.get('last_checked')
 
     # Normalize status: if cooldown has expired, show as ok
     if cooldown_str:
@@ -299,9 +304,35 @@ for backend in ["gemini-flash", "gemini-flash-lite", "codex", "mistral", "openro
     else:
         cooldown_display = "-"
 
+    # Calculate age
+    age_display = "unknown"
+    if last_checked_str:
+        try:
+            last_checked_dt = datetime.fromisoformat(last_checked_str)
+            if last_checked_dt.tzinfo is None:
+                last_checked_dt = last_checked_dt.replace(tzinfo=timezone.utc)
+            age_seconds = (now - last_checked_dt).total_seconds()
+            if age_seconds < 0:
+                # Future timestamp, fresh
+                age_display = "0m"
+            else:
+                age_hours = int(age_seconds / 3600)
+                age_mins = int((age_seconds % 3600) / 60)
+                if age_hours < 1:
+                    age_display = f"{age_mins}m"
+                elif age_hours <= FRESH_WINDOW_H:
+                    age_display = f"{age_hours}h"
+                elif age_hours < 48:
+                    age_display = f"stale {age_hours}h"
+                else:
+                    age_days = int(age_hours / 24)
+                    age_display = f"stale {age_days}d"
+        except (ValueError, TypeError):
+            age_display = "unknown"
+
     error_display = last_error[:60] if last_error else "-"
 
-    print(f"{backend:17} {status:11} {cooldown_display:22} {error_display}")
+    print(f"{backend:17} {status:11} {cooldown_display:22} {age_display:12} {error_display}")
 PYEOF
     fi
 }

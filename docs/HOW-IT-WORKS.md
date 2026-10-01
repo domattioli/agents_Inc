@@ -216,11 +216,11 @@ ask_mistral: API error: Not enough capacity available for this request, please r
 |---|---|---|
 | Gemini | `skills/codex-bridge/scripts/gask.sh` | `~/.codex-bridge/gemini-key` (`GEMINI_API_KEY`) |
 | Mistral | `skills/codex-bridge/scripts/mask.sh` | `~/.config/devstral/api_key` |
-| OpenRouter | `skills/codex-bridge/scripts/oask.sh` | `~/.codex-bridge/openrouter-key` (`OPEN_ROUTER_API_KEY`) |
+| OpenRouter | `skills/codex-bridge/scripts/oask.sh` | `~/.codex-bridge/openrouter-key` (`OPENROUTER_API_KEY` or `OPEN_ROUTER_API_KEY`) |
 
 - Optional-provider access
   - **Key location**
-    - Keys live in those per-provider files. There is no `~/.config/workerbees/.env`, and its absence does not mean keys are absent.
+    - Key names are read from `~/.config/workerbees/.env`, the older `~/.config/agents_inc/.env`, and `~/Projects/.env`; `agents-inc` writes only `~/.config/workerbees/.env`. A missing file does not mean keys are absent.
   - **Usage**
 
 ```bash
@@ -232,6 +232,7 @@ bash skills/codex-bridge/scripts/gask.sh --tier digest "prompt"
   - **Authorization**
     - D7 denies confidential input to an optional provider until `.workerbees/authorization.json` authorizes that workspace.
     - Non-confidential extract and summarize work is allowed.
+    - Zero Data Retention (ZDR) is an OpenRouter account privacy setting at openrouter.ai/settings/privacy, not a repo setting. With it on, many `:free` endpoints refuse requests with a 404 ZDR violation. Turning it off lets those free providers train on your inputs (#19). The repo does not change it.
 
 ## Next docs
 

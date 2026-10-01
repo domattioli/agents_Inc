@@ -24,6 +24,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 MASK_STATUS_FILE=$(mktemp)
 MASK_BODY_FILE=$(mktemp)
 export MASK_STATUS_FILE MASK_BODY_FILE
+MASK_ATTEMPTED=false
 mask_report_trap() {
   local ec=$?
   local status=""
@@ -55,6 +56,15 @@ mask_report_trap() {
   PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
     --provider mistral --model "${MODEL:-unknown}" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" "${message_arg[@]+${message_arg[@]}}" \
     >/dev/null 2>/tmp/mask_report_err.$$ || echo "mask: health report failed" >&2
+  if [[ "$MASK_ATTEMPTED" == true ]] && [[ "$outcome" != "withdrawn" ]] && [[ "$outcome" != "zdr" ]]; then
+    local result="ok"
+    [[ "$outcome" != "ok" ]] && result="transient"
+    local msg=""
+    [[ -n "$message" ]] && msg="$message"
+    [[ -z "$msg" ]] && [[ -n "$status" ]] && msg="$outcome http $status"
+    [[ -z "$msg" ]] && msg="$outcome"
+    CODEX_BRIDGE_MODE=standard bash "$SCRIPT_DIR/route.sh" report mistral "$result" "$msg" >/dev/null 2>&1 || true
+  fi
   rm -f /tmp/mask_report_err.$$ "$MASK_STATUS_FILE" "$MASK_BODY_FILE" 2>/dev/null
   exit $ec
 }
@@ -161,6 +171,7 @@ export MISTRAL_API_KEY="$KEY"
 export MISTRAL_AGENT_ID="$AGENT_ID"
 export MODEL PROMPT RAW USAGE_LOG CONVERSATION_FILE AGENT RESET MASK_TIMEOUT MASK_AGENT_TIMEOUT
 
+MASK_ATTEMPTED=true
 python3 - "${DECLARE_FILES[@]:-}" <<'PYTHON'
 import json
 import os
