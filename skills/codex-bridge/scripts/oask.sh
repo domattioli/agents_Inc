@@ -75,6 +75,13 @@ oask_report_trap() {
   PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 -m agents_inc.free_health report \
     --provider openrouter --model "$MODEL" --outcome "$outcome" "${retry_arg[@]+${retry_arg[@]}}" \
     >/dev/null 2>/tmp/oask_report_err.$$ || echo "oask: health report failed" >&2
+  if [[ "$outcome" != "withdrawn" ]] && [[ "$outcome" != "zdr" ]]; then
+    local result="ok"
+    [[ "$outcome" != "ok" ]] && result="transient"
+    local msg="$outcome"
+    [[ -n "${OASK_REPORT_STATUS:-}" ]] && msg="$outcome http $OASK_REPORT_STATUS"
+    CODEX_BRIDGE_MODE=standard bash "$SCRIPT_DIR/route.sh" report openrouter "$result" "$msg" >/dev/null 2>&1 || true
+  fi
   rm -f /tmp/oask_report_err.$$ "$OASK_REPORT_BODY_FILE" 2>/dev/null
   exit $ec
 }
