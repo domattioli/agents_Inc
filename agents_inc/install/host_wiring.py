@@ -4,7 +4,8 @@ Skills load lazily by description, so an installed skill alone never reaches a s
 does not already know to delegate. This module writes the mandate where every session reads it:
 the host's user-scope AGENTS.md, plus a SessionStart hook (Claude, Codex), a PreToolUse hook on
 Claude's Agent tool (advisory nudge and duplicate warning, plus the spec 015 persona deny), and a
-PostToolUse release hook. Every mutation is receipt-owned and reversible.
+PostToolUse release and host-ledger hook (Agent/Task, and DelegateAgent MCP calls). Every mutation
+is receipt-owned and reversible.
 """
 from __future__ import annotations
 import hashlib, json, os, shutil, tempfile
@@ -27,7 +28,7 @@ class Host:
     root: str               # host config dir relative to home; host is wired only if it exists
     instructions: str       # user-scope instruction file relative to home
     hooks_file: str | None  # Claude-style {"hooks": {...}} JSON, or None
-    nudge: bool = False     # PreToolUse + PostToolUse hooks on the Agent tool
+    nudge: bool = False     # PreToolUse + PostToolUse hooks on Agent/Task; PostToolUse on DelegateAgent
     prompt_hook: bool = False  # UserPromptSubmit at_route hook (@alias routing)
 
 HOSTS = (
@@ -111,6 +112,7 @@ def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
     if host.nudge:
         hooks.setdefault("PreToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
         hooks.setdefault("PostToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
+        hooks["PostToolUse"].append({"matcher": "mcp__.*__DelegateAgent", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
     if host.prompt_hook:  # timeout above the hook's own 120 s alarm
         hooks.setdefault("UserPromptSubmit", []).append({"hooks": [{"type": "command", "command": at_route_command(paths), "timeout": 130}]})
     return config

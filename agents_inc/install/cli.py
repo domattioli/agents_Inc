@@ -103,11 +103,15 @@ def main(argv=None):
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
     p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
+    p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
         if args.command == "install": return install(args)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
+        if args.command == "ledger":
+            from .. import host_ledger  # lazy: hook events must not depend on the ledger import
+            return host_ledger.cli(args.rest, paths.state)
         if args.command == "doctor":
             report = check_install(paths, args.live_model)
             if args.json:

@@ -142,11 +142,35 @@ vendor column you may use** — the ladder tells you the rung, not the vendor.
 
 | tier | Anthropic | OpenAI | use for |
 |---|---|---|---|
-| ultra | fable | astra | hardest reasoning, last resort |
-| flagship | opus | sol | orchestration, adversarial review, gates |
+| executive | fable | astra | hardest reasoning, last resort |
+| orchestrator | opus | sol | orchestration, adversarial review, gates |
 | workhorse | sonnet | terra | implementation, supervising a pair |
-| flash | haiku | luna | triage, mechanical edits, high volume |
-| bottom rung | — | oss / free | one-shot text, drafts, sounding boards, well-scoped small coding (high volume of small diffs, never a large or architecturally significant change) |
+| grunt | haiku | luna | triage, mechanical edits, high volume |
+| grunt | — | oss / free | one-shot text, drafts, sounding boards, well-scoped small coding (high volume of small diffs, never a large or architecturally significant change) |
+
+Rung names follow D27/D36: executive, orchestrator, workhorse, grunt. Older
+prose in this skill says ultra, flagship, and flash for executive,
+orchestrator, and grunt. The generated table below is the source of truth for
+which model ids sit on each rung; edit `agents_inc/models.json` or
+`agents_inc/routing.json`, then run
+`python3 skills/workerbee/scripts/gen_tier_tables.py --write`.
+
+<!-- BEGIN GENERATED tier-table (skills/workerbee/scripts/gen_tier_tables.py --write); do not edit by hand -->
+| rung | provider | default (routing.json) | all ids (models.json) |
+|---|---|---|---|
+| executive | claude | `fable` | `fable` |
+| executive | codex | `gpt-6-astra` | `gpt-6-astra` |
+| orchestrator | claude | `opus` | `opus` |
+| orchestrator | codex | `gpt-5.6-sol` | `gpt-5.6-sol` |
+| workhorse | claude | `sonnet` | `sonnet` |
+| workhorse | codex | `gpt-5.6-terra` | `gpt-5.6-terra` |
+| grunt | claude | `haiku` | `haiku` |
+| grunt | codex | `gpt-5.6-luna` | `gpt-5.4-mini`, `gpt-5.6-luna` |
+| grunt | gemini | `gemini-flash-lite-latest` | `gemini-2.5-flash`, `gemini-flash-lite`, `gemini-flash-lite-latest` |
+| grunt | mistral | `mistral-small-latest` | `mistral-small-latest` |
+| grunt | ollama | `qwen2.5-coder:3b` | `qwen2.5-coder:3b`, `qwen2.5-coder:7b`, `qwen3:8b` |
+| grunt | openrouter | `openrouter/auto:free` | `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`, `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `google/lyria-3-clip-preview`, `google/lyria-3-pro-preview`, `inclusionai/ling-3.0-flash-fin:free`, `inclusionai/ling-3.0-flash-sante:free`, `liquid/lfm-2.5-2.6b:free`, `minimax/minimax-m2.7:free`, `minimax/minimax-m3:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-content-safety:free`, `nvidia/nemotron-3.5-lightning:free`, `openrouter/auto:free`, `openrouter/free`, `poolside/laguna-s-2.1:free`, `poolside/laguna-xs-2.1:free`, `thinkingmachines/inkling-small:free`, `thinkingmachines/inkling:free`, `z-ai/glm-5.2:free` |
+<!-- END GENERATED tier-table -->
 
 Coding at flash/bottom-rung is scope-gated, not banned: small, narrow, high-volume jobs only. A task needing scope/design judgment is workhorse+, dispatch it there.
 
@@ -208,22 +232,22 @@ vendor that isn't wired up here.
 
 | nickname | vendor | slug | dispatch | tier | when-to-use |
 |---|---|---|---|---|---|
-| astra | OpenAI (Codex) | `gpt-6-astra` | `@AGENTS_INC_LAUNCHER@ run --model astra --cwd <dir>` | ultra | hardest reasoning |
-| sol | OpenAI (Codex) | `gpt-5.6-sol` | `@AGENTS_INC_LAUNCHER@ run --model sol --cwd <dir>` | flagship | orchestration, review |
+| astra | OpenAI (Codex) | `gpt-6-astra` | `@AGENTS_INC_LAUNCHER@ run --model astra --cwd <dir>` | executive | hardest reasoning |
+| sol | OpenAI (Codex) | `gpt-5.6-sol` | `@AGENTS_INC_LAUNCHER@ run --model sol --cwd <dir>` | orchestrator | orchestration, review |
 | terra | OpenAI (Codex) | `gpt-5.6-terra` | `@AGENTS_INC_LAUNCHER@ run --model terra --cwd <dir>` | workhorse | implementation |
-| luna | OpenAI (Codex) | `gpt-5.6-luna` | `@AGENTS_INC_LAUNCHER@ run --model luna --cwd <dir>` | flash | triage, mechanical work |
-| fable | Anthropic | n/a — `Agent` tool | `Agent(model="fable", ...)` | ultra | Claude-side hardest reasoning, last resort |
-| opus | Anthropic | n/a — `Agent` tool | `Agent(model="opus", ...)` | flagship | Claude-side orchestration, adversarial review, gates |
+| luna | OpenAI (Codex) | `gpt-5.6-luna` | `@AGENTS_INC_LAUNCHER@ run --model luna --cwd <dir>` | grunt | triage, mechanical work |
+| fable | Anthropic | n/a — `Agent` tool | `Agent(model="fable", ...)` | executive | Claude-side hardest reasoning, last resort |
+| opus | Anthropic | n/a — `Agent` tool | `Agent(model="opus", ...)` | orchestrator | Claude-side orchestration, adversarial review, gates |
 | sonnet | Anthropic | n/a — `Agent` tool | `Agent(model="sonnet", ...)` | workhorse | Claude-side implementation |
-| haiku | Anthropic | n/a — `Agent` tool | `Agent(model="haiku", ...)` | flash | Claude-side triage, mechanical edits |
-| gemini digest | Google Gemini, free tier | `gemini-3.8-flash` | `skills/codex-bridge/scripts/gask.sh --tier digest "<prompt>"` | workhorse-ish | 1M-context bulk digest of one large blob (logs, transcripts) |
-| gemini cheap | Google Gemini, free tier | `gemini-flash-lite-latest` | `skills/codex-bridge/scripts/gask.sh --tier cheap "<prompt>"` | flash | high-volume shallow triage |
+| haiku | Anthropic | n/a — `Agent` tool | `Agent(model="haiku", ...)` | grunt | Claude-side triage, mechanical edits |
+| gemini digest | Google Gemini, free tier | `gemini-3.8-flash` | `skills/codex-bridge/scripts/gask.sh --tier digest "<prompt>"` | grunt | 1M-context bulk digest of one large blob (logs, transcripts) |
+| gemini cheap | Google Gemini, free tier | `gemini-flash-lite-latest` | `skills/codex-bridge/scripts/gask.sh --tier cheap "<prompt>"` | grunt | high-volume shallow triage |
 | gemini deep | Google Gemini, free tier | `gemini-3.1-pro-preview` | `skills/codex-bridge/scripts/gask.sh --tier deep "<prompt>"` | — | **verify quota before use**: `limit: 0` on this account as of 2026-09-02, i.e. currently unusable |
-| mistral cheap | Mistral API | `ministral-3b-latest` | `skills/codex-bridge/scripts/mask.sh --tier cheap "<prompt>"` | flash | mechanical transform |
+| mistral cheap | Mistral API | `ministral-3b-latest` | `skills/codex-bridge/scripts/mask.sh --tier cheap "<prompt>"` | grunt | mechanical transform |
 | mistral code | Mistral API | `codestral-latest` | `skills/codex-bridge/scripts/mask.sh --tier code "<prompt>"` | workhorse | code review/critique. Devstral not exposed on this key; codestral is the substitute |
 | mistral deep | Mistral API | `mistral-large-latest` | `skills/codex-bridge/scripts/mask.sh --tier deep "<prompt>"` | workhorse | research-style questions |
-| openrouter free | OpenRouter, free-tier models only | model id from `curl https://openrouter.ai/api/v1/models` | `skills/codex-bridge/scripts/oask.sh "<prompt>"` | bottom rung | one-shot text/drafts. Hard-coded spend guard refuses non-free models — operator rule is spend nothing on OpenRouter |
-| DelegateAgent | OpenAI (Codex), via MCP | `gpt-5.6-luna` | `DelegateAgent(model="luna", ...)` | flash | transcript-return alternative to broken --backend codex --wait for luna; same call shape as Claude `Agent` tool |
+| openrouter free | OpenRouter, free-tier models only | model id from `curl https://openrouter.ai/api/v1/models` | `skills/codex-bridge/scripts/oask.sh "<prompt>"` | grunt | one-shot text/drafts. Hard-coded spend guard refuses non-free models — operator rule is spend nothing on OpenRouter |
+| DelegateAgent | OpenAI (Codex), via MCP | `gpt-5.6-luna` | `DelegateAgent(model="luna", ...)` | grunt | transcript-return alternative to broken --backend codex --wait for luna; same call shape as Claude `Agent` tool |
 
 Bridge scripts (`gask.sh`/`mask.sh`/`oask.sh`) live in `skills/codex-bridge/scripts/` in this repo, alongside this skill. Prefer `agent.sh submit --backend <b> --wait "<prompt>"` over calling a wrapper directly (see `## CLI` section below) — it gives a job id and a saved `result.json`.
 
@@ -402,6 +426,29 @@ What IS achievable, and is therefore required:
 Real streaming parity would need an MCP server wrapping codex-bridge and
 exposing a streaming tool — different infrastructure, out of scope for a
 discipline skill. Do not re-litigate it as a doc gap.
+
+### Step 3c: Keep a delegate until its context ceiling
+
+Continue a live or finished delegate that already holds the needed context
+instead of spawning a new one: Claude `SendMessage` to the agent id; Codex
+`ask.sh` with its thread id. Retire it at its context ceiling: 200k tokens by
+default, 300k for opus. Ask it for a handoff note first, then seed the
+successor with that note. Measured (#28, 1,399 local subagents): 2.5% ended
+at or above 200k and 0.2% at or above 300k; a respawn re-pays about 42k
+tokens of context (median). The rule that matters is "continue, do not
+respawn"; the ceiling rarely binds.
+
+Exceptions, use a fresh delegate: the premise changed (Step 9 wins); an
+adversarial review needs a reviewer without the author's context; the
+backend cannot resume. Resume support: Codex yes (`ask.sh` thread id);
+Mistral partial (`mask.sh` keeps one global conversation, so parallel
+delegates share it; treat as no resume); Gemini and OpenRouter no. When a
+transport reports no token count, the supervisor decides and states it.
+
+Every nested dispatch prompt carries the inheritance line from
+`skills/workerbee/header.md` (PERSISTENCE), so a delegate that spawns its own
+delegates follows the same rule. Enforcement is this text and that line; there
+is no token tracker and no lint check.
 
 ### Step 4: Triage delegate reports through a flash model
 
@@ -715,6 +762,17 @@ any delegate/rung/vendor, this repo or a session dispatching into it:
 
 Any unticked box (other than 10/11 with a stated N/A) → prompt is
 non-compliant, do not send it.
+
+**Header and slots (spec 016).** Do not reword the fixed elements per
+dispatch. Fill the slots in `skills/workerbee/slots.md`, then append
+`skills/workerbee/header.md`, or render both with
+`python3 skills/workerbee/scripts/render_dispatch.py --slots <json>`. A
+delegate that can read files may get the line `CONTRACT: <path to header.md>`
+instead of the pasted header; the training opt-out line stays pasted
+verbatim either way. Bare-API delegates (gask/mask/oask) always get the text
+pasted; lint them with `--transport bare`, which rejects a `CONTRACT:` line.
+Caching the header saves tokens only if measured (`cache_read` over about 10
+clustered runs); no saving is claimed until then.
 
 **Mechanical gate, both directions (D41, 2026-09-17; conditional per D42).**
 Tick-list = human check. Run the in-repo linter (mandatory), prompt saved to
