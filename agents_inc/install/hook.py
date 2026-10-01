@@ -101,8 +101,14 @@ def duplicate_check(paths: InstallPaths, payload: dict) -> str:
     return warning
 
 def agent_done(paths: InstallPaths, payload: dict) -> None:
-    """Release this session's claim when a foreground spawn returns; a background launch returns at once."""
-    if _tool_input(payload).get("run_in_background") is True: return
+    """Record a host-ledger dispatch row (spec 016), then release this session's claim when a foreground
+    Agent/Task spawn returns; a background launch returns at once, so its claim stays until the TTL."""
+    try:
+        from .. import host_ledger  # lazy: a broken ledger import must not break the other hook events
+        host_ledger.record_hook_dispatch(paths.state, payload)
+    except Exception:
+        pass
+    if payload.get("tool_name") not in AGENT_TOOLS or _tool_input(payload).get("run_in_background") is True: return
     path = _inflight(paths, task_key(payload))
     entry = _read_entry(path)
     if entry and entry.get("session_id") == _session(payload): path.unlink(missing_ok=True)

@@ -43,6 +43,56 @@ class Node:
     subscription_calls: int | None
     gate_reason: str | None
     timestamp: str  # ISO-8601 UTC
+    # Spec 016 DD1: optional fields; None means unknown, never zero.
+    effort: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read: int | None = None
+    cache_write: int | None = None
+    files_created: tuple[str, ...] | None = None
+    verdict: str | None = None  # pass | fail | None
+    cwd: str | None = None
+    source: str | None = None
+
+
+_NEW_FIELDS = ("effort", "input_tokens", "output_tokens", "cache_read", "cache_write",
+               "files_created", "verdict", "cwd", "source")
+
+
+def _store_mode(store: str | None) -> str:
+    """Resolve store mode: explicit argument overrides WORKERBEES_STORE. Raises ValueError."""
+    raw = store if store is not None else os.environ.get("WORKERBEES_STORE", "both")
+    mode = raw.lower() if isinstance(raw, str) else raw
+    if mode not in ("jsonl", "sqlite", "both"):
+        raise ValueError(f"Invalid WORKERBEES_STORE value: {mode!r}")
+    return mode
+
+
+def _as_files(value) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    return tuple(value)
+
+
+def _valid_token(v) -> bool:
+    return v is None or (isinstance(v, int) and not isinstance(v, bool) and v >= 0)
+
+
+def _valid_files(v) -> bool:
+    return v is None or (isinstance(v, (list, tuple)) and all(isinstance(x, str) for x in v))
+
+
+def _new_fields(data: dict, existing: "Node | None" = None) -> dict:
+    """Read new optional fields from a row; later non-null wins over existing."""
+    out = {}
+    for name in _NEW_FIELDS:
+        val = data.get(name)
+        if name == "files_created":
+            val = _as_files(val)
+        if val is None and existing is not None:
+            val = getattr(existing, name)
+        out[name] = val
+    return out
 
 
 @dataclass(frozen=True)
@@ -70,18 +120,19 @@ def _now_iso() -> str:
 def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, tier: str,
                     task: str, provider: str, parent_id: str | None, edge_type: str | None,
                     gate_reason: str | None = None,
-                    artifact_hash: str | None = None, artifact_size: int = 0) -> bool:
+                    artifact_hash: str | None = None, artifact_size: int = 0,
+                    effort: str | None = None, cwd: str | None = None,
+                    source: str | None = None, store: str | None = None) -> bool:
     """Record a job dispatch. Idempotent on node id (dedup on read). Never raises (FR-008).
 
     Dual-write mode controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
     Returns True on success, False on any error.
 
-    Raises ValueError if WORKERBEES_STORE has invalid value (checked before swallowing).
+    `store` (jsonl|sqlite|both) overrides WORKERBEES_STORE for this call.
+    Raises ValueError if the store value is invalid (checked before swallowing).
     """
     # Validate flag before try block so ValueError propagates
-    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
-    if store_mode not in ("jsonl", "sqlite", "both"):
-        raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+    store_mode = _store_mode(store)
 
     try:
         d = workspace / ".workerbees"
@@ -104,6 +155,15 @@ def record_dispatch(workspace: Path, *, node_id: str, run_id: str, model: str, t
                 "subscription_calls": None,
                 "gate_reason": gate_reason,
                 "artifact_hash": artifact_hash,
+                "effort": effort,
+                "input_tokens": None,
+                "output_tokens": None,
+                "cache_read": None,
+                "cache_write": None,
+                "files_created": None,
+                "verdict": None,
+                "cwd": cwd,
+                "source": source,
                 "timestamp": _now_iso()
             })
             with open(ledger_file, "a") as f:
@@ -222,30 +282,48 @@ def _dual_write_dispatch(workspace: Path, node_id: str, run_id: str, model: str,
         store.conn.commit()
 
 
-def record_return(workspace: Path, *, node_id: str, status: str, seconds: float,
-                  subscription_calls: int) -> bool:
+def record_return(workspace: Path, *, node_id: str, status: str, seconds: float | None = None,
+                  subscription_calls: int | None = None, run_id: str | None = None,
+                  effort: str | None = None, input_tokens: int | None = None,
+                  output_tokens: int | None = None, cache_read: int | None = None,
+                  cache_write: int | None = None, files_created: list[str] | tuple[str, ...] | None = None,
+                  verdict: str | None = None, store: str | None = None) -> bool:
     """Record a job return (terminal status). Idempotent on node id. Never raises (FR-008).
 
-    Dual-write mode controlled by WORKERBEES_STORE env var (jsonl|sqlite|both, default both).
+    `store` (jsonl|sqlite|both) overrides WORKERBEES_STORE for this call.
+    run_id = argument, else the node's dispatch row run_id, else None.
+    Invalid verdict (not pass/fail/None), token count (not None or int >= 0), or
+    files_created (not None or list/tuple of str) returns False and writes nothing.
+    None means unknown and is written as null, never zero.
     Returns True on success, False on any error.
 
-    Raises ValueError if WORKERBEES_STORE has invalid value (checked before swallowing).
+    Raises ValueError if the store value is invalid (checked before swallowing).
     """
     # Validate flag before try block so ValueError propagates
-    store_mode = os.environ.get("WORKERBEES_STORE", "both").lower()
-    if store_mode not in ("jsonl", "sqlite", "both"):
-        raise ValueError(f"Invalid WORKERBEES_STORE value: {store_mode!r}")
+    store_mode = _store_mode(store)
+
+    if verdict not in ("pass", "fail", None):
+        return False
+    if not all(_valid_token(v) for v in (input_tokens, output_tokens, cache_read, cache_write)):
+        return False
+    if not _valid_files(files_created):
+        return False
 
     try:
         d = workspace / ".workerbees"
         d.mkdir(parents=True, exist_ok=True)
+
+        if run_id is None:
+            existing = load(workspace).nodes.get(node_id)
+            if existing is not None:
+                run_id = existing.run_id
 
         # Write to JSONL if requested (jsonl or both modes)
         if store_mode in ("jsonl", "both"):
             ledger_file = d / "ledger.jsonl"
             line = json.dumps({
                 "id": node_id,
-                "run_id": None,
+                "run_id": run_id,
                 "model": None,
                 "tier": None,
                 "task": None,
@@ -256,6 +334,15 @@ def record_return(workspace: Path, *, node_id: str, status: str, seconds: float,
                 "seconds": seconds,
                 "subscription_calls": subscription_calls,
                 "gate_reason": None,
+                "effort": effort,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_read": cache_read,
+                "cache_write": cache_write,
+                "files_created": list(files_created) if files_created is not None else None,
+                "verdict": verdict,
+                "cwd": None,
+                "source": None,
                 "timestamp": _now_iso()
             })
             with open(ledger_file, "a") as f:
@@ -263,15 +350,17 @@ def record_return(workspace: Path, *, node_id: str, status: str, seconds: float,
 
         # Write to sqlite if requested (both or sqlite modes)
         if store_mode in ("sqlite", "both"):
-            _dual_write_return(workspace, node_id, status, seconds, subscription_calls)
+            _dual_write_return(workspace, node_id, status, seconds, subscription_calls,
+                               input_tokens, output_tokens)
 
         return True
     except Exception:
         return False  # Swallow all errors per FR-008
 
 
-def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: float,
-                       subscription_calls: int) -> None:
+def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: float | None,
+                       subscription_calls: int | None, input_tokens: int | None = None,
+                       output_tokens: int | None = None) -> None:
     """Write return event to normalized 3NF schema. Idempotent via IntegrityError catch.
 
     Appends event record to node. Raises on real errors; swallowed by record_return per FR-008.
@@ -286,7 +375,9 @@ def _dual_write_return(workspace: Path, node_id: str, status: str, seconds: floa
         now = _now_iso()
         usage = {
             "seconds": seconds,
-            "subscription_calls": subscription_calls
+            "subscription_calls": subscription_calls,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
         }
 
         try:
@@ -373,7 +464,8 @@ def load(workspace: Path) -> Ledger:
                                 seconds=data.get("seconds"),
                                 subscription_calls=data.get("subscription_calls"),
                                 gate_reason=data.get("gate_reason"),
-                                timestamp=data.get("timestamp", "")
+                                timestamp=data.get("timestamp", ""),
+                                **_new_fields(data)
                             )
                             nodes[node_id] = node
                         else:
@@ -395,7 +487,8 @@ def load(workspace: Path) -> Ledger:
                                     seconds=data.get("seconds") if data.get("seconds") is not None else existing.seconds,
                                     subscription_calls=data.get("subscription_calls") if data.get("subscription_calls") is not None else existing.subscription_calls,
                                     gate_reason=data.get("gate_reason") or existing.gate_reason,
-                                    timestamp=new_timestamp
+                                    timestamp=new_timestamp,
+                                    **_new_fields(data, existing)
                                 )
                                 nodes[node_id] = node
                     except json.JSONDecodeError:
@@ -632,6 +725,8 @@ def to_json(ledger: Ledger) -> str:
             "subscription_calls": n.subscription_calls,
             "gate_reason": n.gate_reason,
             "timestamp": n.timestamp,
+            **{k: (list(v) if k == "files_created" and v is not None else v)
+               for k, v in ((f, getattr(n, f)) for f in _NEW_FIELDS)},
         }
         for n in ledger.nodes.values()
     ]
@@ -658,6 +753,7 @@ def from_json(s: str) -> Ledger:
                 subscription_calls=node_data.get("subscription_calls"),
                 gate_reason=node_data.get("gate_reason"),
                 timestamp=node_data.get("timestamp", ""),
+                **_new_fields(node_data),
             )
             nodes[node.id] = node
         return Ledger(nodes=nodes, warnings=[])
