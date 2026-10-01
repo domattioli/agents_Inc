@@ -47,12 +47,12 @@ PLAN CONTRACT: {{PLAN_CONTRACT}}
 ## STYLE slot (experimental, #4)
 
 Opt-in, for extractive and summarization dispatches only. It is not
-re-tested in this change, and it conflicts with caveman on arrows and
-abbreviations; the dispatcher chooses one. The value from #4 "Revised
-template", verbatim:
+re-tested in this change. Caveman wins on conflict (operator ruling
+2026-10-01): the #4 "Revised template" asked for arrows and abbreviations,
+which caveman bans, so the value below drops both:
 
 ```text
-HARD CONSTRAINT: Default to fragments, labels, arrows, abbreviations — NOT normal prose.
+HARD CONSTRAINT: Default to fragments and labels, NOT normal prose. Follow caveman rules: no arrows, no invented abbreviations; standard acronyms only.
 A full grammatical sentence is allowed ONLY where a fragment would lose real precision
 (negation scope, conditional/causal clause, operator precedence). Outside those cases,
 one complete sentence = you failed the task, rewrite it. When you do use a full sentence,
