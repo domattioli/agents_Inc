@@ -1,8 +1,11 @@
 {
   "title": "agents_Inc",
   "upload_type": "software",
+  "version": "0.1.0",
   "creators": [
-    {"name": "Mattioli, Dominik"}
+    {
+      "name": "Mattioli, Dominik"
+    }
   ],
   "keywords": [
     "claude-code",

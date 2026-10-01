@@ -4,12 +4,12 @@ A corporate organization for AI agents: an executive plans, supervisor delegates
 
 ![Delegation and support flow: Owner, Interlocutor, Exec, Super, and Worker roles across the nine speckit phases](docs/assets/delegation-model.png)
 
-![Status: pre-MVP / WIP](https://img.shields.io/badge/status-pre--MVP%20%2F%20WIP-orange)
+![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
 [![Tests](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml/badge.svg)](https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-blue)](https://github.com/domattioli/agents_Inc/issues)
 [![Open issues](https://img.shields.io/github/issues/domattioli/agents_Inc)](https://github.com/domattioli/agents_Inc/issues)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670101.svg)](https://doi.org/10.5281/zenodo.22670101)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)
 
 **How to use:** `PYTHONPATH=. python3 tools/governance_demo.py --fake` — exercises governed routing, policy checks, and ledger recording with no provider keys required; see [Getting started](#getting-started) for real-provider setup.
 
