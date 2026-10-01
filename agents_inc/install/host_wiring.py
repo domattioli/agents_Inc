@@ -15,6 +15,10 @@ from .receipt import InstallReceipt, OwnedPath
 BEGIN = "<!-- agents-inc:begin (managed by `agents-inc install`; edits inside this block are overwritten) -->"
 END = "<!-- agents-inc:end -->"
 HOOK_MARK = " hook "  # owned hook commands are "<launcher> hook <event>"
+AT_ROUTE = "skills/codex-bridge/scripts/at_route.sh"          # relative to the installed release
+LEGACY_AT_ROUTE = ".claude/scripts/at_route.sh"               # pre-013 hand-installed copy, relative to home
+LEGACY_MARKER = "at_route.sh - UserPromptSubmit hook"
+ALIASES = ("haiku", "sonnet", "opus", "fable", "astra", "sol", "terra", "luna", "gemini", "mistral", "openrouter")
 
 @dataclass(frozen=True)
 class Host:
@@ -23,9 +27,10 @@ class Host:
     instructions: str       # user-scope instruction file relative to home
     hooks_file: str | None  # Claude-style {"hooks": {...}} JSON, or None
     nudge: bool = False     # PreToolUse advisory on the Agent tool
+    prompt_hook: bool = False  # UserPromptSubmit at_route hook (@alias routing)
 
 HOSTS = (
-    Host("claude", ".claude", ".claude/AGENTS.md", ".claude/settings.json", nudge=True),
+    Host("claude", ".claude", ".claude/AGENTS.md", ".claude/settings.json", nudge=True, prompt_hook=True),
     Host("codex", ".codex", ".codex/AGENTS.md", ".codex/hooks.json"),
     Host("gemini", ".gemini", ".gemini/AGENTS.md", None),
 )
@@ -70,28 +75,42 @@ def remove_block(text: str) -> str:
 
 def hook_command(paths: InstallPaths, event: str) -> str: return f"{paths.launcher}{HOOK_MARK}{event}"
 
-def _owned(command: object, paths: InstallPaths) -> bool:
+def at_route_command(paths: InstallPaths) -> str:
+    # Direct, not "<launcher> hook ...": the hook's exit 2 + stderr box must pass through unwrapped.
+    return f"bash {paths.current}/{AT_ROUTE}"
+
+def _launcher_hook(command: object, paths: InstallPaths) -> bool:
     return isinstance(command, str) and command.startswith(f"{paths.launcher}{HOOK_MARK}")
 
-def strip_hooks(config: dict, paths: InstallPaths) -> dict:
+def _owned(command: object, paths: InstallPaths) -> bool:
+    return _launcher_hook(command, paths) or command == at_route_command(paths)
+
+def _legacy(command: object, paths: InstallPaths) -> bool:
+    return command in {"bash ~/.claude/scripts/at_route.sh", f"bash {paths.home}/{LEGACY_AT_ROUTE}"}
+
+def strip_hooks(config: dict, paths: InstallPaths, legacy: bool = False) -> dict:
+    """Drop owned entries; with legacy=True (install/repair only) also drop the pre-013 at_route line."""
     hooks = config.get("hooks")
     if not isinstance(hooks, dict): return config
+    def drop(h): return isinstance(h, dict) and (_owned(h.get("command"), paths) or (legacy and _legacy(h.get("command"), paths)))
     for event in list(hooks):
         groups = []
         for group in hooks[event] if isinstance(hooks[event], list) else []:
             if not isinstance(group, dict): groups.append(group); continue
-            kept = [h for h in group.get("hooks", []) if not (isinstance(h, dict) and _owned(h.get("command"), paths))]
+            kept = [h for h in group.get("hooks", []) if not drop(h)]
             if kept: groups.append({**group, "hooks": kept})
         if groups: hooks[event] = groups
         else: del hooks[event]
     return config
 
 def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
-    config = strip_hooks(config, paths)
+    config = strip_hooks(config, paths, legacy=True)
     hooks = config.setdefault("hooks", {})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": hook_command(paths, f"session-start --host {host.name}"), "timeout": 10}]})
     if host.nudge:
         hooks.setdefault("PreToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
+    if host.prompt_hook:  # timeout above the hook's own 120 s alarm
+        hooks.setdefault("UserPromptSubmit", []).append({"hooks": [{"type": "command", "command": at_route_command(paths), "timeout": 130}]})
     return config
 
 def gemini_reads_agents_md(config: dict) -> dict:
@@ -181,5 +200,30 @@ def wiring_problems(paths: InstallPaths) -> list[str]:
             except (OSError, ValueError, RuntimeError): problems.append(f"{host.name}:hooks"); continue
             commands = [h.get("command") for groups in config.get("hooks", {}).values() if isinstance(groups, list)
                         for g in groups if isinstance(g, dict) for h in g.get("hooks", []) if isinstance(h, dict)]
-            if not any(_owned(c, paths) for c in commands): problems.append(f"{host.name}:hooks")
+            if not any(_launcher_hook(c, paths) for c in commands): problems.append(f"{host.name}:hooks")
     return problems
+
+def install_alias_links(paths: InstallPaths, receipt: InstallReceipt, journal=None) -> tuple[InstallReceipt, list[str]]:
+    """Own `@<alias>` links next to the launcher, pointing through `current` at the installed hook.
+    Links to the legacy hand-installed copy are relinked; foreign paths are left with a notice."""
+    desired, legacy = str(paths.current / AT_ROUTE), paths.home / LEGACY_AT_ROUTE
+    links = {paths.launcher.parent / f"@{alias}" for alias in ALIASES}
+    owned, notices = [item for item in receipt.owned_paths if item.path not in links], []
+    for alias in ALIASES:
+        link = paths.launcher.parent / f"@{alias}"
+        def create(link=link): link.parent.mkdir(parents=True, exist_ok=True); link.symlink_to(desired)
+        if link.is_symlink() and os.readlink(link) == desired: pass
+        elif link.is_symlink() and os.readlink(link) == str(legacy):
+            if journal: journal.apply("unlink", link, str(legacy), None, link.unlink)
+            else: link.unlink()
+            if journal: journal.apply("symlink", link, None, desired, create)
+            else: create()
+        elif link.exists() or link.is_symlink():
+            notices.append(f"NOTE: {link} is not ours; left untouched. Remove it and run `agents-inc repair` to let agents-inc own it."); continue
+        elif journal: journal.apply("symlink", link, None, desired, create)
+        else: create()
+        owned.append(OwnedPath(link, "symlink", None, desired))
+    if legacy.is_file() and not legacy.is_symlink():
+        if LEGACY_MARKER in legacy.read_text(errors="replace"): delete_file(legacy, paths, journal)
+        else: notices.append(f"NOTE: {legacy} is not the agents-inc at_route hook; left in place.")
+    return InstallReceipt(receipt.release_hash, receipt.python_path, receipt.codex_path, tuple(owned), receipt.prior_release), notices

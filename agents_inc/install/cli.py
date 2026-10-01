@@ -5,7 +5,7 @@ from pathlib import Path
 from .bundle import activate, stage_bundle
 from .discovery import install_skill_links, restore_skill_links
 from .doctor import check_install
-from .host_wiring import install_host_wiring, remove_host_wiring
+from .host_wiring import install_alias_links, install_host_wiring, remove_host_wiring
 from . import hook as host_hook
 from .paths import InstallPaths
 from .receipt import InstallReceipt, OwnedPath
@@ -52,10 +52,16 @@ def install(args):
             launcher = install_convenience_launcher(paths, journal)
             owned = tuple(item for item in receipt.owned_paths if item.path != launcher.path) + (launcher,)
             receipt = InstallReceipt(receipt.release_hash, receipt.python_path, receipt.codex_path, owned, receipt.prior_release)
-            if not getattr(args, "no_host_wiring", False): receipt = install_host_wiring(paths, receipt, journal)
+            if not getattr(args, "no_host_wiring", False):
+                receipt = install_host_wiring(paths, receipt, journal)
+                if (paths.home / ".claude").is_dir():
+                    receipt, link_notices = install_alias_links(paths, receipt, journal); notices.extend(link_notices)
             journal.apply("receipt", paths.receipt, None, None, lambda: receipt.save_atomic(paths.receipt))
             paths.roster.parent.mkdir(parents=True, exist_ok=True)
             if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
+            # Unowned cache for doctor's hook-drift check; not journaled, kept by uninstall.
+            paths.state.mkdir(parents=True, exist_ok=True)
+            (paths.state / "source-checkout").write_text(str(Path(args.source).resolve()) + "\n")
             journal.commit()
             verify_installed(paths)
             for line in notices: print(line)

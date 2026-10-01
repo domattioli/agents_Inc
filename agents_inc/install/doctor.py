@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 from .bundle import verify_bundle
-from .host_wiring import wiring_problems
+from .host_wiring import AT_ROUTE, wiring_problems
 from .paths import InstallPaths
 from .receipt import InstallReceipt
 from .runtime import build_codex_argv
@@ -18,6 +18,17 @@ class DoctorReport:
     live: dict | None = None
     warnings: tuple[str, ...] = ()  # non-fatal; never affects `ready` or the CLI exit code
     def as_dict(self): return {"ready": self.ready, "codes": list(self.codes), "live": self.live, "warnings": list(self.warnings)}
+
+def _hook_drift(paths: InstallPaths) -> list[str]:
+    """Warn when the installed at_route hook differs from the source checkout it came from."""
+    installed = paths.current / AT_ROUTE
+    try:
+        if not installed.is_file(): return []  # release ships no hook: nothing to drift
+        record = paths.state / "source-checkout"
+        source = Path(record.read_text().strip()) / AT_ROUTE if record.is_file() else None
+        if source is None or not source.is_file(): return ["WB_HOOK_DRIFT_UNCHECKED"]
+        return ["WB_HOOK_DRIFT"] if source.read_bytes() != installed.read_bytes() else []
+    except OSError: return ["WB_HOOK_DRIFT_UNCHECKED"]
 
 def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run) -> DoctorReport:
     codes = []; warnings = []
@@ -35,6 +46,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
             if not (root / name).is_symlink(): codes.append("WB_SKILL_MISSING")
     # Skills load lazily; without the always-on block and hooks no session learns to delegate.
     if wiring_problems(paths): codes.append("WB_HOST_UNWIRED")
+    warnings.extend(_hook_drift(paths))
     live = None
     if live_model and not codes and receipt.codex_path is not None:
         models = json.loads((release / "agents_inc/models.json").read_text()).get("models", {})
