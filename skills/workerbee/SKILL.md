@@ -1,6 +1,6 @@
 ---
 name: workerbee
-version: 1.3.0
+version: 1.4.0
 benchmark: unverified_delegate_claims_accepted_per_session
 description: Use before delegating any task, spawning a subagent, or asking another model for a second opinion, and whenever astra, sol, terra, luna, Codex, Gemini, Mistral, or OpenRouter is named. agents-inc routes all delegation across providers; Claude's Agent tool cannot reach non-Claude models. Covers routing, supervision, and verification.
 ---
@@ -171,6 +171,27 @@ which model ids sit on each rung; edit `agents_inc/models.json` or
 | grunt | ollama | `qwen2.5-coder:3b` | `qwen2.5-coder:3b`, `qwen2.5-coder:7b`, `qwen3:8b` |
 | grunt | openrouter | `openrouter/auto:free` | `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`, `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `google/lyria-3-clip-preview`, `google/lyria-3-pro-preview`, `inclusionai/ling-3.0-flash-fin:free`, `inclusionai/ling-3.0-flash-sante:free`, `liquid/lfm-2.5-2.6b:free`, `minimax/minimax-m2.7:free`, `minimax/minimax-m3:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-content-safety:free`, `nvidia/nemotron-3.5-lightning:free`, `openrouter/auto:free`, `openrouter/free`, `poolside/laguna-s-2.1:free`, `poolside/laguna-xs-2.1:free`, `thinkingmachines/inkling-small:free`, `thinkingmachines/inkling:free`, `z-ai/glm-5.2:free` |
 <!-- END GENERATED tier-table -->
+
+**Score the task onto a rung.** Rate five dimensions L1/L2/L3; the rung is
+the highest single score (max, not average). L1 = grunt, L2 = workhorse,
+L3 = orchestrator. Executive is never reached by score; it stays the last
+resort.
+
+| dimension | L1 grunt | L2 workhorse | L3 orchestrator |
+|---|---|---|---|
+| reasoning depth | lookup or transform; answer read off the code | 2-3 hops; apply a known pattern | novel chain; derive the approach |
+| ambiguity | fully specified; prompt names files and change | scope clear, details open | underspecified or contradictory |
+| context span | one file or function | several files with a known relationship, nameable up front | which files matter is part of the task |
+| consequence of a wrong answer | caught at once by a test or a glance | costs a re-dispatch | silent or expensive: security, data loss, money, migration, published artifact |
+| verifiability | deterministic check exists | check exists but needs judgment | no mechanical check AND a wrong answer is costly |
+
+Pick the cheapest rung that will not get the answer wrong. Consequence and
+verifiability round up; reasoning depth and context span may round down when
+the other four are L1. No mechanical check alone is not L3: low-stakes prose
+without a check stays L1-L2. File count is not a dimension. Code writing or
+editing goes to grunt unless the operator directs another rung; a code task
+that seems to need more is an operator question, not a silent round-up.
+Ported from DomI `subagent-dispatch-policy` v1.4.0 (#27).
 
 Coding at flash/bottom-rung is scope-gated, not banned: small, narrow, high-volume jobs only. A task needing scope/design judgment is workhorse+, dispatch it there.
 
@@ -932,6 +953,12 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 - `tests/benchmark.md` — measured baseline per version
 
 ## Version History
+
+- **v1.4.0** (2026-10-01) — Rung names (executive, orchestrator, workhorse,
+  grunt) and a generated tier table; five-dimension rung scoring grid ported
+  from DomI subagent-dispatch-policy (#27); Step 3c keep a delegate until its
+  context ceiling (#28); dispatch header plus slots (#36, #4); dispatch names
+  tell the truth and hierarchy statement (#17, #14).
 
 - **v1.3.0** (2026-09-22) — Step 4 generalized from budget-mode flash triage to always-on Chief of Staff triage (D43): verify, then DECIDE / HANDLED / UNDERSTAND re-projection; flash helper kept as budget add-on.
 
