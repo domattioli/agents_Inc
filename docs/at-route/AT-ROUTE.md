@@ -2,8 +2,8 @@
 
 At-route is a Claude Code `UserPromptSubmit` hook. When a prompt starts with `@<alias>`, the hook sends the question to that model and shows you the answer. The expensive session model never runs. You stay in the same session, keep its context, and pay the cheap model's price for the side question.
 
-Script: [`skills/codex-bridge/scripts/at_route.sh`](../skills/codex-bridge/scripts/at_route.sh).
-Smoke test: [`skills/codex-bridge/tests/at_route.smoke.sh`](../skills/codex-bridge/tests/at_route.smoke.sh).
+Script: [`skills/codex-bridge/scripts/at_route.sh`](../../skills/codex-bridge/scripts/at_route.sh).
+Smoke test: [`skills/codex-bridge/tests/at_route.smoke.sh`](../../skills/codex-bridge/tests/at_route.smoke.sh).
 
 ## Lexicon
 
