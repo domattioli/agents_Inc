@@ -65,6 +65,30 @@ case "$alias_name" in
   *) exit 0 ;;
 esac
 
+# Persistent session route for @@ with Claude alias
+if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_PERSIST:-1}" == "1" ]]; then
+  # Log the attempt
+  {
+    mkdir -p "$(dirname "$LOG_FILE")" &&
+      printf '%s\t%s\t%s\t%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "0" "0" >>"$LOG_FILE"
+  } 2>/dev/null || true
+
+  # Print context for host model
+  cat <<EOF
+[at_route] Persistent-session route for @@${alias_name}. Do only these steps:
+1. If ListAgents or SendMessage are deferred, load both with ToolSearch "select:ListAgents,SendMessage".
+2. Call ListAgents. If no peer session is named at-${alias_name}, start one with Bash:
+   claude --bg -n at-${alias_name} --model ${model} --disallowedTools "Edit,Write,NotebookEdit" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
+   Then call ListAgents again to confirm.
+3. SendMessage to at-${alias_name}, message = the question between the --- lines, verbatim.
+4. End your turn with one line: sent to at-${alias_name}. When the reply arrives as a cross-session message from at-${alias_name}, answer with the literal prefix "${alias_name} ▸ " followed by the reply verbatim. Do not re-answer, reason, or comment.
+---
+${question}
+---
+EOF
+  exit 0
+fi
+
 out_f="$(mktemp -t at_route_out.XXXXXX)"
 err_f="$(mktemp -t at_route_err.XXXXXX)"
 trap 'rm -f "$out_f" "$err_f"' EXIT

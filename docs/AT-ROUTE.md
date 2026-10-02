@@ -12,7 +12,7 @@ Default is the hook form. It is the only form that costs the session model nothi
 | You type | Who answers | Session model cost | Notes |
 |---|---|---|---|
 | `@haiku what does this flag do` | Haiku | zero | Default. Prompt is blocked, answer shown in a cyan box under Claude Code's yellow "blocked by hook" line. Not in context. |
-| `@@haiku what does this flag do` | Haiku | one turn | Answer injected as context, session model relays it with a `haiku ▸` prefix. |
+| `@@haiku what does this flag do` | Haiku, in a persistent session | two short turns | Claude aliases: the session model sends the question to a long-lived background session named `at-haiku` and relays its reply with a `haiku ▸` prefix. The side session keeps its context between questions. Other aliases: answer injected as context, as before. |
 | `! @haiku what does this flag do` | Haiku | one turn | Shell form. Clean output in the conversation, in context, works mid-turn. Needs the symlinks under Install. |
 | `~@haiku literal text` | Session model | one turn | Escape. Prompt reaches the session model as typed. |
 
@@ -49,7 +49,26 @@ Aliases, case-insensitive:
 | `mistral` | `codestral-latest` | `mask.sh --tier code` |
 | `openrouter` | free tier via `oask.sh` | OpenRouter |
 
-Default is the single `@` form. Use `@@` only when the next thing you ask the session model depends on the answer.
+Default is the single `@` form. Use `@@` only when the next thing you ask the session model depends on the answer, or when you want follow-up questions to the same side session.
+
+## Persistent side sessions (`@@` with a Claude alias)
+
+Added 2026-10-01. `@@haiku`, `@@sonnet`, `@@opus`, and `@@fable` no longer start a fresh `claude -p` per question. The hook prints instructions, and the session model:
+
+1. Looks for a peer session named `at-<alias>` with Claude Code's native `ListAgents` tool.
+2. Starts one if it is missing: `claude --bg -n at-<alias> --model <id> --disallowedTools "Edit,Write,NotebookEdit" "<bootstrap prompt>"`.
+3. Sends the question with `SendMessage` and ends its turn.
+4. Relays the reply, which arrives as a cross-session message, with the `<alias> ▸` prefix.
+
+What this buys: the side session remembers earlier questions, so follow-ups work, and there is one warm process instead of a cold start per question. What it costs: two short session-model turns (send, then relay) instead of one. The side session's context also grows; stop it with `claude stop <id>` (`claude agents` lists ids) to start fresh.
+
+Setup notes:
+
+- Auto mode blocks the first spawn as "Create Unsafe Agents". Approve the prompt, or add a narrow allow rule such as `Bash(claude --bg -n at-*)` to `~/.claude/settings.json`.
+- The side session must run in the same permission mode as the host, or its replies wait for operator approval.
+- `AT_ROUTE_PERSIST=0` restores the old one-shot `@@` relay.
+- Codex, Gemini, Mistral, and OpenRouter aliases are not Claude Code sessions, so their `@@` keeps the one-shot relay.
+
 
 ## Measured savings
 
@@ -71,7 +90,7 @@ Latency for a short question: about 5 to 6 seconds for both Claude and Codex ali
 2. The hook matches `^(@@?)(alias)\s+(question)$`. No match: exit 0, print nothing.
 3. Claude aliases run `claude -p "<question>" --model <id>`. Codex aliases run `agent.sh submit --backend codex --model <id> --wait`, then `agent.sh result <job id>` for the answer text.
 4. Single `@`: answer goes to stderr and the hook exits 2. Exit 2 blocks the prompt, so the session model never runs, and stderr is shown to you. The answer is framed in a box whose top line names the delegate, its model id and the elapsed seconds, so it is never mistaken for a session-model reply.
-5. Double `@@`: answer goes to stdout and the hook exits 0. Stdout becomes extra context for the session model, with a one-line instruction to relay it. The instruction tells the session model to begin its reply with `<alias> ▸` and then the answer verbatim.
+5. Double `@@` with a Claude alias: the hook prints the persistent-session instructions above and exits 0 without calling a model. Double `@@` with any other alias: answer goes to stdout and the hook exits 0. Stdout becomes extra context for the session model, with a one-line instruction to relay it. The instruction tells the session model to begin its reply with `<alias> ▸` and then the answer verbatim.
 6. On any failure the hook prints the error as context and exits 0, so the session model answers the question itself.
 
 Recursion guard: the hook exports `AT_ROUTE_ACTIVE=1` around the nested `claude -p` call and exits immediately if that variable is already set. Without it the nested call would fire the same hook again.
