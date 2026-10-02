@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=21
+pass=0; total=24
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
@@ -175,6 +175,42 @@ out="$("$B/@openrouter" hi 2>/dev/null)"; rc=$?
 mkoask slow
 out="$(echo '{"prompt":"@openrouter hi"}' | AT_ROUTE_TIMEOUT=1 bash "$B/at_route.sh" 2>/dev/null)"; rc=$?
 [[ $rc -eq 0 && "$out" == *"timed out after 1s"* ]] && ok "p2 openrouter timeout" || fail p2 "rc=$rc out=$out"
+
+# --- check-in cases (q-q3) ---
+# (q) @haiku /check-in with stubs: rc 2, stderr has CARD-OK, args.txt has prompt with check-in status card + FAKE-REPO + RECENT-MARKER
+ck="$TMP/ck"; mkdir -p "$ck"
+printf '#!/bin/sh\necho "repo: FAKE-REPO"\n' >"$ck/state.sh"; chmod +x "$ck/state.sh"
+cat >"$ck/claude" <<'CLAUDE_STUB'
+#!/bin/sh
+{
+  for arg in "$@"; do
+    printf '%s\n' "$arg"
+  done
+} >"${CK_ARGS_FILE:-/dev/null}"
+echo CARD-OK
+exit 0
+CLAUDE_STUB
+chmod +x "$ck/claude"
+printf '{"type":"assistant","message":{"content":[{"type":"text","text":"RECENT-MARKER"}]}}\n' >"$ck/t.jsonl"
+
+export CK_ARGS_FILE="$ck/args.txt"
+err="$(echo "{\"prompt\":\"@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="$ck/state.sh" PATH="$ck:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"CARD-OK"* ]] && \
+   grep -q "check-in status card" "$ck/args.txt" 2>/dev/null && \
+   grep -q "FAKE-REPO" "$ck/args.txt" 2>/dev/null && \
+   grep -q "RECENT-MARKER" "$ck/args.txt" 2>/dev/null; then
+  ok "q @haiku /check-in"; else fail q "rc=$rc err=$err args=$(cat "$ck/args.txt" 2>/dev/null | head -5 | tr '\n' ' ')"; fi
+
+# (q2) @@haiku /check-in with stubs: rc 0, stdout lacks Persistent-session route, stdout has CARD-OK (relay mode)
+out="$(echo "{\"prompt\":\"@@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="$ck/state.sh" PATH="$ck:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" != *"Persistent-session route"* && "$out" == *"CARD-OK"* ]]; then
+  ok "q2 @@haiku /check-in"; else fail q2 "rc=$rc out=$(echo "$out" | head -3 | tr '\n' ' ')"; fi
+
+# (q3) @haiku /check-in with missing AT_ROUTE_CHECKIN_SCRIPT: question unchanged, args.txt has /check-in but NOT check-in status card
+export CK_ARGS_FILE="$ck/args3.txt"
+err="$(echo "{\"prompt\":\"@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="/nonexistent/file.sh" PATH="$ck:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 ]] && grep -q "^/check-in\$" "$ck/args3.txt" 2>/dev/null && ! grep -q "check-in status card" "$ck/args3.txt" 2>/dev/null; then
+  ok "q3 missing checkin script"; else fail q3 "rc=$rc args=$(cat "$ck/args3.txt" 2>/dev/null | head -3 | tr '\n' ' ')"; fi
 
 echo "$pass/$total PASS"
 [[ $pass -eq $total ]]

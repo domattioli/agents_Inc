@@ -48,6 +48,7 @@ prefix="${BASH_REMATCH[1]}"
 alias_name="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
 question="${BASH_REMATCH[3]}"
 shopt -u nocasematch
+checkin=0
 
 kind="claude"
 case "$alias_name" in
@@ -65,8 +66,29 @@ case "$alias_name" in
   *) exit 0 ;;
 esac
 
+# Check-in card route: formats @/@@haiku /check-in to produce a status card
+if [[ "$kind" == "claude" && "$CLI" != "1" && "$question" =~ ^/check-in([[:space:]]|$) ]]; then
+  transcript="$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
+  sid="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)"
+  cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+
+  checkin_script="${AT_ROUTE_CHECKIN_SCRIPT:-$HOME/.claude/skills/check-in/scripts/checkin_state.sh}"
+
+  if [[ -r "$checkin_script" && -n "$transcript" && -r "$transcript" ]]; then
+    facts="$(bash "$checkin_script" --repo "${cwd:-.}" --session "$sid" --transcript "$transcript" 2>&1 || true)"
+    recent="$(tail -n 300 "$transcript" | jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null | tail -c 3000 || true)"
+
+    question="Write a check-in status card for another Claude Code session, using only the facts below. Ten lines or fewer. Use these line labels in this order and omit any line with nothing to say, except NEED YOU, which always prints: NEED YOU, RECOMMEND, GOAL, DONE, NOW, NEXT, RISK, MODES, REPO. One fact per line. Where a fact is missing write unavailable; never guess. NEED YOU counts questions the session asked the operator that are still unanswered. DONE holds only results the session says it verified. MODES: caveman and structured-gist are active when the skills line names them, otherwise lapsed. Print only the card.
+FACTS:
+$facts
+RECENT SESSION REPLIES (latest last):
+$recent"
+    checkin=1
+  fi
+fi
+
 # Persistent session route for @@ with Claude alias
-if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_PERSIST:-1}" == "1" ]]; then
+if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_PERSIST:-1}" == "1" && "${checkin:-0}" != "1" ]]; then
   # Log the attempt
   {
     mkdir -p "$(dirname "$LOG_FILE")" &&
