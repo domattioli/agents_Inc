@@ -1,6 +1,7 @@
 """Direct Codex execution with an install-recorded executable only."""
 from __future__ import annotations
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -77,4 +78,58 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
     executable = Path(receipt.codex_path)
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise FileNotFoundError("WB_CLI_NOT_FOUND: recorded Codex executable missing; run agents-inc repair")
-    return subprocess.run(build_codex_argv(executable, model, effort, cwd, supported_efforts), stdin=prompt_stream, check=False).returncode
+
+    # Resolve model slug using same logic as build_codex_argv
+    model_map = load_model_map()
+    slug = model_map.get(model, model if model in supported_efforts else None)
+    if not slug:
+        raise ValueError(f"unknown Codex model alias: {model}")
+
+    # Run subprocess with captured output
+    result = subprocess.run(
+        build_codex_argv(executable, model, effort, cwd, supported_efforts),
+        stdin=prompt_stream,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False
+    )
+
+    # Write captured output unchanged
+    sys.stdout.write(result.stdout)
+    sys.stdout.flush()
+    sys.stderr.write(result.stderr)
+    sys.stderr.flush()
+
+    # Check for usage/rate limit errors only in ERROR lines
+    for line in result.stderr.split('\n'):
+        stripped = line.lstrip()
+        if stripped.startswith('ERROR:'):
+            # Case-insensitive regex match for rate limit patterns
+            if re.search(r'usage limit|rate limit|too many requests|\b429\b', stripped, re.IGNORECASE):
+                # Extract retry time from this ERROR line
+                match = re.search(r'try again at ([^\.\n]+)', line)
+                retry_time = match.group(1) if match else "unknown"
+
+                # Print error message
+                error_msg = f"agents-inc run: codex {slug} hit a usage or rate limit; retry at {retry_time}"
+                sys.stderr.write(error_msg + "\n")
+                sys.stderr.flush()
+
+                # Report to free_health
+                try:
+                    from agents_inc import free_health
+                    free_health.report("codex", slug, "rate_limited", message=error_msg)
+                except Exception:
+                    pass
+
+                return 75
+
+    # Check for empty output with success exit code
+    if result.returncode == 0 and not result.stdout.strip():
+        sys.stderr.write(f"agents-inc run: codex {slug} returned an empty reply\n")
+        sys.stderr.flush()
+        return 1
+
+    # Return original exit code
+    return result.returncode
