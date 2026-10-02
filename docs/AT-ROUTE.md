@@ -56,7 +56,7 @@ Default is the single `@` form. Use `@@` only when the next thing you ask the se
 Added 2026-10-01. `@@haiku`, `@@sonnet`, `@@opus`, and `@@fable` no longer start a fresh `claude -p` per question. The hook prints instructions, and the session model:
 
 1. Looks for a peer session named `at-<alias>` with Claude Code's native `ListAgents` tool.
-2. Starts one if it is missing: `claude --bg -n at-<alias> --model <id> --disallowedTools "Edit,Write,NotebookEdit" "<bootstrap prompt>"`.
+2. Starts one if it is missing: `claude --bg -n at-<alias> --model <id> --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit" "<bootstrap prompt>"`.
 3. Sends the question with `SendMessage` and ends its turn.
 4. Relays the reply, which arrives as a cross-session message, with the `<alias> ▸` prefix.
 
@@ -65,7 +65,8 @@ What this buys: the side session remembers earlier questions, so follow-ups work
 Setup notes:
 
 - Auto mode blocks the first spawn as "Create Unsafe Agents". Approve the prompt, or add a narrow allow rule such as `Bash(claude --bg -n at-*)` to `~/.claude/settings.json`.
-- The side session must run in the same permission mode as the host, or its replies wait for operator approval.
+- Nobody watches the side session, so a permission prompt there stalls it without a reply. It may use `Read`, `Grep`, and `Glob` without a prompt. A question that needs any other tool will stall; ask it with single `@` or in the main session.
+- `@@` refuses slash commands such as `@@haiku /check-in`. The side session would run the command on itself, not on your session. Use `@haiku /check-in` instead.
 - `AT_ROUTE_PERSIST=0` restores the old one-shot `@@` relay.
 - Codex, Gemini, Mistral, and OpenRouter aliases are not Claude Code sessions, so their `@@` keeps the one-shot relay.
 
