@@ -114,6 +114,14 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
+      if [[ "$1" == --* ]]; then
+        echo "mask: unknown flag: $1" >&2
+        exit 2
+      fi
+      if [[ -n "$PROMPT" ]]; then
+        echo "mask: more than one prompt argument; quote the prompt or use stdin" >&2
+        exit 2
+      fi
       PROMPT="$1"
       shift
       ;;
