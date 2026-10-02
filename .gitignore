@@ -240,3 +240,7 @@ __marimo__/
 
 # Session handoffs stay local (operator rule 2026-10-01; global ~/.gitignore also covers it)
 .claude/handoffs/
+# Session handoffs and learning notes stay local (2026-10-01)
+docs/HANDOFF.md
+docs/governance/ORCHESTRATION-HANDOFF.md
+docs/teach-me/
