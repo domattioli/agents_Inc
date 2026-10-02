@@ -45,7 +45,7 @@ gask_report_trap() {
       >/dev/null 2>/tmp/gask_report_err.$$ || echo "gask: health report failed" >&2
     rm -f /tmp/gask_report_err.$$ 2>/dev/null
   fi
-  rm -f "${GASK_CLEANUP_FILES[@]}" 2>/dev/null
+  rm -f ${GASK_CLEANUP_FILES[@]+"${GASK_CLEANUP_FILES[@]}"} 2>/dev/null
   exit $ec
 }
 trap gask_report_trap EXIT
@@ -121,6 +121,14 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
+      if [[ "$1" == --* ]]; then
+        echo "gask: unknown flag: $1" >&2
+        exit 2
+      fi
+      if [[ -n "$PROMPT" ]]; then
+        echo "gask: more than one prompt argument; quote the prompt or use stdin" >&2
+        exit 2
+      fi
       # Positional: prompt text
       PROMPT="$1"
       shift
