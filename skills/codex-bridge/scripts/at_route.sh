@@ -48,6 +48,7 @@ prefix="${BASH_REMATCH[1]}"
 alias_name="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
 question="${BASH_REMATCH[3]}"
 shopt -u nocasematch
+checkin=0
 
 kind="claude"
 case "$alias_name" in
@@ -64,6 +65,64 @@ case "$alias_name" in
   openrouter) model="unknown model"; kind="openrouter" ;;
   *) exit 0 ;;
 esac
+
+# Check-in card route: formats @/@@haiku /check-in to produce a status card
+if [[ "$kind" == "claude" && "$CLI" != "1" && "$question" =~ ^/check-in([[:space:]]|$) ]]; then
+  transcript="$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
+  sid="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)"
+  cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+
+  checkin_script="${AT_ROUTE_CHECKIN_SCRIPT:-$HOME/.claude/skills/check-in/scripts/checkin_state.sh}"
+
+  if [[ -r "$checkin_script" && -n "$transcript" && -r "$transcript" ]]; then
+    facts="$(bash "$checkin_script" --repo "${cwd:-.}" --session "$sid" --transcript "$transcript" 2>&1 || true)"
+    recent="$(tail -n 300 "$transcript" | jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null | tail -c 3000 || true)"
+
+    question="Write a check-in status card for another Claude Code session, using only the facts below. Ten lines or fewer. Use these line labels in this order and omit any line with nothing to say, except NEED YOU, which always prints: NEED YOU, RECOMMEND, GOAL, DONE, NOW, NEXT, RISK, MODES, REPO. One fact per line. Where a fact is missing write unavailable; never guess. NEED YOU counts questions the session asked the operator that are still unanswered. DONE holds only results the session says it verified. MODES: caveman and structured-gist are active when the skills line names them, otherwise lapsed. Print only the card.
+FACTS:
+$facts
+RECENT SESSION REPLIES (latest last):
+$recent"
+    checkin=1
+  fi
+fi
+
+# Reject slash commands on @@ with Claude alias
+if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${checkin:-0}" != "1" && "$question" =~ ^/ ]]; then
+  # Log the attempt
+  {
+    mkdir -p "$(dirname "$LOG_FILE")" &&
+      printf '%s\t%s\t%s\t%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "2" "0" >>"$LOG_FILE"
+  } 2>/dev/null || true
+
+  # Print error to stderr
+  printf '[at_route] @@%s does not forward slash commands: the side session would run the command on itself, not on this session. Use @%s /check-in for a status card, or type the command without @@.\n' "$alias_name" "$alias_name" >&2
+  exit 2
+fi
+
+# Persistent session route for @@ with Claude alias
+if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_PERSIST:-1}" == "1" && "${checkin:-0}" != "1" ]]; then
+  # Log the attempt
+  {
+    mkdir -p "$(dirname "$LOG_FILE")" &&
+      printf '%s\t%s\t%s\t%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "0" "0" >>"$LOG_FILE"
+  } 2>/dev/null || true
+
+  # Print context for host model
+  cat <<EOF
+[at_route] Persistent-session route for @@${alias_name}. Do only these steps:
+1. If ListAgents or SendMessage are deferred, load both with ToolSearch "select:ListAgents,SendMessage".
+2. Call ListAgents. If no peer session is named at-${alias_name}, start one with Bash:
+   claude --bg -n at-${alias_name} --model ${model} --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
+   Then call ListAgents again to confirm.
+3. SendMessage to at-${alias_name}, message = the question between the --- lines, verbatim.
+4. End your turn with one line: sent to at-${alias_name}. When the reply arrives as a cross-session message from at-${alias_name}, answer with the literal prefix "${alias_name} ▸ " followed by the reply verbatim. Do not re-answer, reason, or comment.
+---
+${question}
+---
+EOF
+  exit 0
+fi
 
 out_f="$(mktemp -t at_route_out.XXXXXX)"
 err_f="$(mktemp -t at_route_err.XXXXXX)"
