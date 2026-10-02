@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=24
+pass=0; total=26
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
@@ -53,15 +53,27 @@ if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" == *stub-s
 
 # (f) @@ with Claude alias: persistent session route (with AT_ROUTE_PERSIST=1, the default)
 # Prove claude stub NOT called: stub writes marker, assert marker absent after test
+# Assert stdout contains --allowedTools "Read,Grep,Glob"
 rm -f "$TMP/ok/called.txt"
 out="$(echo '{"prompt":"@@haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
-if [[ $rc -eq 0 && "$out" == *"Persistent-session route for @@haiku"* && "$out" == *"at-haiku"* && "$out" == *"claude-haiku-4-5-20251001"* && "$out" == *"what is 2+2"* && ! -f "$TMP/ok/called.txt" ]]; then
+if [[ $rc -eq 0 && "$out" == *"Persistent-session route for @@haiku"* && "$out" == *"at-haiku"* && "$out" == *"claude-haiku-4-5-20251001"* && "$out" == *"what is 2+2"* && "$out" == *'--allowedTools "Read,Grep,Glob"'* && ! -f "$TMP/ok/called.txt" ]]; then
   ok "f @@ persistent session"; else fail f "rc=$rc out=$out marker=$([[ -f "$TMP/ok/called.txt" ]] && echo present || echo absent)"; fi
 
 # (f2) AT_ROUTE_PERSIST=0: @@ uses old relay path with claude -p
 out="$(echo '{"prompt":"@@haiku what is 2+2"}' | AT_ROUTE_PERSIST=0 PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
 if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from delegate haiku (claude-haiku-4-5-20251001)"* && "$out" == *"haiku ▸"* ]]; then
   ok "f2 @@ with AT_ROUTE_PERSIST=0"; else fail f2 "rc=$rc out=$out"; fi
+
+# (f4) @@haiku /foo rejects slash command: rc 2, stderr contains "does not forward slash commands", no claude stub called
+rm -f "$TMP/ok/called.txt"
+err="$(echo '{"prompt":"@@haiku /foo"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"does not forward slash commands"* && ! -f "$TMP/ok/called.txt" ]]; then
+  ok "f4 @@haiku /foo rejects"; else fail f4 "rc=$rc err=$err marker=$([[ -f "$TMP/ok/called.txt" ]] && echo present || echo absent)"; fi
+
+# (f5) @haiku /foo (single @) still calls stub: rc 2, stderr contains STUB-OK
+err="$(echo '{"prompt":"@haiku /foo"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"STUB-OK"* ]]; then
+  ok "f5 @haiku /foo calls stub"; else fail f5 "rc=$rc err=$err"; fi
 
 # (g) escape: ~@ prefix exits silently, passes prompt to session model
 out="$(echo '{"prompt":"~@haiku literal"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
