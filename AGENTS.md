@@ -6,7 +6,8 @@
 
 | Path | Purpose |
 |---|---|
-| `workerbees/` | Routing, policy, adapters, verification, review, artifacts, and ledgers |
+| `agents_inc/` | Routing, policy, adapters, verification, review, artifacts, ledgers, and the installer |
+| `workerbees/` | Import shim: `workerbees.*` aliases the `agents_inc` modules for older callers |
 | `skills/workerbee/` | Canonical supervision and delegation prompt contract |
 | `skills/codex-bridge/` | Governed job runner and persistent Codex bridge scripts |
 | `skills/speckit-pipeline/` | Repository-specific spec pipeline binding |
@@ -14,7 +15,8 @@
 | `tests/` | Python `unittest` suite |
 | `fixtures/` | Seeded fault and expected-result fixtures |
 | `docs/governance/` | Routing, authority, and operating governance |
-| `specs/` | Existing project specifications and implementation records |
+| `scripts/` | `agents-inc` launcher, skill installer, isolation and proof scripts |
+| `docs/at-route/` | `@alias` side-question routing guide, bench, and prior art |
 
 ## Setup, test, and run
 
@@ -70,8 +72,8 @@ When `CODEX_BRIDGE_MODE=ultra`:
 
 | Surface | Reader | Wording | Structure |
 |---|---|---|---|
-| `README.md`, `docs/START-HERE.md`, `docs/HOW-IT-WORKS.md`, `docs/EXTENDING.md`, `docs/HANDOFF.md`, `docs/DECISIONS.md`, `docs/BENCH.md`, `docs/governance/CEO-BRIEF.md` | Human | Short, readable prose | Scannable nested notes with a precise final pass |
-| Agent prompts, `skills/*/SKILL.md`, dispatch specs, `docs/PLAN-MVP.md`, `docs/governance/ASSESSMENT.md`, `specs/*`, `workerbees/*.json` | Agent or builder | Maximum compression | Plain prose without decorative structure |
+| `README.md`, `docs/START-HERE.md`, `docs/HOW-IT-WORKS.md`, `docs/EXTENDING.md`, `docs/DECISIONS.md`, `docs/BENCH.md`, `docs/governance/CEO-BRIEF.md` | Human | Short, readable prose | Scannable nested notes with a precise final pass |
+| Agent prompts, `skills/*/SKILL.md`, dispatch specs, `docs/PLAN-MVP.md`, `docs/governance/ASSESSMENT.md`, `agents_inc/*.json` | Agent or builder | Maximum compression | Plain prose without decorative structure |
 
 These audience rules are binding for repository documentation. Preserve template scaffolding, code blocks, and required machine-readable fields.
 
@@ -90,4 +92,4 @@ The delegation model is in `docs/governance/DELEGATION-MODEL.md`. The routing ta
 This repository is a downstream consumer of `domattioli/DomI`.
 Universal git, coding dispatch, secrets, session lifecycle, and communication rules live in DomI `.claude/policies/`.
 The working branch is `development`; releases use a PR from `development` to `main`. Never push directly to `main` or force-push.
-Spec-kit artifacts for this repository live in DomI `specs/consumers/agents_Inc/`, never in a local `.specify/` directory.
+Spec-kit artifacts and dated plans for this repository live in DomI `specs/consumers/agents_Inc/`, never in a local `specs/`, `.specify/`, or `docs/superpowers/` directory (archived plans: DomI `specs/consumers/agents_Inc/archive/superpowers-plans/`). Session handoffs and teach-me notes stay local and are git-ignored.
