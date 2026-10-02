@@ -8,14 +8,14 @@ trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=19
+pass=0; total=21
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
 
 mkstub() { # $1 = dir, $2 = exit code
   mkdir -p "$1"
-  printf '#!/bin/sh\necho STUB-OK\necho stub-stderr >&2\nexit %s\n' "$2" >"$1/claude"
+  printf '#!/bin/sh\ntouch "%s/called.txt"\necho STUB-OK\necho stub-stderr >&2\nexit %s\n' "$1" "$2" >"$1/claude"
   chmod +x "$1/claude"
 }
 
@@ -51,10 +51,17 @@ out="$(echo '{"prompt":"@haiku hi"}' | PATH="$TMP/bad:$PATH" bash "$HOOK")"; rc=
 if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" == *stub-stderr* && "$out" == *"Answer the operator's question yourself."* ]]; then
   ok "e stub failure"; else fail e "rc=$rc out=$out"; fi
 
-# (f) shared mode: @@ forces relay regardless of AT_ROUTE_MODE
+# (f) @@ with Claude alias: persistent session route (with AT_ROUTE_PERSIST=1, the default)
+# Prove claude stub NOT called: stub writes marker, assert marker absent after test
+rm -f "$TMP/ok/called.txt"
 out="$(echo '{"prompt":"@@haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"Persistent-session route for @@haiku"* && "$out" == *"at-haiku"* && "$out" == *"claude-haiku-4-5-20251001"* && "$out" == *"what is 2+2"* && ! -f "$TMP/ok/called.txt" ]]; then
+  ok "f @@ persistent session"; else fail f "rc=$rc out=$out marker=$([[ -f "$TMP/ok/called.txt" ]] && echo present || echo absent)"; fi
+
+# (f2) AT_ROUTE_PERSIST=0: @@ uses old relay path with claude -p
+out="$(echo '{"prompt":"@@haiku what is 2+2"}' | AT_ROUTE_PERSIST=0 PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
 if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from delegate haiku (claude-haiku-4-5-20251001)"* && "$out" == *"haiku ▸"* ]]; then
-  ok "f @@ shared mode"; else fail f "rc=$rc out=$out"; fi
+  ok "f2 @@ with AT_ROUTE_PERSIST=0"; else fail f2 "rc=$rc out=$out"; fi
 
 # (g) escape: ~@ prefix exits silently, passes prompt to session model
 out="$(echo '{"prompt":"~@haiku literal"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
@@ -124,6 +131,12 @@ esac
 STUB
   chmod +x "$B/oask.sh"
 }
+
+# (f3) @@gemini (non-Claude): relay mode, no persistent session route
+printf '#!/bin/sh\necho GEMINI-STUB\necho gemini-stderr >&2\nexit 0\n' >"$B/gask.sh"; chmod +x "$B/gask.sh"
+out="$(echo '{"prompt":"@@gemini what is 2+2"}' | bash "$B/at_route.sh")"; rc=$?
+if [[ $rc -eq 0 && "$out" != *"Persistent-session route"* && "$out" == *"GEMINI-STUB"* ]]; then
+  ok "f3 @@gemini relay (no persist)"; else fail f3 "rc=$rc out=$out"; fi
 
 # (k) @openrouter header shows the model oask.sh reports
 mkoask ok
