@@ -144,6 +144,14 @@ for m in sorted(free, key=lambda x: -(x.get("context_length") or 0)):
       shift
       ;;
     *)
+      if [[ "$1" == --* ]]; then
+        echo "oask: unknown flag: $1" >&2
+        exit 2
+      fi
+      if [[ -n "$PROMPT" ]]; then
+        echo "oask: more than one prompt argument; quote the prompt or use stdin" >&2
+        exit 2
+      fi
       # Positional: prompt text
       PROMPT="$1"
       shift
