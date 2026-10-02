@@ -237,3 +237,6 @@ __marimo__/
 # workerbees per-workspace state
 .workerbees/
 .scratch/
+
+# Session handoffs stay local (operator rule 2026-10-01; global ~/.gitignore also covers it)
+.claude/handoffs/
