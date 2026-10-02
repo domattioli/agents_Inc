@@ -283,13 +283,52 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 |---|---|---|---|
 | Claude Skills (SKILL.md format) | Yes | No — standard frontmatter | Packages routing and verification judgment as reusable prose (`skills/workerbee`, `skills/codex-bridge`) |
 | Claude subagents / Agent tool | No | — | Single-vendor; cannot enforce cross-vendor review by itself |
-| Claude Code hooks | No | — | None configured; a future hook could run tests after edits or guard [routing.json](workerbees/routing.json) changes |
+| Claude Code hooks | Yes | Added | The installer wires SessionStart, PreToolUse and PostToolUse on Agent spawns, and UserPromptSubmit for `@alias` questions ([host_wiring.py](agents_inc/install/host_wiring.py), [AT-ROUTE.md](docs/AT-ROUTE.md)) |
 | Model Context Protocol (MCP) | No | — | Dispatch uses an HTTP bridge and CLI wrapper |
 | OpenAI Codex CLI | Yes | Wrapped | [bridge.py](bridge.py) adds a persistent-thread HTTP session; [agent.sh](skills/codex-bridge/scripts/agent.sh) and [agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) add a governed asynchronous job queue bound to the ledger |
 | OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
 | Built here, no vendor equivalent | — | — | [ledger.py](workerbees/ledger.py) (audit trail), [reviewer.py](workerbees/reviewer.py) (cross-vendor enforcement), [verifier.py](workerbees/verifier.py) (deterministic pre-check), [artifacts.py](workerbees/artifacts.py) (content-addressed store), [router.py](workerbees/router.py)/[routing.json](workerbees/routing.json) (tier and vendor routing) |
 
 This repository is for developers who use more than one model provider, want to control incremental spend, and need delegated work checked independently before acceptance.
+
+### Compared with other tools
+
+✅ means built in. ❌ means not built in; you may still add it with your own code.
+
+| Tool | Several vendors | No API billing ² | Routes by rule | Other-vendor review ³ | Scripted checks ³ | Decision ledger | `@model` question | Parallel worktrees | Workflow SDK |
+|---|---|---|---|---|---|---|---|---|---|
+| **agents_Inc** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| [CrewAI](https://docs.crewai.com) | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| [AutoGen](https://github.com/microsoft/autogen) / Microsoft Agent Framework ⁴ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| [firstmate](https://github.com/kunchenguid/firstmate) ⁵ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [aider](https://aider.chat) | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Claude model-router hooks ¹ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Claude Code `/advisor` | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| RouteLLM, Martian, Not Diamond | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+What the columns mean:
+
+- **Several vendors**: one setup can use models from more than one company.
+- **No API billing**: runs on the CLI subscriptions you already pay for, so extra work costs $0.
+- **Routes by rule**: picks the model for each task from a written policy, not by hand.
+- **Other-vendor review**: a model from a different company must approve the work before it counts.
+- **Scripted checks**: tests, lint, or other commands must pass before the work counts.
+- **Decision ledger**: an append-only record of who did what and who approved it.
+- **`@model` question**: inside Claude Code, ask one named model one question without the session model answering.
+- **Parallel worktrees**: runs many agents at once, each in its own git worktree.
+- **Workflow SDK**: a Python library for writing multi-agent programs.
+
+Notes:
+
+1. [claude-model-router-hook](https://github.com/tzachbon/claude-model-router-hook), [auto-model-router](https://github.com/IuriiTurok/auto-model-router), [model-routing](https://github.com/abroberts14/model-routing), and [claude-router](https://github.com/bmersereau/claude-router). They choose between Claude models per session, task, or subagent. Details: [AT-ROUTE-PRIOR-ART.md](docs/AT-ROUTE-PRIOR-ART.md).
+2. CrewAI, AutoGen, aider, and the API routers call provider APIs with your keys. They can also run free local models.
+3. In `agents_Inc` these run on the governed path, which is off by default (`WORKERBEES_GOVERNANCE`).
+4. AutoGen is in maintenance mode. Microsoft names Microsoft Agent Framework as its successor.
+5. firstmate works at a different layer: where agents run and how they are watched. An evaluation is open in [#31](https://github.com/domattioli/agents_Inc/issues/31).
+6. [Bindle](https://github.com/deislabs/bindle) is a sibling, not a rival. The ledger owns job identity and status; Bindle stores the artifact bytes.
+7. Continue.dev also uses `@`, but its `@` adds a context source, not a model.
+
+LangGraph and other agent frameworks are not in the table yet.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
