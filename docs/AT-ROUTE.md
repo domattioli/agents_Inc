@@ -70,6 +70,21 @@ Setup notes:
 - Codex, Gemini, Mistral, and OpenRouter aliases are not Claude Code sessions, so their `@@` keeps the one-shot relay.
 
 
+## Check in on a session (`@haiku /check-in`)
+
+Added 2026-10-01. `@haiku /check-in` gives a status card for the session you type it in, and the session model never runs. Any Claude alias works.
+
+1. The hook reads the session's transcript path, session id, and working directory from the prompt event.
+2. It runs the check-in skill's fact script (`checkin_state.sh --transcript`) in plain shell. This takes under a second and calls no model.
+3. It adds the session's last few replies and asks the alias model for a card of ten lines or fewer: NEED YOU, RECOMMEND, GOAL, DONE, NOW, NEXT, RISK, MODES, REPO.
+4. The card prints in the usual box. The session model does not run, so the check-in costs only the alias model's tokens.
+
+Limits:
+
+- The card is read-only. It names what waits on you but does not ask you questions one at a time the way `/check-in` does inside the session.
+- It needs the check-in skill at `~/.claude/skills/check-in`. Set `AT_ROUTE_CHECKIN_SCRIPT` to use another path. Without the script, `/check-in` goes to the alias model as a plain question.
+- `@@haiku /check-in` uses the one-shot relay, not the side session. A side session would load the skill for itself and report on its own state.
+
 ## Measured savings
 
 Question: "explain database connection pooling in about 150 words". Measured 2026-09-23 with `claude -p --output-format json`, which reports token usage and cost per call.
