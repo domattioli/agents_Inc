@@ -291,6 +291,21 @@ if [[ -z "$RESP_TEXT" ]]; then
   exit 1
 fi
 
+# Detect redaction placeholders in reply not in request
+PLACEHOLDERS=""
+PLACEHOLDER_PATTERN='\[(PERSON|PERSON_NAME|EMAIL|EMAIL_ADDRESS|PHONE|PHONE_NUMBER|ADDRESS|LOCATION|ORGANIZATION|CREDIT_CARD|IP_ADDRESS|US_SSN|SSN|IBAN_CODE|DATE_TIME|URL)\]'
+FOUND_PLACEHOLDERS=$(echo "$RESP_TEXT" | grep -oE "$PLACEHOLDER_PATTERN" | sort -u || echo "")
+
+if [[ -n "$FOUND_PLACEHOLDERS" ]]; then
+  UNIQUE_PLACEHOLDERS=""
+  while IFS= read -r placeholder; do
+    if ! grep -qF -- "$placeholder" <<< "$BODY"; then
+      UNIQUE_PLACEHOLDERS="$UNIQUE_PLACEHOLDERS $placeholder"
+    fi
+  done <<< "$FOUND_PLACEHOLDERS"
+  PLACEHOLDERS="${UNIQUE_PLACEHOLDERS# }"
+fi
+
 # Extract usage (OpenAI-compatible format)
 PROMPT_TOKENS=$(echo "$RESPONSE" | jq -r '.usage.prompt_tokens // 0' 2>/dev/null)
 OUTPUT_TOKENS=$(echo "$RESPONSE" | jq -r '.usage.completion_tokens // 0' 2>/dev/null)
@@ -301,6 +316,10 @@ if [[ "$RAW" == true ]]; then
 else
   echo "$RESP_TEXT"
   echo "[openrouter $MODEL | in $PROMPT_TOKENS out $OUTPUT_TOKENS]" >&2
+fi
+
+if [[ -n "$PLACEHOLDERS" ]]; then
+  echo "oask: reply holds redaction placeholders not in the request: $PLACEHOLDERS; unfit for code review (exit 4)" >&2
 fi
 
 # Log to both JSONL and SQLite
@@ -351,3 +370,7 @@ try:
 except Exception:
     pass
 PYTHON_LOG
+
+if [[ -n "$PLACEHOLDERS" ]]; then
+  exit 4
+fi
