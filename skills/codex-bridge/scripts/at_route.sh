@@ -87,6 +87,19 @@ $recent"
   fi
 fi
 
+# Reject slash commands on @@ with Claude alias
+if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${checkin:-0}" != "1" && "$question" =~ ^/ ]]; then
+  # Log the attempt
+  {
+    mkdir -p "$(dirname "$LOG_FILE")" &&
+      printf '%s\t%s\t%s\t%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alias_name" "2" "0" >>"$LOG_FILE"
+  } 2>/dev/null || true
+
+  # Print error to stderr
+  printf '[at_route] @@%s does not forward slash commands: the side session would run the command on itself, not on this session. Use @%s /check-in for a status card, or type the command without @@.\n' "$alias_name" "$alias_name" >&2
+  exit 2
+fi
+
 # Persistent session route for @@ with Claude alias
 if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_PERSIST:-1}" == "1" && "${checkin:-0}" != "1" ]]; then
   # Log the attempt
@@ -100,7 +113,7 @@ if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_P
 [at_route] Persistent-session route for @@${alias_name}. Do only these steps:
 1. If ListAgents or SendMessage are deferred, load both with ToolSearch "select:ListAgents,SendMessage".
 2. Call ListAgents. If no peer session is named at-${alias_name}, start one with Bash:
-   claude --bg -n at-${alias_name} --model ${model} --disallowedTools "Edit,Write,NotebookEdit" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
+   claude --bg -n at-${alias_name} --model ${model} --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
    Then call ListAgents again to confirm.
 3. SendMessage to at-${alias_name}, message = the question between the --- lines, verbatim.
 4. End your turn with one line: sent to at-${alias_name}. When the reply arrives as a cross-session message from at-${alias_name}, answer with the literal prefix "${alias_name} ▸ " followed by the reply verbatim. Do not re-answer, reason, or comment.
