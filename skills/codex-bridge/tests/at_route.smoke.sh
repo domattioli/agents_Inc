@@ -8,14 +8,14 @@ trap 'rm -rf "$TMP"' EXIT
 export AT_ROUTE_LOG="$TMP/at_route.log"
 export AT_ROUTE_ANSWERS="$TMP/answers.log"
 unset AT_ROUTE_ACTIVE
-pass=0; total=19
+pass=0; total=26
 
 ok()   { echo "PASS $1"; pass=$((pass + 1)); }
 fail() { echo "FAIL $1: $2"; }
 
 mkstub() { # $1 = dir, $2 = exit code
   mkdir -p "$1"
-  printf '#!/bin/sh\necho STUB-OK\necho stub-stderr >&2\nexit %s\n' "$2" >"$1/claude"
+  printf '#!/bin/sh\ntouch "%s/called.txt"\necho STUB-OK\necho stub-stderr >&2\nexit %s\n' "$1" "$2" >"$1/claude"
   chmod +x "$1/claude"
 }
 
@@ -51,10 +51,29 @@ out="$(echo '{"prompt":"@haiku hi"}' | PATH="$TMP/bad:$PATH" bash "$HOOK")"; rc=
 if [[ $rc -eq 0 && "$out" == *"haiku call failed (exit 3)"* && "$out" == *stub-stderr* && "$out" == *"Answer the operator's question yourself."* ]]; then
   ok "e stub failure"; else fail e "rc=$rc out=$out"; fi
 
-# (f) shared mode: @@ forces relay regardless of AT_ROUTE_MODE
+# (f) @@ with Claude alias: persistent session route (with AT_ROUTE_PERSIST=1, the default)
+# Prove claude stub NOT called: stub writes marker, assert marker absent after test
+# Assert stdout contains --allowedTools "Read,Grep,Glob"
+rm -f "$TMP/ok/called.txt"
 out="$(echo '{"prompt":"@@haiku what is 2+2"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" == *"Persistent-session route for @@haiku"* && "$out" == *"at-haiku"* && "$out" == *"claude-haiku-4-5-20251001"* && "$out" == *"what is 2+2"* && "$out" == *'--allowedTools "Read,Grep,Glob"'* && ! -f "$TMP/ok/called.txt" ]]; then
+  ok "f @@ persistent session"; else fail f "rc=$rc out=$out marker=$([[ -f "$TMP/ok/called.txt" ]] && echo present || echo absent)"; fi
+
+# (f2) AT_ROUTE_PERSIST=0: @@ uses old relay path with claude -p
+out="$(echo '{"prompt":"@@haiku what is 2+2"}' | AT_ROUTE_PERSIST=0 PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
 if [[ $rc -eq 0 && "$out" == *STUB-OK* && "$out" == *"[at_route] Answer from delegate haiku (claude-haiku-4-5-20251001)"* && "$out" == *"haiku ▸"* ]]; then
-  ok "f @@ shared mode"; else fail f "rc=$rc out=$out"; fi
+  ok "f2 @@ with AT_ROUTE_PERSIST=0"; else fail f2 "rc=$rc out=$out"; fi
+
+# (f4) @@haiku /foo rejects slash command: rc 2, stderr contains "does not forward slash commands", no claude stub called
+rm -f "$TMP/ok/called.txt"
+err="$(echo '{"prompt":"@@haiku /foo"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"does not forward slash commands"* && ! -f "$TMP/ok/called.txt" ]]; then
+  ok "f4 @@haiku /foo rejects"; else fail f4 "rc=$rc err=$err marker=$([[ -f "$TMP/ok/called.txt" ]] && echo present || echo absent)"; fi
+
+# (f5) @haiku /foo (single @) still calls stub: rc 2, stderr contains STUB-OK
+err="$(echo '{"prompt":"@haiku /foo"}' | PATH="$TMP/ok:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"STUB-OK"* ]]; then
+  ok "f5 @haiku /foo calls stub"; else fail f5 "rc=$rc err=$err"; fi
 
 # (g) escape: ~@ prefix exits silently, passes prompt to session model
 out="$(echo '{"prompt":"~@haiku literal"}' | PATH="$TMP/ok:$PATH" bash "$HOOK")"; rc=$?
@@ -125,6 +144,12 @@ STUB
   chmod +x "$B/oask.sh"
 }
 
+# (f3) @@gemini (non-Claude): relay mode, no persistent session route
+printf '#!/bin/sh\necho GEMINI-STUB\necho gemini-stderr >&2\nexit 0\n' >"$B/gask.sh"; chmod +x "$B/gask.sh"
+out="$(echo '{"prompt":"@@gemini what is 2+2"}' | bash "$B/at_route.sh")"; rc=$?
+if [[ $rc -eq 0 && "$out" != *"Persistent-session route"* && "$out" == *"GEMINI-STUB"* ]]; then
+  ok "f3 @@gemini relay (no persist)"; else fail f3 "rc=$rc out=$out"; fi
+
 # (k) @openrouter header shows the model oask.sh reports
 mkoask ok
 err="$(echo '{"prompt":"@openrouter hi"}' | bash "$B/at_route.sh" 2>&1 >/dev/null)"; rc=$?
@@ -162,6 +187,42 @@ out="$("$B/@openrouter" hi 2>/dev/null)"; rc=$?
 mkoask slow
 out="$(echo '{"prompt":"@openrouter hi"}' | AT_ROUTE_TIMEOUT=1 bash "$B/at_route.sh" 2>/dev/null)"; rc=$?
 [[ $rc -eq 0 && "$out" == *"timed out after 1s"* ]] && ok "p2 openrouter timeout" || fail p2 "rc=$rc out=$out"
+
+# --- check-in cases (q-q3) ---
+# (q) @haiku /check-in with stubs: rc 2, stderr has CARD-OK, args.txt has prompt with check-in status card + FAKE-REPO + RECENT-MARKER
+ck="$TMP/ck"; mkdir -p "$ck"
+printf '#!/bin/sh\necho "repo: FAKE-REPO"\n' >"$ck/state.sh"; chmod +x "$ck/state.sh"
+cat >"$ck/claude" <<'CLAUDE_STUB'
+#!/bin/sh
+{
+  for arg in "$@"; do
+    printf '%s\n' "$arg"
+  done
+} >"${CK_ARGS_FILE:-/dev/null}"
+echo CARD-OK
+exit 0
+CLAUDE_STUB
+chmod +x "$ck/claude"
+printf '{"type":"assistant","message":{"content":[{"type":"text","text":"RECENT-MARKER"}]}}\n' >"$ck/t.jsonl"
+
+export CK_ARGS_FILE="$ck/args.txt"
+err="$(echo "{\"prompt\":\"@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="$ck/state.sh" PATH="$ck:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 && "$err" == *"CARD-OK"* ]] && \
+   grep -q "check-in status card" "$ck/args.txt" 2>/dev/null && \
+   grep -q "FAKE-REPO" "$ck/args.txt" 2>/dev/null && \
+   grep -q "RECENT-MARKER" "$ck/args.txt" 2>/dev/null; then
+  ok "q @haiku /check-in"; else fail q "rc=$rc err=$err args=$(cat "$ck/args.txt" 2>/dev/null | head -5 | tr '\n' ' ')"; fi
+
+# (q2) @@haiku /check-in with stubs: rc 0, stdout lacks Persistent-session route, stdout has CARD-OK (relay mode)
+out="$(echo "{\"prompt\":\"@@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="$ck/state.sh" PATH="$ck:$PATH" bash "$HOOK")"; rc=$?
+if [[ $rc -eq 0 && "$out" != *"Persistent-session route"* && "$out" == *"CARD-OK"* ]]; then
+  ok "q2 @@haiku /check-in"; else fail q2 "rc=$rc out=$(echo "$out" | head -3 | tr '\n' ' ')"; fi
+
+# (q3) @haiku /check-in with missing AT_ROUTE_CHECKIN_SCRIPT: question unchanged, args.txt has /check-in but NOT check-in status card
+export CK_ARGS_FILE="$ck/args3.txt"
+err="$(echo "{\"prompt\":\"@haiku /check-in\",\"transcript_path\":\"$ck/t.jsonl\",\"session_id\":\"S1\",\"cwd\":\"$ck\"}" | AT_ROUTE_CHECKIN_SCRIPT="/nonexistent/file.sh" PATH="$ck:$PATH" bash "$HOOK" 2>&1 >/dev/null)"; rc=$?
+if [[ $rc -eq 2 ]] && grep -q "^/check-in\$" "$ck/args3.txt" 2>/dev/null && ! grep -q "check-in status card" "$ck/args3.txt" 2>/dev/null; then
+  ok "q3 missing checkin script"; else fail q3 "rc=$rc args=$(cat "$ck/args3.txt" 2>/dev/null | head -3 | tr '\n' ' ')"; fi
 
 echo "$pass/$total PASS"
 [[ $pass -eq $total ]]
