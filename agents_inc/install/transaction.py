@@ -73,5 +73,8 @@ class TransactionJournal:
             elif op.get("operation") == "mkdir" and target.is_dir():
                 try: target.rmdir()
                 except OSError: pass
-            elif op.get("operation") == "receipt" and target.exists(): target.unlink()
+            elif op.get("operation") == "receipt":
+                # predecessor is a verbatim backup of the prior receipt, or None on first install.
+                if predecessor is not None and Path(predecessor).is_file(): shutil.copy2(predecessor, target)
+                elif target.exists(): target.unlink()
         path.unlink(missing_ok=True)

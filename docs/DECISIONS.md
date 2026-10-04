@@ -472,3 +472,107 @@ Source: spec 012 (free-tier routing), FR-014 and its Clarifications answer. Oper
 - **Decision.** Main-session dispatches (the `Agent` tool and workerbee) do not consult the router. The harness cannot intercept an `Agent` tool call, so no router hook can run there.
 - **Governance.** Main-session free-tier use goes through `agent.sh submit --backend <free>`. `agent.sh` is a thin shim; `agent_runner.py:575-583` runs the `gask.sh`/`mask.sh`/`oask.sh` wrappers, whose exit traps report outcomes to backend health, so cooldowns and daily caps stay accurate.
 - **Scope.** Only the router's free-first ordering (spec 012 FR-010 to FR-012) is affected. Rung assignment for main-session dispatches still follows the coding-dispatch rules in `CLAUDE.md`.
+
+## D45 — Dispatch template revision (2026-10-03, status: accepted)
+
+Source: a two-round design debate between fable and astra, who reached consensus on an eight-item ship list. The operator signed off on 2026-10-03 by ordering the implementation.
+
+1. **Header kept, narratives stay with the supervisor.** Every operative header line and denylist stays. Incident stories in `SKILL.md` Step 11 are supervisor context and are never pasted into delegate prompts. `slots.md` now carries one worked example dispatch.
+2. **New slots.** `CONSTRAINTS:` and `OUT OF SCOPE:` are required slots, so rendered prompts pass handoff-lint H4. The renderer strips the header's title and authoring comment.
+3. **Report cap.** Report narrative is capped at 40 lines by default. Fenced evidence is exempt, and the `OUT OF SCOPE / INCOMPLETE:` section is mandatory and never capped.
+4. **Notes file.** An optional `NOTES` slot names a file under the dispatch scratchpad. The delegate rewrites it per milestone, under 60 lines. Notes are not evidence.
+5. **Contract by reference.** Reference mode is allowed only where the supervisor can inspect the transcript and confirm the full header was read. Other transports keep the paste. A pilot of 10 dispatches per mode decides the default; it flips only at a 20 percent or larger saving with no missed reads.
+6. **Evidence tags.** Every factual claim and conclusion carries a tag. Only action-log lines tied to a recorded command and exit code are exempt.
+7. **Baseline snapshot.** `pre_dispatch_snapshot.py` captures hashes of every dirty and untracked file before dispatch and verifies them afterward. It replaces porcelain comparison as the scope gate.
+8. **Linter fixes.** `check_dispatch_prompt.py` parses `CONTRACT: <path> (sha256 <hex>)` correctly and checks report elements under `--profile report`. Regression tests cover both.
+
+## D46 — Lead, kickoff grammar, CoS hands, separation gates (2026-10-03, status: binding)
+
+Source: operator grill of 2026-10-03 (operator as CEO, the fable session as CoS).
+
+1. **Hierarchy recitation dropped.** The mandatory line "Executive is above Supervisor" before dispatch is removed from `QUICKREF.md` and `SKILL.md` Step 1. The ladder gives rank; the operator never types it.
+2. **Order resolution.** When the operator names two or more models, the ladder (`docs/governance/ROUTING-RANKING.md`) decides who manages: the higher rung manages and the lower reports to it. At the same rung, the CoS asks the operator one interactive question to name the Lead, recommended answer first. The CoS states the resolved chain in one line only when the result is surprising, with a discrete justification.
+3. **Delegation by rung.** Executive and Orchestrator rungs delegate to any lower rung. Workhorse delegates only to the Grunt rung, and only with an enumerated allowlist. Grunt never delegates. Depth cap: 3 below the CoS.
+4. **Fixed nouns.** CEO (the operator) and CoS (the session the operator talks to) are fixed. Every other role is defined by its reporting chain, expectations, and repeatability, not by a noun. Rung names stay cost classes only (`CONTEXT.md:38` unchanged). Nouns: Lead for the run manager (aliases Supervisor, Orchestrator), Worker for an agent reporting to a Lead (aliases Delegate, Team, Workhorse, Grunt); Second retired; astra second opinion 2026-10-03 concurred.
+5. **CoS hands.** The CoS reads to route and to verify delegate claims, and answers lookups of 3 tool calls or fewer itself. Every repository edit goes through a delegate, including one-line edits. Basis: a delegate floor of about 3.2k tokens against 2-5k of permanent CoS context per self-done lookup. Delegation multiplies tokens 10-50x but keeps the CoS window flat.
+6. **CEO report shape.** Decisions first, with the CoS's pick. Then one line per result, marked verified or not. Then lessons that need sign-off. Transcripts and reports stay in files, named once. Big lifts require a status card.
+7. **Big lift.** A run that spawned 2 or more delegates, or that edited canon (`AGENTS.md`, `CONTEXT.md`, `docs/DECISIONS.md`, any `SKILL.md`, policy).
+8. **Run spec.** One short run spec per run (ask, resolved chain, gates, snapshot path, outcome) goes in the home repo under `specs/consumers/<repo>/runs/`. The home repo for this operator is DomI. Other consumers of agents_Inc name their own home repo in their `AGENTS.md`. Agent-only artifacts (specs, run specs, teach-me notes, introspect records, grill notes) live there, never in the consumer repo.
+9. **Kickoff grammar.** `<task>. <models>.` Example: "Fix the parser. opus, haiku." Defaults: chain by ladder, effort medium, gates derived from the task, home repo from the consumer's `AGENTS.md`. Each extra word (effort, budget mode, review vendor) overrides exactly one default.
+10. **Hard separations, enforced by gate, not title.** (a) An author never grades their own work. (b) The reviewer is a different vendor for canon edits and irreversible acts; the same vendor is allowed for routine code. (c) Only the CoS commits and pushes. (d) A delegate sees only its slice: never the run tree, sibling reports, or the CEO's reasoning.
+11. **Chain mechanics.** The CoS dispatches only the Lead (the top-ranked named model) with the full mandate and the remaining roster. The Lead runs its own delegates to completion and reports up once, at mandate end. No progress updates flow up. Escalation path only: Worker asks Lead, Lead asks CoS, CoS asks CEO.
+
+Supersedes: the hierarchy-recitation rule in `SKILL.md` Step 1 and `QUICKREF.md` item 3.
+
+## D47 — `agents-inc dispatch` wraps the dispatch loop (2026-10-03, status: accepted)
+
+Source: CoS and operator decision of 2026-10-03.
+
+An inline prompt doubles the CoS context, and a file-pointer prompt risks a delegate that skims the contract. The new `agents-inc dispatch` command removes the trade-off. The CoS writes a slots file; the command renders the prompt, lints it, captures a baseline snapshot, and launches the delegate with the full prompt inline. After the delegate exits, it lints the report, verifies the snapshot against the slots' files in scope, and prints one status line. Every other artifact, including the D46 run spec (`run.json`), stays in the run directory.
+
+Claude rungs launch through `claude -p` and Codex rungs through the existing `run_codex`. Free providers stay on `agent.sh`. No API-key path exists.
+
+The reference-mode pilot of D45 item 5 is retired: the wrapper keeps the CoS context flat while the delegate still receives the full prompt, so the pilot question is moot.
+
+The 14-element check rejects; handoff-lint findings are advisory and go to `lint.txt` (ruled 2026-10-03 after a false H3 refusal).
+
+## D48 — Fan-out cap for delegation (2026-10-03, status: accepted)
+
+Source: operator ruling of 2026-10-03 on the fan-out proposal.
+
+Nothing capped how many Workers a Lead spawns. Runs ranged from 0 Workers against a named roster to 4 Workers whose 60 findings the Lead could not check. Each dispatch now carries a `FAN_OUT: width <n>, total <n>, depth <n>` line. When the slot is absent, `render_dispatch.py` fills the rung default:
+
+| Lead rung | Workers at once | Workers per mandate | Depth below the Lead |
+|---|---|---|---|
+| Executive, Orchestrator | 3 | 6 | 2 |
+| Workhorse | 2 | 4 | 1, Grunt only |
+| Grunt | 0 | 0 | 0 |
+
+Read-only scans may use the full width. Edits cap the width at the number of disjoint file groups. Plan or prose writing caps it at 1.
+
+Verification rule: a Lead spawns no more Workers than floor(20 / f), where f is the findings cap in each Worker's stop rule. The effective width is the smaller of this value and the table.
+
+Roster floor: when the operator names 2 or more non-Lead models, the Lead spawns at least 1 Worker or says in one report line why it spawned none.
+
+Overage: before going past either cap, the Lead asks the CoS one question, recommended answer first.
+
+Count source: every Lead report carries the line `WORKERS SPAWNED: n`. `agents-inc dispatch` records it in `run.json` as `workers_spawned`, beside the `fan_out` budget, and marks the run red when n exceeds the total.
+
+## D49 — Codex tool access by rung (2026-10-03, status: accepted)
+
+Source: operator ruling of 2026-10-03, "lets allow tool access to all but grunts and free".
+
+Under `agents-inc run`, astra, sol, and terra now get Codex's shell tool. luna and any raw slug stay tool-free with `features.shell_tool=false`. Free providers (Gemini, Mistral, OpenRouter, Ollama) stay tool-free. Their wrappers and adapters have no shell flag, so nothing changed there. `--no-tools` turns the tool off for any rung. `--write` lets tool commands write in the working directory. It needs the tool on, and network stays off.
+
+Reads outside the repository are denied by a Codex permission profile. Tool commands may read system paths (`:minimal`), `/opt/homebrew`, `/tmp`, and the working directory. Nothing else in the home directory is readable. `~/.ssh`, `~/.config`, `~/.claude`, `~/.codex-bridge`, `~/.local`, `~/.aws`, `~/.gnupg`, and `~/.netrc` are also denied by name. Writes outside the working directory and all network access stay blocked.
+
+The dispatch asked for an outer `sandbox-exec` wrapper. macOS refuses a nested seatbelt (`sandbox_apply: Operation not permitted`), and that wrapper would have disabled Codex's own sandbox. Codex's seatbelt enforces the profile instead. The Codex process itself still reads `~/.codex` for its own authentication, which is the same vendor; tool commands cannot read it.
+
+Codex silently lets a `-s` sandbox override replace `default_permissions`, so an early probe listed `~/.ssh`; with tools on, the argv omits `-s`, and live probes proved the denial on 2026-10-04.
+
+Each run writes one stderr record line with `tools: on|off` and `sandbox: read-only|workspace-write`.
+
+## D50 — Codex becomes optional; both-optional deferred to v1.0
+
+Status: accepted, ruled by the operator on 2026-10-03.
+
+Claude Code is the only required provider. The Codex CLI is optional: the system uses it when present, for Codex rungs and cross-vendor review. Making Claude optional as well is deferred to v1.0.
+
+README.md, CONTEXT.md, and AGENTS.md now state this. README.md previously said both providers were optional in one place and listed both CLIs as requirements in another.
+
+`agents-inc doctor` already reports a missing Codex as a warning, not a failure (doctor.py:42). `agents-inc run --model <codex alias>` still refuses without Codex, which is the intended behaviour.
+
+## D51 — Credential-blind dispatch broker (2026-10-04, status: accepted)
+A Codex Lead may request Workers without receiving provider credentials.
+Both transports share these guarantees: the CoS creates the run directory and run.json before the Lead starts; the broker owns run.json and refuses requests beyond the Lead's FAN_OUT total; requests carry no credentials or executable paths.
+The broker validates schema, contract, model allowlist, workspace, fan-out, and a 64 KiB request size before D47 dispatch, then writes an immutable result and Worker report outside anything the Lead can write.
+The broker launches every Worker with a scrubbed environment (fixed PATH, HOME, USER, TERM, LANG, and a per-Worker TMPDIR under the broker-owned child directory), so no key, token, or secret variable reaches it.
+It wraps `claude -p` in `sandbox-exec` and refuses Claude requests where that is unavailable; the profile denies the D49 home deny list, `~/.claude.json*`, and `~/.claude` except projects, todos, statsig, scripts, and settings.json (the last two read-only), and allows writes only to cwd, the Worker TMPDIR, /dev, the writable `~/.claude` paths, the login keychain, and `/private/tmp/claude-<uid>` (Claude Code's Bash tool scratch root; the rest of /private/tmp stays denied).
+Known gap: a Claude Worker can launch a nested `claude -p` from its shell with the same keychain login, bypassing broker fan-out; closing it needs a Claude Code setting or a process-exec rule and is queued for the CEO.
+A Codex Lead likewise keeps Codex's built-in `spawn_agent` tools (`features.multi_agent=false` does not remove them), so Codex sub-agents outside the broker counter are possible; a hook-based refusal is the queued follow-up for both.
+MCP transport is primary: `agents-inc run --lead <run-dir>` starts `agents_inc/install/mcp_broker.py` as the Lead's stdio MCP server (`dispatch`, `status`, `wait`) with the same validation and size limit; the Lead has repository read access, no write grant, and no read access to the run directory, which Claude Workers also cannot read or write (their `sandbox-exec` profile denies it and the Lead's isolated CODEX_HOME, except the Worker's own TMPDIR).
+The MCP server, not the Lead, polls stored results, only for request IDs it issued and with the report path derived from the ID; the Lead runs under an isolated CODEX_HOME (auth and sessions symlinked, operator MCP servers and config not loaded) with a minimal environment; the MCP server receives CODEX_HOME through the server env table, and Codex Workers launched by the broker also get an isolated CODEX_HOME and the run-dir deny.
+Accepted exception: Codex may rewrite the symlinked auth.json in place (token refresh), so the isolated home hides the file from shell tools but does not isolate the operator's credential file from Codex itself.
+The file inbox is the fallback transport: the CoS starts `agents-inc dispatch --serve <run-dir>`, the Lead writes requests only to `inbox/`, waits by bounded file polling with `--wait`, and never reads provider homes.
+MVP is the request schema, sequential serve loop, haiku proof, and this ruling.
+Parallel width, cancellation, free-provider routing, and broker resume are later.

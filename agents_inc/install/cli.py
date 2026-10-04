@@ -32,6 +32,29 @@ def _prior_owned(paths: InstallPaths) -> tuple:
     try: return InstallReceipt.load(paths.receipt).owned_paths if paths.receipt.exists() else ()
     except (OSError, ValueError): return ()
 
+def _prior_receipt_copy(paths: InstallPaths) -> Path: return paths.state / "prior-receipt.json"
+
+def _save_prior_receipt(paths: InstallPaths) -> bool:
+    """Keep a verbatim copy of the receipt about to be replaced, for rollback."""
+    copy = _prior_receipt_copy(paths)
+    try: data = paths.receipt.read_bytes() if paths.receipt.is_file() else None
+    except OSError: data = None
+    if data is None: copy.unlink(missing_ok=True); return False
+    paths.state.mkdir(parents=True, exist_ok=True)
+    tmp = copy.with_name(copy.name + ".tmp"); tmp.write_bytes(data); os.chmod(tmp, 0o600); os.replace(tmp, copy); return True
+
+def _restore_prior_receipt(paths: InstallPaths, prior_release: str) -> None:
+    """Restore the saved prior receipt verbatim when it matches the release being restored, else synthesise."""
+    receipt = InstallReceipt.load(paths.receipt)
+    copy = _prior_receipt_copy(paths)
+    try:
+        data = copy.read_bytes()
+        if InstallReceipt.load(copy).release_hash == Path(prior_release).name:
+            tmp = paths.receipt.with_name(paths.receipt.name + ".rollback"); tmp.write_bytes(data); os.chmod(tmp, 0o600); os.replace(tmp, paths.receipt)
+            return
+    except (OSError, ValueError): pass
+    InstallReceipt(Path(prior_release).name, receipt.python_path, receipt.codex_path, receipt.owned_paths, None, receipt.schema_version).save_atomic(paths.receipt)
+
 def install(args):
     paths = _paths()
     notices = []
@@ -56,14 +79,18 @@ def install(args):
                 receipt = install_host_wiring(paths, receipt, journal)
                 if (paths.home / ".claude").is_dir():
                     receipt, link_notices = install_alias_links(paths, receipt, journal); notices.extend(link_notices)
-            journal.apply("receipt", paths.receipt, None, None, lambda: receipt.save_atomic(paths.receipt))
             paths.roster.parent.mkdir(parents=True, exist_ok=True)
             if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
             # Unowned cache for doctor's hook-drift check; not journaled, kept by uninstall.
             paths.state.mkdir(parents=True, exist_ok=True)
             (paths.state / "source-checkout").write_text(str(Path(args.source).resolve()) + "\n")
-            journal.commit()
+            # Receipt last: journal recovery of a "receipt" op unlinks the file, so any
+            # failure before this point must leave the previous receipt in place.
+            had_prior = _save_prior_receipt(paths)
+            journal.apply("receipt", paths.receipt, str(_prior_receipt_copy(paths)) if had_prior else None, None, lambda: receipt.save_atomic(paths.receipt))
+            # Verify before commit: a failure raises into recover(), which rolls the whole install back.
             verify_installed(paths)
+            journal.commit()
             for line in notices: print(line)
             return 0
         except Exception:
@@ -99,7 +126,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
     p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
-    p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True)
+    p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
+    p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
     p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
@@ -108,6 +136,11 @@ def main(argv=None):
     args = parser.parse_args(argv); paths = _paths()
     try:
         if args.command == "install": return install(args)
+        if args.command == "dispatch":
+            from . import dispatch  # works from a source checkout; Codex launch loads the receipt itself
+            if args.wait: return dispatch.wait(args.wait[0], args.wait[1], args.timeout)
+            if args.serve: return dispatch.serve(args.serve, args.poll_interval, args.idle_timeout, args.home_repo)
+            return dispatch.run(args)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
         if args.command == "ledger":
             from .. import host_ledger  # lazy: hook events must not depend on the ledger import
@@ -124,7 +157,7 @@ def main(argv=None):
             return 0 if report.ready else 1
         if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)
-        if args.command == "run": return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()))
+        if args.command == "run": return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo)
         if args.command == "uninstall":
             retained = uninstall(paths, receipt)
             if retained: print("WB_CONFIG_CONFLICT: retained modified artifacts", file=sys.stderr); return 1
@@ -136,6 +169,8 @@ def main(argv=None):
                 TransactionJournal.recover(paths.journal); journal = TransactionJournal(paths.journal).begin("rollback")
                 prior = os.readlink(paths.current) if paths.current.is_symlink() else None
                 journal.apply("symlink", paths.current, prior, receipt.prior_release, lambda: (paths.current.unlink(missing_ok=True), paths.current.symlink_to(receipt.prior_release)))
+                # Keep the receipt in step with `current`, or doctor reports WB_RELEASE_UNTRUSTED.
+                journal.apply("receipt", paths.receipt, None, None, lambda: _restore_prior_receipt(paths, receipt.prior_release))
                 journal.commit()
             return 0
     except (OSError, ValueError, RuntimeError) as exc: print(str(exc), file=sys.stderr); return 1

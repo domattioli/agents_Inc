@@ -363,8 +363,6 @@ fi
 python3 << PYTHON_LOG
 import json
 import os
-import uuid
-import sqlite3
 from datetime import datetime, timezone
 
 log_file = "$USAGE_LOG"
@@ -395,19 +393,5 @@ except Exception as e:
     # Ledger failure must not fail the call
     pass
 
-# Log to SQLite (fail silently)
-try:
-    uid = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    day = now[:10]
-
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.execute(
-        "INSERT INTO usage (uid, ts, day, backend, model, input_tokens, output_tokens, cache_read, cache_write, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (uid, now, day, "gemini", "$MODEL", int($PROMPT_TOKENS), int($OUTPUT_TOKENS), 0, 0, int($REASONING_TOKENS))
-    )
-    conn.commit()
-    conn.close()
-except Exception:
-    pass
+# SQLite row comes from usage_db.ingest_delegated_usage (sha1 uid); no direct insert here.
 PYTHON_LOG

@@ -236,13 +236,7 @@ persona name; renaming does not change the execution model. A Claude
 supervisor of a Codex worker puts its own rung first and names the worker
 later: "Workhorse supervises luna parser fix", not "luna: parser fix".
 
-**State the hierarchy before the first dispatch.** When an operator turn
-names two roles without an explicit order, or names models that differ from
-the ladder, say one line to the operator before the first dispatch:
-`Hierarchy: Executive = <name> (<model>, top); Supervisor = <name> (<model>, reports to Executive)`.
-The order is D34: Executive above Supervisor (= Orchestrator). Use words, not
-the `>` glyph; #14 began with `>` read as "less than". Operator-named models
-override the ladder default; state the conflict, do not resolve it silently.
+**Chain resolves by ladder (D46).** The higher rung manages and the lower reports to it; at the same rung, the CoS asks the operator one interactive question to name the Lead, recommended answer first. State the resolved chain in one line only when the result is surprising, with a discrete justification.
 
 #### Step 1a: MODEL ROSTER — nickname → slug → dispatch command
 
@@ -598,6 +592,10 @@ believe RED is failure. The gate wording that worked:
 
 Agent-facing text = `caveman ultra`. Reader is a model.
 
+Fan-out (D48): every prompt carries `FAN_OUT: width <n>, total <n>, depth <n>` (renderer fills the rung default) and every report carries `WORKERS SPAWNED: n`; checker rejects a malformed FAN_OUT line, wrapper marks run red when n > total.
+
+Incident narratives in this Step (origins, upstream incidents A/B) = supervisor context; never paste them into delegate prompts. Worked example dispatch: `slots.md` second `text` block.
+
 **MUST — every dispatch prompt, no exceptions. 14 elements** (operator ruling
 2026-09-06, grilled + expanded same date):
 
@@ -637,13 +635,18 @@ grunt dispatch also carries, checked by `--tier grunt`:
   success gate; the delegate does not author its own acceptance test (Step
   2).
 
-**Pre-existing changes — every dispatch, every tier.** Supervisor snapshots
-`git status --porcelain` before dispatch and pastes it into the prompt as
-`PRE-EXISTING CHANGES:`. Delegate MUST NOT restore, checkout, reset, stash, or
-overwrite any file it did not itself change; pre-existing diffs outside FILES
-IN SCOPE are reported, never reverted. A scope gate phrased as "`git diff`
-lists only in-scope files" is compared against the snapshot, not the clean
-tree. Origin: 2026-09-26, Haiku ran `git restore skills/workerbee/SKILL.md`
+**Pre-existing changes — every dispatch, every tier.** Supervisor runs
+`python3 skills/workerbee/scripts/pre_dispatch_snapshot.py capture <scratchpad>/pre_dispatch.json`
+before dispatch (time, HEAD, porcelain, sha256 of every pre-existing dirty
+file + every untracked file, recursive) and puts the snapshot path + verify
+command in `PRE-EXISTING CHANGES:`. Delegate MUST NOT restore, checkout,
+reset, stash, or overwrite any file it did not itself change; pre-existing
+diffs outside FILES IN SCOPE are reported, never reverted. Scope gate =
+`pre_dispatch_snapshot.py verify <snapshot> --allow <each FILES IN SCOPE path>`:
+exit 0 = hashed files unchanged + tree differs only at allowed paths; exit 1
+names each changed path. Capture + verify same host, same git config.
+Porcelain equality alone is not the gate (cannot see edits to an already-dirty
+file). Origin: 2026-09-26, Haiku ran `git restore skills/workerbee/SKILL.md`
 to wipe the supervisor's uncommitted edit so its diff-scope gate read clean,
 then reported "no files outside scope touched".
 4. **Grill clause.** Delegate surfaces anything missing/underspecified/
@@ -655,13 +658,15 @@ then reported "no files outside scope touched".
    vendor honoring it is irrelevant, it goes in regardless.
 6. **Cite evidence for every claim, not just gates.** file:line, command
    output, or quoted source for anything stated as fact. Bare assertion
-   doesn't count.
+   doesn't count. Tag every factual claim and conclusion
+   `[verified]`/`[inferred]`/`[assumed]`. Only exemption: action-log lines
+   directly linked to recorded tool evidence (command + exit code).
 7. **Scope boilerplate, standing.** Repo-scoped writes only; no git
    commit/push; no writes to `~/.claude/**`, other repos, credentials/`.env`.
    Covers writes via any script/tool the delegate runs, not only its own
-   edits. Nested delegation: commit/push authority stays w/ run root (session
-   operator talks to), never inherited downward — delegate w/ own children
-   integrates their output in-tree + reports, does not commit.
+   edits. Nested delegation: commit/push authority stays w/ Chief of Staff
+   only, never inherited downward — delegate w/ own children integrates
+   their output in-tree + reports, does not commit.
    **The allowlist is a hard lock and is opt-in** — it binds only when the
    dispatch actually carries one. An operator naming a model without an
    allowlist is a top-level assignment (downward within Claude is free),
@@ -732,6 +737,10 @@ then reported "no files outside scope touched".
     passed → closes silent scope-narrowing; (b) starting assumptions +
     whether/why any changed; (c) every file created. **Minimal file creation
     is the standing default** — new file only when the task requires one.
+    (d) each gate command run with an output excerpt and its exit code; if no
+    gate command was run, item (d) may read `none, exit code N/A`. The first
+    line of every report is the declaration `caveman: <ultra|not installed ->
+    by hand>`.
 13. **Edit hygiene: surgical over full-rewrite.** Minimize tokens spent
     editing, all else equal. Default to targeted edit over rewriting a whole
     existing file whenever the end result is identical. Full-rewrite fine when
@@ -788,12 +797,16 @@ non-compliant, do not send it.
 dispatch. Fill the slots in `skills/workerbee/slots.md`, then append
 `skills/workerbee/header.md`, or render both with
 `python3 skills/workerbee/scripts/render_dispatch.py --slots <json>`. A
-delegate that can read files may get the line `CONTRACT: <path to header.md>`
-instead of the pasted header; the training opt-out line stays pasted
-verbatim either way. Bare-API delegates (gask/mask/oask) always get the text
-pasted; lint them with `--transport bare`, which rejects a `CONTRACT:` line.
-Caching the header saves tokens only if measured (`cache_read` over about 10
-clustered runs); no saving is claimed until then.
+delegate may get the line `CONTRACT: <path to header.md>` (optional suffix
+`(sha256 <hex>)`; linter checks it) instead of the pasted header, ONLY where
+supervisor can inspect the delegate transcript (Agent tool task output file;
+codex-bridge job with saved result.json) AND confirms the first substantive
+tool call read the full header. Else paste. Launcher (`agents-inc run`),
+gask, mask, oask always get the text pasted; lint bare ones with
+`--transport bare`, which rejects a `CONTRACT:` line. Training opt-out line
+stays pasted verbatim either way. Render strips header.md title + HTML
+comment; pasted text starts at CAVEMAN line. Reference mode is the fallback
+when `agents-inc dispatch` is unavailable.
 
 **Mechanical gate, both directions (D41, 2026-09-17; conditional per D42).**
 Tick-list = human check. Run the in-repo linter (mandatory), prompt saved to
@@ -811,16 +824,19 @@ absent → the warning goes to stderr and exit = 14-element verdict alone.
 `skills.requirements.txt`), never vendored. Absent → emit exactly one line
 `handoff-lint NOT installed -> H1-H6 checked by hand` and continue; do the
 check by hand from these rules. Rules: H1 social padding, H2 provenance
-tags `[verified]`/`[inferred]`/`[assumed]` on claims, H3 dangling refs ("the
+tags `[verified]`/`[inferred]`/`[assumed]` on every factual claim and
+conclusion (action-log lines linked to command + exit code exempt), H3 dangling refs ("the
 file", "as discussed") w/ no in-msg antecedent, H4 goal + constraints + done +
 out-of-scope present + non-empty, H5 exact/near-dup blocks (restatements
 conflict), H6 err paraphrased instead of quoted / unclosed fence. Any check
 failing → fix prompt text, re-check, then send. Delegate report back, same
 conditional gate, report direction: tool installed →
 `handoff_lint.py <report_file> --profile report` (or
-`check_dispatch_prompt.py <report_file> --with-handoff-lint --profile report`);
+`check_dispatch_prompt.py <report_file> --profile report [--with-handoff-lint]`,
+which also checks report elements: caveman confirm, GRILL, provenance tags,
+`OUT OF SCOPE / INCOMPLETE:` section, gate exit codes);
 absent → same one-line notice + H1-H6 by hand. Either way BEFORE Step 2/3
-verification: untagged claim = inference dressed as fact → reject report,
+verification: untagged claim or conclusion (outside evidence-linked action log) = inference dressed as fact → reject report,
 re-ask w/ tags. Linter never rewrites (lint + reject only) + never flags
 hedges/reasoning — those carry info; stripping them = the failure mode, not
 the fix. Overlap: `check_dispatch_prompt.py` checks *this repo's* 14

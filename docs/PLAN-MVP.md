@@ -27,7 +27,7 @@ Ship ranked -> reliable setup, evidence-backed work, persistent memory, enforced
 - Spend cap -> hard $0/task. No paid API path exists. Quota exhaustion -> pause job + tell user; no silent paid fallback.
 - Setup -> browser to provider key page; hidden local terminal prompt writes user `.env`. Agent never sees key; key never enters chat or any model prompt.
 - Workspace authorization -> explicit per-workspace grant permitting confidential inputs to reach Optional provider. Default denied; key presence never grants disclosure rights.
-- Tier -> cheap / mid / frontier. Rules route; failed checks promote within Spend cap; Worker confidence never promotes. Model assignment -> probe + benchmark.
+- Tier -> cheap / mid / frontier. Rules route; failed checks promote within Spend cap; stdin worker confidence never promotes. Model assignment -> probe + benchmark.
 - Accepted task -> output reached Verified or Needs-review with retained draft. Cost metric -> dollars per accepted task against all-frontier baseline; quality floor zero false accepts on seeded faults.
 - Measure Tim + Dom workflows. Report incremental dollars and subscription allocation separately. Subscription-only gains -> quota savings, not cash. No savings % before both workflows measured; zero-dollar baseline -> no percentage claim.
 
@@ -48,7 +48,7 @@ Ship ranked -> reliable setup, evidence-backed work, persistent memory, enforced
 
 Keep mechanism/judgment split -> add executable policy boundary. Prose chooses work; runtime controls permitted work + acceptance state.
 
-`Host -> Driver judgment -> governed runner -> Required provider / Optional provider adapter -> Worker candidate -> Verifier + Reviewer gates -> draft + receipt -> memory`
+`Host -> Driver judgment -> governed runner -> Required provider / Optional provider adapter -> stdin worker candidate -> Verifier + Reviewer gates -> draft + receipt -> memory`
 
 | Component | Owns | Boundary |
 |---|---|---|
@@ -61,12 +61,12 @@ Keep mechanism/judgment split -> add executable policy boundary. Prose chooses w
 | Governance | Spend cap, Workspace authorization, provider allowlist, data scope, acceptance requirements | Enforced before dispatch + artifact promotion |
 
 - Replace Codex transport -> direct CLI. Current runner calls `ask.sh`; wrapper posts localhost HTTP. Bridge removal requires adapter replacement, not file deletion alone.,.
-- Replace `succeeded` meaning -> `returned`; Returned -> Worker process exited 0 and produced output, no correctness claim. Add `verified`, `needs-review`, `failed`, `interrupted`, `cancelled`; Verified requires Verifier + Reviewer gates. Current exit `0` promotes directly to `succeeded`..
-- Tier -> cheap / mid / frontier; model assignment by probe + benchmark. Rules route; failed checks promote within Spend cap, never Worker confidence. Optional provider missing key -> skip. Free -> zero incremental dollars per task..
+- Replace `succeeded` meaning -> `returned`; Returned -> stdin worker process exited 0 and produced output, no correctness claim. Add `verified`, `needs-review`, `failed`, `interrupted`, `cancelled`; Verified requires Verifier + Reviewer gates. Current exit `0` promotes directly to `succeeded`..
+- Tier -> cheap / mid / frontier; model assignment by probe + benchmark. Rules route; failed checks promote within Spend cap, never stdin worker confidence. Optional provider missing key -> skip. Free -> zero incremental dollars per task..
 - One active job/workspace; delegation depth `1`; fresh process. Follow-up -> new job referencing selected prior evidence.
-- Driver -> Host session dispatching a tool-free Worker. Reviewer -> different vendor than Worker, checks consequential claims against original sources. Verifier -> deterministic code. Driver owns acceptance after gates; every route obeys Spend cap + Workspace authorization.
+- Driver -> Host session dispatching a tool-free stdin worker. Reviewer -> different vendor than stdin worker, checks consequential claims against original sources. Verifier -> deterministic code. Driver owns acceptance after gates; every route obeys Spend cap + Workspace authorization.
 - Transient failure -> one bounded retry. Quota exhaustion -> pause job + tell user; no paid API path. Auth/policy failure -> stop affected dispatch; missing Optional provider key skips provider. Interrupted dispatch -> reconcile process/result before retry.
-- Worker receives selected text through stdin; document instructions treated as data. No arbitrary shell, file, web, MCP, connector, or recursive-agent tools. Runner writes results.
+- Stdin worker receives selected text through stdin; document instructions treated as data. No arbitrary shell, file, web, MCP, connector, or recursive-agent tools. Runner writes results.
 - Isolation -> tested adapter contract, including inherited config suppression. Read-only filesystem alone insufficient. Codex exposes shell/multi-agent/app controls; exact safe combination requires negative probes. [OpenAI config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 **3. DEPENDENCY VERDICT**
@@ -113,7 +113,7 @@ Exactly eight runtime skills; one canonical source. Host -> Claude Code AND Code
 |---|---|---|---|
 | `workerbees` | Entry contract; Tier routing; Spend cap + Workspace authorization | Always, ≤180 tokens | Portable; distilled workerbee rules |
 | `workerbees-setup` | Install, doctor, repair; Required provider login; Optional provider key UX | On-demand, ≤500 | Portable; fallback/verification pattern |
-| `workerbees-delegate` | Tool-free Worker dispatch; Returned candidate; Reviewer handoff | On-demand, ≤400 | Portable; mechanism/judgment split |
+| `workerbees-delegate` | Tool-free stdin worker dispatch; Returned candidate; Reviewer handoff | On-demand, ≤400 | Portable; mechanism/judgment split |
 | `workerbees-memory` | Resume, remember, correct, checkpoint | On-demand, ≤300 | Portable; `session-resume` pattern |
 | `workerbees-verify` | Verifier checks + Reviewer gates; evidence receipt | Every result, on-demand, ≤450 | Portable; `verify-independently`, adapted beyond code |
 | `workerbees-lawyer` | Legal document rubric | Selected Mode only, ≤300 | Portable; new domain pack |
@@ -141,7 +141,7 @@ Exactly eight runtime skills; one canonical source. Host -> Claude Code AND Code
 4. Required provider -> Claude Code AND Codex; native subscription login. Doctor checks both CLIs, auth, structured-output schema, tool isolation. Missing Required provider -> blocked + resumable.
 5. Optional provider -> Gemini, Mistral, OpenRouter free tiers. Offer skip or guided key acquisition. Agent opens provider key page; user types key into hidden local terminal prompt; local code writes permission-restricted user `.env`. Key never visible to agent or model. Missing key -> skip provider, continue setup.
 6. Enforce Spend cap -> only subscription-included/free-tier routes; no paid API path. Unproven zero-dollar route -> disable Optional provider; required route failure -> block. Probe quota pause + user notice; probe confidential Optional provider denial without Workspace authorization.
-7. Synthetic acceptance -> Tim lawyer documents to cited brief AND Dom engineer/scientist tasks from day 1. Exercise both Hosts + Required providers; memory initialization, source import, Worker candidate, Verifier + Reviewer gates, seeded defect, restart/resume. Optional providers tested when configured; absent keys never block READY.
+7. Synthetic acceptance -> Tim lawyer documents to cited brief AND Dom engineer/scientist tasks from day 1. Exercise both Hosts + Required providers; memory initialization, source import, stdin worker candidate, Verifier + Reviewer gates, seeded defect, restart/resume. Optional providers tested when configured; absent keys never block READY.
 8. Activate -> atomic pointer switch to verified release. Register namespaced skill stubs using journaled edits; preserve existing files. Fresh Host processes validate discovery from canonical source.
 9. Emit setup receipt + sample reports. `READY` only after required checks. Next session -> same workspace/Mode/checkpoint through either Host; user git identity never required for document work.
 
@@ -163,10 +163,10 @@ State -> `PREFLIGHT -> STAGED -> VERIFIED -> ACTIVE`; required-check failure -> 
 | Existing config conflict | `WB_CONFIG_CONFLICT` | Preserve original; provide focused conflict description; no overwrite |
 | Unsupported CLI/security capability | `WB_CLI_UNSUPPORTED` | Name tested version requirement; retain staging + recovery receipt |
 
-- Required provider auth -> vendor CLIs only. Never open auth files or copy sessions. Optional provider key -> local setup code writes user `.env`; local adapter reads only its configured credential, never sources shell code or includes credentials in Worker stdin/model prompts. Redact errors; exclude `.env` from source import, memory, git, logs, receipts.
+- Required provider auth -> vendor CLIs only. Never open auth files or copy sessions. Optional provider key -> local setup code writes user `.env`; local adapter reads only its configured credential, never sources shell code or includes credentials in stdin worker stdin/model prompts. Redact errors; exclude `.env` from source import, memory, git, logs, receipts.
 - Claude Code adapter -> native logged-in `-p`; **exclude `--bare`** (verified: skips keychain -> "Not logged in"). Isolation via explicit `--disallowedTools` list + `--setting-sources ""` + `--strict-mcp-config` (positive probe: shell request -> `NO_EXEC`; `--tools ""` alone insufficient). Full negative-probe matrix -> Phase 1. [Claude programmatic mode](https://code.claude.com/docs/en/headless).
 - Codex adapter -> `exec`, structured events, saved CLI auth. [OpenAI non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
-- Optional provider adapters -> tool-free Worker invocations, same evidence gates; deny confidential inputs without Workspace authorization; hard $0 eligibility checked before dispatch. No redaction bypass.
+- Optional provider adapters -> tool-free stdin worker invocations, same evidence gates; deny confidential inputs without Workspace authorization; hard $0 eligibility checked before dispatch. No redaction bypass.
 - Setup cannot bypass 2FA, OS consent, managed policy, or Host sandbox. Required human login/key/consent steps -> explicit + resumable; automated remainder continues. Never label blocked setup “complete.”
 - Installation receipt -> release/client versions, distribution route, phase, check IDs, Optional provider enabled/skipped status, repair command; no keys, prompts, documents, account identifiers.
 - Benchmark receipt -> Cost metric against all-frontier baseline for Tim + Dom; incremental dollars + subscription allocation separate; zero false accepts on seeded faults. No savings % until both workflows measured; zero-dollar baseline -> no percentage claim.
@@ -193,11 +193,11 @@ State -> `PREFLIGHT -> STAGED -> VERIFIED -> ACTIVE`; required-check failure -> 
 
 **Tim receives inspectable evidence, not “tests passed.”**
 
-- Before dispatch -> Driver defines requested fields, source coverage, critical claims, expected checks. Contract frozen outside Worker control.
+- Before dispatch -> Driver defines requested fields, source coverage, critical claims, expected checks. Contract frozen outside stdin worker control.
 - Source importer -> per-page/paragraph coverage map; unreadable/empty/unsupported regions flagged. Extraction completeness never inferred from model confidence.
-- Worker returns -> structured claims, exact excerpts, source anchors, uncertainty, candidate draft. No authority to set verified state.
+- Stdin worker returns -> structured claims, exact excerpts, source anchors, uncertainty, candidate draft. No authority to set verified state.
 - Verifier -> deterministic code: source hashes, quote matches, valid anchors, omitted required fields, arithmetic/unit checks, candidate/receipt hash binding. Never a model.
-- Reviewer -> model invocation from a different vendor than Worker; every consequential claim against original excerpt + surrounding context; contradictions, missing qualifications, unsupported inference. Driver owns acceptance after gates.
+- Reviewer -> model invocation from a different vendor than stdin worker; every consequential claim against original excerpt + surrounding context; contradictions, missing qualifications, unsupported inference. Driver owns acceptance after gates.
 - Omission review -> source-driven pass independent of worker claims. Section coverage alone cannot prove completeness.
 - Consequential output -> fresh other-vendor review with source + task rubric before viewing worker self-assessment. Agreement supports review; never proves truth.
 - Three separate receipt results -> **source integrity**, **content review**, **human decision needed**. No universal green “legally correct.”

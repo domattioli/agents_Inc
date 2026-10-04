@@ -326,8 +326,6 @@ fi
 python3 << PYTHON_LOG
 import json
 import os
-import uuid
-import sqlite3
 from datetime import datetime, timezone
 
 log_file = "$USAGE_LOG"
@@ -353,22 +351,7 @@ try:
 except Exception:
     pass
 
-# SQLite log (fail silently)
-try:
-    uid = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    day = now[:10]
-    model = "$MODEL"
-
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.execute(
-        "INSERT INTO usage (uid, ts, day, backend, model, input_tokens, output_tokens, cache_read, cache_write, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (uid, now, day, "openrouter", model, int($PROMPT_TOKENS), int($OUTPUT_TOKENS), 0, 0, 0)
-    )
-    conn.commit()
-    conn.close()
-except Exception:
-    pass
+# SQLite row comes from usage_db.ingest_delegated_usage (sha1 uid); no direct insert here.
 PYTHON_LOG
 
 if [[ -n "$PLACEHOLDERS" ]]; then

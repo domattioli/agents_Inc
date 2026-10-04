@@ -9,6 +9,8 @@ Usage: python3 render_dispatch.py --slots <json> [--contract-ref <path>] [--head
 
 Output: filled template (slots substituted), blank line, then either pasted header text or
 CONTRACT: reference line followed by training opt-out line. No {{ may remain.
+Pasted header text starts at the CAVEMAN line: the markdown title and authoring
+comment above it are stripped. NOTES defaults to "none"; STYLE may be empty.
 
 Exit 0 on success, 2 if required slot missing or empty (stderr names it).
 """
@@ -18,6 +20,31 @@ import os
 import sys
 from pathlib import Path
 
+
+
+# D48 fan-out defaults per Lead rung and model-to-rung table: dispatch_rungs.py.
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+from dispatch_rungs import FAN_OUT_BY_RUNG, MODEL_RUNG  # noqa: E402
+
+
+def default_fan_out(slots: dict) -> str:
+    """Return the D48 FAN_OUT line value from a RUNG or MODEL slot, else Orchestrator defaults."""
+    rung = "orchestrator"
+    for key in ("RUNG", "MODEL"):
+        value = slots.get(key)
+        if isinstance(value, str) and value.strip():
+            word = value.strip().lower()
+            if word in FAN_OUT_BY_RUNG:
+                rung = word
+                break
+            hit = next((r for m, r in MODEL_RUNG.items() if m in word), None)
+            if hit:
+                rung = hit
+                break
+    width, total, depth = FAN_OUT_BY_RUNG[rung]
+    return f"width {width}, total {total}, depth {depth}"
 
 def extract_template(slots_path: Path) -> str:
     """Extract template from first ```text block in slots.md."""
@@ -34,6 +61,15 @@ def extract_template(slots_path: Path) -> str:
         if in_block:
             template_lines.append(line)
     return "".join(template_lines)
+
+
+def header_body(header_text: str) -> str:
+    """Drop the authoring wrapper (title, HTML comment); keep text from the CAVEMAN line."""
+    lines = header_text.splitlines(keepends=True)
+    for idx, line in enumerate(lines):
+        if line.startswith("CAVEMAN:"):
+            return "".join(lines[idx:])
+    raise ValueError("header has no CAVEMAN: line")
 
 
 def main() -> int:
@@ -90,13 +126,20 @@ def main() -> int:
 
     # Check required slots
     required_slots = {
-        "ROLE", "TASK", "FILES_IN_SCOPE", "STOP_RULE", "SUCCESS_GATE", "FAILURE_GATE",
+        "ROLE", "TASK", "CONSTRAINTS", "OUT_OF_SCOPE", "FILES_IN_SCOPE", "STOP_RULE", "SUCCESS_GATE", "FAILURE_GATE",
         "PRE_EXISTING_CHANGES", "ALLOWLIST", "CLASSIFICATION", "EFFORT", "SECOND_OPINION",
         "PLAN_CONTRACT"
     }
 
+    if not (isinstance(slots_data.get("FAN_OUT"), str) and slots_data["FAN_OUT"].strip()):
+        slots_data["FAN_OUT"] = default_fan_out(slots_data)
+
+    if not (isinstance(slots_data.get("NOTES"), str) and slots_data["NOTES"].strip()):
+        slots_data["NOTES"] = "none"
+    slots_data.setdefault("STYLE", "")
+
     missing = []
-    for slot in required_slots:
+    for slot in sorted(required_slots):
         value = slots_data.get(slot, "").strip() if isinstance(slots_data.get(slot), str) else ""
         if not value:
             missing.append(slot)
@@ -120,7 +163,7 @@ def main() -> int:
                 result = "\n".join(
                     line for line in result.splitlines()
                     if placeholder not in line
-                )
+                ) + "\n"
         else:
             result = result.replace(placeholder, str(slot_value))
 
@@ -145,9 +188,12 @@ def main() -> int:
         # Append full header
         try:
             header_text = header_path.read_text(encoding="utf-8")
-            output += header_text
+            output += header_body(header_text)
         except FileNotFoundError as e:
             print(f"Header file not found: {e}", file=sys.stderr)
+            return 2
+        except ValueError as e:
+            print(f"Bad header file: {e}", file=sys.stderr)
             return 2
 
     print(output, end="")
