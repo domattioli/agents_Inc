@@ -87,6 +87,34 @@ class ProfileTest(unittest.TestCase):
         self.assertNotIn('"/h"', prof)  # rest of HOME is absent, so unreadable
         self.assertFalse(any(v == "write" for v in prof.values()))
 
+    def test_run_dir_only_write(self):
+        prof = permission_profile(Path("/w"), True, home=Path("/h"), write_dir=Path("/w/runs/r1"))
+        self.assertEqual(prof['"/w"'], "read")
+        self.assertEqual(prof['"/w/runs/r1"'], "read")  # run.json, workers/, results: broker-owned
+        self.assertEqual([k for k, v in prof.items() if v == "write"], ['"/w/runs/r1/inbox"'])
+        for name in HARD_DENY:
+            self.assertEqual(prof[f'"/h/{name}"'], "none", name)
+
+    def test_run_dir_argv_and_legacy(self):
+        argv = build_codex_argv(EXE, "sol", "medium", Path("/w"), EFF, MAP, True, True, Path("/w/r"))
+        self.assertIn('"/w"="read"', argv[-2])
+        self.assertIn('"/w/r"="read"', argv[-2])
+        self.assertIn('"/w/r/inbox"="write"', argv[-2])
+        self.assertIn('"/w"="write"', _argv("sol", tools=True, write=True)[-2])  # legacy: no run dir
+
+    def test_run_dir_inbox_symlink_refused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "run"
+            run.mkdir()
+            (run / "inbox").symlink_to(Path(tmp))
+            with self.assertRaises(ValueError):
+                permission_profile(Path("/w"), True, write_dir=run)
+
+    def test_run_dir_needs_write(self):
+        with self.assertRaises(ValueError):
+            permission_profile(Path("/w"), False, write_dir=Path("/w/r"))
+
     def test_bad_path_rejected(self):
         with self.assertRaises(ValueError):
             permission_profile(Path('/w"x'), False)
