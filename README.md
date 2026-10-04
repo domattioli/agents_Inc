@@ -319,7 +319,7 @@ Built and tested today:
 - A local SHA-256 content-addressed artifact store.
 - The governed dispatch gateway, including envelope, policy, registry, and budget checks.
 - The live [agent.sh](skills/codex-bridge/scripts/agent.sh)/[agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) dispatch path (shells out to the Codex CLI directly; [bridge.py](bridge.py) is a separate HTTP path for a second device, see appendix).
-- 989 automated tests passing locally with `python3 -m unittest discover -s tests -p 'test_*.py'`, plus 28 workerbee skill tests under `skills/workerbee/tests`.
+- 1038 automated tests passing locally (13 skipped live probes) with `python3 -m unittest discover -s tests -p 'test_*.py'`, plus 28 workerbee skill tests under `skills/workerbee/tests`.
 
 New dispatch tooling:
 
@@ -344,7 +344,7 @@ Bindle Backend A is built: the local content-addressed artifact store captures a
 | Claude Skills (SKILL.md format) | Yes | No, standard frontmatter | Packages routing and verification judgment as reusable prose (`skills/workerbee`, `skills/codex-bridge`) |
 | Claude subagents / Agent tool | No | — | Single-vendor; cannot enforce cross-vendor review by itself |
 | Claude Code hooks | Yes | Added | The installer wires SessionStart, PreToolUse and PostToolUse on Agent spawns, and UserPromptSubmit for `@alias` questions ([host_wiring.py](agents_inc/install/host_wiring.py), [AT-ROUTE.md](docs/at-route/AT-ROUTE.md)) |
-| Model Context Protocol (MCP) | No | — | Dispatch uses an HTTP bridge and CLI wrapper |
+| Model Context Protocol (MCP) | Only for the D51 Lead transport | Built | [mcp_broker.py](agents_inc/install/mcp_broker.py) is a stdio MCP server that fronts the dispatch broker for a Codex Lead; all other dispatch uses an HTTP bridge and CLI wrapper |
 | OpenAI Codex CLI | Yes | Wrapped | [bridge.py](bridge.py) adds a persistent-thread HTTP session; [agent.sh](skills/codex-bridge/scripts/agent.sh) and [agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) add a governed asynchronous job queue bound to the ledger |
 | OpenAI Assistants / Agent SDK | No | — | Uses the Codex CLI and this repository's dispatcher |
 | Built here, no vendor equivalent | — | — | [ledger.py](workerbees/ledger.py) (audit trail), [reviewer.py](workerbees/reviewer.py) (cross-vendor enforcement), [verifier.py](workerbees/verifier.py) (deterministic pre-check), [artifacts.py](workerbees/artifacts.py) (content-addressed store), [router.py](workerbees/router.py)/[routing.json](workerbees/routing.json) (tier and vendor routing) |
@@ -502,7 +502,7 @@ PYTHONPATH=. python3 -m agents_inc.install.cli dispatch --slots slots.json --mod
 
 The CoS writes the slots file; [skills/workerbee/slots.md](skills/workerbee/slots.md) holds one worked example. Claude models launch through `claude -p`. Codex models launch through the existing Codex runner. Free providers stay on `agent.sh`. No API-key path exists. All other output, including the run record (`run.json`), stays in the run directory. Other flags: `--effort`, `--cwd`, `--tier grunt`, `--run-dir`, `--resume`, `--message`.
 
-Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna and the free providers never get one, and `--no-tools` turns it off for any run. A Codex Lead can request Workers without holding provider credentials: the CoS creates a run directory and runs `agents-inc dispatch --serve <run-dir>`; the Lead drops JSON requests into its `inbox/`, waits with `agents-inc dispatch --wait`, and reads back each Worker's result and report (D51).
+Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna and the free providers never get one, and `--no-tools` turns it off for any run. A Codex Lead can request Workers without holding provider credentials: the CoS creates a run directory and runs `agents-inc dispatch --serve <run-dir>`; the Lead drops JSON requests into its `inbox/`, waits with `agents-inc dispatch --wait`, and reads back each Worker's result and report (D51). A Codex Lead reaches the dispatch broker through an MCP server started by `agents-inc run --lead <run-dir>`, with no write access to the run directory and an isolated CODEX_HOME; the file inbox remains as the fallback.
 
 ### How it feels to use
 

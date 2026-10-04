@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -143,6 +144,59 @@ class RunRecordTest(unittest.TestCase):
         self.assertIn("features.shell_tool=false", argv)
         _, err, argv = self._run("astra", tools=True, no_tools=True)
         self.assertIn('"tools": "off"', err)
+
+
+class LeadMcpTest(unittest.TestCase):
+    """D51 MCP transport: --lead appends the mcp_servers.agents_inc overrides."""
+
+    def test_lead_argv_overrides_and_approve(self):
+        with tempfile.TemporaryDirectory() as d:
+            argv = build_codex_argv(EXE, "terra", "medium", Path("/w"), EFF, MAP, True, lead_dir=Path(d))
+            joined = [a for a in argv if a.startswith("mcp_servers.agents_inc.")]
+            self.assertEqual([a.split("=", 1)[0] for a in joined], [
+                "mcp_servers.agents_inc.command", "mcp_servers.agents_inc.args",
+                "mcp_servers.agents_inc.tool_timeout_sec", "mcp_servers.agents_inc.default_tools_approval_mode",
+                "mcp_servers.agents_inc.required", "mcp_servers.agents_inc.startup_readiness",
+                "mcp_servers.agents_inc.startup_timeout_sec"])
+            self.assertIn("mcp_servers.agents_inc.required=true", argv)
+            self.assertIn('mcp_servers.agents_inc.startup_readiness="catalog"', argv)
+            self.assertIn("mcp_servers.agents_inc.startup_timeout_sec=30", argv)
+            self.assertIn('mcp_servers.agents_inc.default_tools_approval_mode="approve"', argv)
+            args_value = [a for a in joined if ".args=" in a][0].split("=", 1)[1]
+            self.assertEqual(json.loads(args_value), [str(runtime.MCP_BROKER), "--run-dir", str(Path(d).resolve())])
+            self.assertTrue(runtime.MCP_BROKER.is_file())
+            self.assertIn(f'permissions.{PROFILE}.filesystem', " ".join(argv))
+
+    def test_lead_refuses_luna_and_raw_slug(self):
+        with tempfile.TemporaryDirectory() as d:
+            for alias in ("luna", "gpt-5.6-terra"):
+                with self.assertRaises(ValueError):
+                    runtime.lead_args(alias, Path(d))
+            with self.assertRaises(ValueError):
+                build_codex_argv(EXE, "luna", "medium", Path("/w"), EFF, MAP, False, lead_dir=Path(d))
+
+    def test_lead_run_codex_record_and_exclusions(self):
+        done = SimpleNamespace(stdout="OK\n", stderr="", returncode=0)
+        with tempfile.TemporaryDirectory() as d:
+            err = io.StringIO()
+            with mock.patch.object(runtime, "load_model_map", return_value=MAP), \
+                    mock.patch.object(runtime.subprocess, "run", return_value=done) as sp, \
+                    mock.patch.object(runtime.os, "access", return_value=True), \
+                    mock.patch.object(runtime, "lead_codex_home", return_value=Path(tempfile.mkdtemp())), \
+                    mock.patch.object(Path, "is_file", return_value=True), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                rc = run_codex("terra", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                               lead_dir=Path(d))
+                self.assertEqual(rc, 0)
+                self.assertIn('"transport": "mcp", "codex_home": "isolated"', err.getvalue())
+                self.assertIn('mcp_servers.agents_inc.default_tools_approval_mode="approve"', sp.call_args[0][0])
+                for bad in ({"write": True}, {"no_tools": True}, {"write_dir": Path(d)}):
+                    with self.assertRaises(ValueError):
+                        run_codex("terra", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                                  lead_dir=Path(d), **bad)
+                with self.assertRaises(ValueError):
+                    run_codex("luna", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                              lead_dir=Path(d))
 
 
 LIVE = os.environ.get("AGENTS_INC_LIVE_PROBES") == "1"

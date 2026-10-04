@@ -80,6 +80,11 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 D51 broker: a Lead sends these slots inline as `slots` in `<run-dir>/inbox/<id>.request.json`
 (write `.tmp`, then rename; keys schema_version, request_id, model, effort, tier, slots; never PERMISSION_MODE or credential paths).
 It waits with `agents-inc dispatch --wait <run-dir> <id> [--timeout 600]` (1 s polls; exit 124 on timeout), reads `<run-dir>/<id>.report.md`; `inbox/lead.done` stops the broker.
+MCP transport (primary): `agents-inc run --model terra --lead <run-dir>` (astra, sol, terra only; CoS writes run.json first) gives the Lead tools `dispatch(model, effort, slots)`, `status()`, `wait(request_id, timeout)`: same slots rules, no inbox, no `tier`.
+The file inbox above is the fallback.
+Tool names are `mcp__agents_inc__dispatch`, `__status`, `__wait` and must be loaded with `tool_search` first (query `agents_inc`).
+A Lead that answers "tool_search is unavailable" or "cannot access" without calling dispatch hit a Codex-side startup flake: rerun it once.
+A Worker report must be plain text, never wrapped in a code fence: handoff-lint skips fenced text, so the broker marks the result red (`report-noncompliant`).
 
 ## STYLE slot (experimental, #4)
 
