@@ -85,6 +85,17 @@
       "status": "unprobed",
       "supported_efforts": ["low", "medium", "high", "max", "ultra"]
     },
+    "gpt-6-sol": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "orchestrator",
+      "tasks_good": ["extract", "summarize", "draft", "review-draft", "review-of-record", "code-write", "code-review", "orchestrate", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 200000,
+      "cost_class": "premium",
+      "status": "unprobed",
+      "supported_efforts": ["low", "medium", "high", "max", "ultra"]
+    },
     "gpt-6-astra": {
       "vendor": "openai",
       "provider": "codex",
