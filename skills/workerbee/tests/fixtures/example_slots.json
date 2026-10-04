@@ -1,0 +1,19 @@
+{
+  "ROLE": "Grunt scout (haiku, Agent tool), dispatched by Supervisor (opus) in <repo>.",
+  "TASK": "Read-only scout. 1. Read agents_inc/policy.py. 2. List every function name that contains the word route, with file:line. 3. Return the list; write nothing.",
+  "CONSTRAINTS": "read-only; no file writes; no network; at most 10 tool calls. Stop-on-block: if a hook or permission classifier blocks a tool call, stop and hand back to the dispatcher; never switch tool to route around it.",
+  "OUT_OF_SCOPE": "editing any file; judging routing design; running unittest suites.",
+  "FILES_IN_SCOPE": "none (read-only scout)",
+  "STOP_RULE": "stop after 2 failed reads of the same file; report RED and paste the last command output in a fenced block.",
+  "SUCCESS_GATE": "`grep -n 'def .*route' agents_inc/policy.py` output matches the returned list line for line.",
+  "FAILURE_GATE": "any name missing from the list versus `grep -n 'def .*route' agents_inc/policy.py`, or any write reported by `python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>`.",
+  "PRE_EXISTING_CHANGES": "snapshot <snapshot> (the dispatch wrapper fills in the real path after capture); verify with `python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>` (no --allow: scout writes nothing).",
+  "NOTES": "none",
+  "ALLOWLIST": "none -- do all work yourself",
+  "FAN_OUT": "width 0, total 0, depth 0",
+  "CLASSIFICATION": "internal (repo source, non-secret)",
+  "EFFORT": "effort control unavailable on this transport; intended level = low",
+  "SECOND_OPINION": "not applicable -- grunt rung, no escalation trigger fired",
+  "PLAN_CONTRACT": "not applicable -- deliverable is not a plan.",
+  "STYLE": ""
+}
