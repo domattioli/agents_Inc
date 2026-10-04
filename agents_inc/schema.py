@@ -6,8 +6,14 @@ SCHEMA_VERSION = "2026-09-05.1"
 SCHEMA_DOC = Path(__file__).parent.parent / "docs" / "governance" / "SCHEMA-3NF.md"
 
 def _parse_blocks():
-    """Parse SQL blocks from SCHEMA_DOC at import time."""
-    doc_text = SCHEMA_DOC.read_text()
+    """Parse SQL blocks from SCHEMA_DOC (on first use, not at import)."""
+    try:
+        doc_text = SCHEMA_DOC.read_text()
+    except OSError as exc:
+        raise FileNotFoundError(
+            f"agents_inc.schema: schema doc not found at {SCHEMA_DOC}; the 3NF "
+            "store needs docs/governance/SCHEMA-3NF.md shipped beside agents_inc/"
+        ) from exc
 
     # Find all fenced sql blocks
     block_pattern = r'```sql\n(.*?)\n```'
@@ -52,19 +58,33 @@ def _parse_blocks():
 
     return ddl, queries, query_names
 
-# Parse at import time
-DDL, QUERIES, QUERY_NAMES = _parse_blocks()
+_LAZY = {}
+_LAZY_NAMES = ("DDL", "QUERIES", "QUERY_NAMES", "TABLES", "VIEWS")
+__all__ = list(_LAZY_NAMES)
 
-# Extract table and view names from DDL
-_tables = set()
-_views = set()
-for match in re.finditer(r'CREATE\s+TABLE\s+(\w+)\s*\(', DDL):
-    _tables.add(match.group(1))
-for match in re.finditer(r'CREATE\s+VIEW\s+(\w+)\s+AS', DDL):
-    _views.add(match.group(1))
 
-TABLES = frozenset(_tables)
-VIEWS = frozenset(_views)
+def _load():
+    """Parse the schema doc once and cache DDL, queries, table and view names."""
+    if not _LAZY:
+        ddl, queries, query_names = _parse_blocks()
+        tables = {m.group(1) for m in re.finditer(r'CREATE\s+TABLE\s+(\w+)\s*\(', ddl)}
+        views = {m.group(1) for m in re.finditer(r'CREATE\s+VIEW\s+(\w+)\s+AS', ddl)}
+        _LAZY.update(DDL=ddl, QUERIES=queries, QUERY_NAMES=query_names,
+                     TABLES=frozenset(tables), VIEWS=frozenset(views))
+    return _LAZY
+
+
+def __getattr__(name):
+    # PEP 562: DDL, QUERIES, QUERY_NAMES, TABLES, VIEWS resolve on first access,
+    # so importing this module works in a tree without docs/.
+    if name in _LAZY_NAMES:
+        return _load()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    """Make lazy-loaded names discoverable in dir() and introspection."""
+    return sorted(list(_LAZY_NAMES) + ['init', '__all__'])
 
 def init(conn):
     """Initialize DB with schema. Idempotent. Sets PRAGMA foreign_keys=ON."""
@@ -82,7 +102,8 @@ def init(conn):
         if not name.startswith('sqlite_'):
             existing_names.add(name)
 
-    expected_names = TABLES | VIEWS
+    lazy = _load()
+    expected_names = lazy["TABLES"] | lazy["VIEWS"]
 
     # If schema fully present, return early (idempotent)
     if existing_names == expected_names:
@@ -90,7 +111,7 @@ def init(conn):
 
     # If empty database, initialize fresh
     if len(existing_names) == 0:
-        conn.executescript(DDL)
+        conn.executescript(lazy["DDL"])
         return
 
     # Otherwise, mismatch detected (partial, extra, or wrong objects)

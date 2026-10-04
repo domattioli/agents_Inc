@@ -9,7 +9,7 @@ All operations follow FR-008 (swallow store errors, never break caller).
 """
 from __future__ import annotations
 import sqlite3, json, os, uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 from agents_inc.envelope import Decision
@@ -388,7 +388,7 @@ class Control:
             if row["decision"]:
                 return row["decision"]
             expires = self._parse_iso(row["expires_at"])
-            now = datetime.utcnow().astimezone()
+            now = datetime.now(timezone.utc)
             if expires < now:
                 return "expired"
             return "pending"
