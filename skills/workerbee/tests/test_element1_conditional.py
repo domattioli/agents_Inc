@@ -73,9 +73,20 @@ class TestHandoffLintDegrades(unittest.TestCase):
         self.assertNotIn("handoff-lint", r.stdout)
 
     def test_report_profile_absent_does_not_crash(self):
-        r = self._run("some report", ("--profile", "report"))
+        report = ("caveman ultra confirmed\nGRILL: none\n[verified] gate ran, exit code 0\n"
+                  "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+        r = self._run(report, ("--profile", "report"))
         self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), "COMPLIANT")
         self.assertIn("handoff-lint NOT installed", r.stderr)
+
+    def test_report_profile_accepts_caveman_declaration_line(self):
+        for decl in ("caveman: ultra", "caveman: not installed -> by hand"):
+            report = (decl + "\nGRILL: none\n[verified] gate ran, exit code 0\n"
+                      "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+            r = self._run(report, ("--profile", "report"))
+            self.assertEqual(r.returncode, 0, decl)
+            self.assertEqual(r.stdout.strip(), "COMPLIANT", decl)
 
 
 if __name__ == "__main__":
