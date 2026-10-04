@@ -116,6 +116,48 @@ class TestGruntTier(unittest.TestCase):
         self.assertIn("stop-rule", missing)
 
 
+class TestSharedRungTable(unittest.TestCase):
+    def test_aliases_match_models_json_tiers(self):
+        import json
+        import dispatch_rungs
+        models = json.loads((ROOT / "agents_inc" / "models.json").read_text())["models"]
+        self.assertEqual(len(dispatch_rungs.MODEL_RUNG), 8)
+        for alias, rung in dispatch_rungs.MODEL_RUNG.items():
+            hits = [k for k in models if k == alias or k.endswith("-" + alias)]
+            self.assertEqual(len(hits), 1, alias)
+            self.assertEqual(models[hits[0]]["tier"], rung, alias)
+            self.assertIn(rung, dispatch_rungs.FAN_OUT_BY_RUNG)
+
+
+class TestArgValidation(unittest.TestCase):
+    SCRIPT = ROOT / "skills" / "workerbee" / "scripts" / "check_dispatch_prompt.py"
+
+    def _run(self, *extra):
+        import subprocess
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as fh:
+            fh.write(COMPLIANT_PROMPT)
+            fh.flush()
+            return subprocess.run([sys.executable, str(self.SCRIPT), fh.name, *extra],
+                                  capture_output=True, text=True)
+
+    def test_invalid_profile_exits_2(self):
+        r = self._run("--profile", "bogus")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--profile must be report", r.stderr)
+        self.assertEqual(len(r.stderr.strip().splitlines()), 1)
+
+    def test_invalid_tier_exits_2(self):
+        r = self._run("--tier", "workhorse")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--tier must be grunt", r.stderr)
+        self.assertEqual(len(r.stderr.strip().splitlines()), 1)
+
+    def test_valid_values_not_rejected(self):
+        self.assertNotEqual(self._run("--tier", "grunt").returncode, 2)
+        self.assertNotEqual(self._run("--profile", "report").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
 
