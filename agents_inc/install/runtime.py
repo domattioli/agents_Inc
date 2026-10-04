@@ -10,7 +10,7 @@ import json
 import sys
 
 # Built-in DEFAULTS only; resolution goes through load_model_map().
-MODEL_ALIASES = {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"}
+MODEL_ALIASES = {"astra": "gpt-6-astra", "sol": "gpt-6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"}
 
 
 def _read_map(raw: str) -> dict[str, str]:

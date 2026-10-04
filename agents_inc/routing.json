@@ -4,7 +4,7 @@
   "tiers": {
     "grunt":       {"claude": "haiku",  "codex": "gpt-5.6-luna", "gemini": "gemini-flash-lite-latest", "mistral": "mistral-small-latest", "openrouter": "openrouter/auto:free", "ollama": "qwen2.5-coder:3b"},
     "workhorse":   {"claude": "sonnet", "codex": "gpt-5.6-terra"},
-    "orchestrator":{"claude": "opus",   "codex": "gpt-5.6-sol"},
+    "orchestrator":{"claude": "opus",   "codex": "gpt-6-sol"},
     "executive":   {"claude": "fable",  "codex": "gpt-6-astra"}
   },
   "task_tier": {"extract": "grunt", "summarize": "grunt", "draft": "grunt", "review": "workhorse", "adjudicate": "executive", "classify": "grunt"},

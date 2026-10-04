@@ -245,7 +245,7 @@ The alias match is case-insensitive:
 | opus | `claude -p` | `claude-opus-5-5` |
 | fable | `claude -p` | `claude-fable-5-1` |
 | astra | `agent.sh submit --backend codex --wait` | `gpt-6-astra` |
-| sol | same | `gpt-5.6-sol` |
+| sol | same | `gpt-6-sol` |
 | terra | same | `gpt-5.6-terra` |
 | luna | same | `gpt-5.6-luna` |
 

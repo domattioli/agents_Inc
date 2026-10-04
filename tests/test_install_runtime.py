@@ -14,7 +14,7 @@ from agents_inc.install.runtime import MODEL_ALIASES, build_codex_argv, resolve_
 
 class RuntimeTest(unittest.TestCase):
     def test_aliases_and_isolated_argv(self):
-        self.assertEqual(MODEL_ALIASES, {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"})
+        self.assertEqual(MODEL_ALIASES, {"astra": "gpt-6-astra", "sol": "gpt-6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"})
         argv = build_codex_argv(Path("/opt/Codex CLI/codex"), "astra", "medium", Path("/work here"), {"gpt-6-astra": ["medium"]})
         self.assertEqual(argv[:4], ["/opt/Codex CLI/codex", "exec", "-m", "gpt-6-astra"])
         self.assertIn("read-only", argv)

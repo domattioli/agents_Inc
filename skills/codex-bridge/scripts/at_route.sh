@@ -57,7 +57,7 @@ case "$alias_name" in
   opus)   model="claude-opus-5-5" ;;
   fable)  model="claude-fable-5-1" ;;
   astra)  model="gpt-6-astra"; kind="codex" ;;
-  sol)    model="gpt-5.6-sol"; kind="codex" ;;
+  sol)    model="gpt-6-sol"; kind="codex" ;;
   terra)  model="gpt-5.6-terra"; kind="codex" ;;
   luna)   model="gpt-5.6-luna"; kind="codex" ;;
   gemini) model="gemini-3.8-flash"; kind="gemini" ;;
