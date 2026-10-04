@@ -58,8 +58,50 @@ def resolve_executable(name: str, search_path: str | None = None) -> Path:
     return path
 
 
+# D49: Codex tool access by rung. Grunt (luna) and unknown aliases stay tool-free (fail closed).
+TOOL_RUNGS = {"astra": "Executive", "sol": "Orchestrator", "terra": "Workhorse"}
+HARD_DENY = (".ssh", ".config", ".claude", ".codex-bridge", ".local", ".aws", ".gnupg", ".netrc")
+PROFILE = "agents_inc_d49"
+TOOL_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+# Nested seatbelts fail on macOS (sandbox_apply: Operation not permitted), so an outer sandbox-exec would disable
+# Codex's own seatbelt. The read deny therefore rides Codex's permission profile, which its seatbelt enforces.
+
+
+def tools_for(model: str, no_tools: bool = False, tools: bool = False) -> bool:
+    """D49: on by default for astra, sol, terra; --no-tools wins; --tools on luna or a raw slug raises."""
+    if no_tools:
+        return False
+    if model in TOOL_RUNGS:
+        return True
+    if tools:
+        raise ValueError(f"--tools is allowed only for astra, sol, terra; not {model!r}")
+    return False
+
+
+def _toml_key(path) -> str:
+    text = os.path.realpath(str(path))
+    if any(ch in text for ch in ('"', "\\", "\n")):
+        raise ValueError(f"path not expressible in permission profile: {text!r}")
+    return f'"{text}"'
+
+
+def permission_profile(cwd: Path, write: bool, home: Path | None = None) -> dict[str, str]:
+    """Filesystem grants for tool commands. Anything absent (all of HOME except cwd) is unreadable."""
+    home = Path(home or Path.home())
+    grants = {'":minimal"': "read", _toml_key("/opt/homebrew"): "read", _toml_key("/tmp"): "read",
+              _toml_key("/private/tmp"): "read", _toml_key(cwd): "write" if write else "read"}
+    for name in HARD_DENY:
+        grants[f'"{os.path.realpath(home)}/{name}"'] = "none"
+    return grants
+
+
+def permission_args(cwd: Path, write: bool, home: Path | None = None) -> list[str]:
+    body = ", ".join(f"{k}={chr(34)}{v}{chr(34)}" for k, v in permission_profile(cwd, write, home).items())
+    return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}.filesystem={{{body}}}"]
+
+
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
-                     model_map: dict[str, str] | None = None) -> list[str]:
+                     model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False) -> list[str]:
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
@@ -67,12 +109,21 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         raise ValueError(f"unsupported effort {effort!r} for {slug}")
     if not executable.is_absolute():
         raise ValueError("Codex executable must be absolute")
-    return [str(executable), "exec", "-m", slug, "-s", "read-only", "--skip-git-repo-check", "-C", str(cwd),
-            "-c", f"model_reasoning_effort={effort}", "-c", 'shell_environment_policy.inherit="none"',
-            "-c", 'web_search="disabled"', "-c", "features.shell_tool=false", "-"]
+    if write and not tools:
+        raise ValueError("--write needs --tools (rung astra, sol, or terra, without --no-tools)")
+    common = ["--skip-git-repo-check", "-C", str(cwd), "-c", f"model_reasoning_effort={effort}",
+              "-c", 'shell_environment_policy.inherit="none"', "-c", 'web_search="disabled"']
+    if not tools:
+        return [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + ["-c", "features.shell_tool=false", "-"]
+    # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
+    # The profile alone sets access: cwd "read", or "write" with --write; network stays off.
+    # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
+    return ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
+            + permission_args(cwd, write) + ["-"])
 
 
-def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]]) -> int:
+def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]],
+              no_tools: bool = False, write: bool = False, tools: bool = False) -> int:
     if receipt.codex_path is None:
         raise FileNotFoundError("WB_CLI_NOT_FOUND: Codex not installed (receipt has no codex_path); install codex, then run agents-inc repair")
     executable = Path(receipt.codex_path)
@@ -85,9 +136,13 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
 
-    # Run subprocess with captured output
+    tools = tools_for(model, no_tools, tools)
+    if write and not tools:
+        raise ValueError("--write needs --tools (rung astra, sol, or terra, without --no-tools)")
+    sys.stderr.write("agents-inc run: record " + json.dumps({"model": model, "slug": slug, "tools": "on" if tools else "off",
+                     "sandbox": "workspace-write" if write else "read-only"}) + "\n")
     result = subprocess.run(
-        build_codex_argv(executable, model, effort, cwd, supported_efforts),
+        build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write),
         stdin=prompt_stream,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
