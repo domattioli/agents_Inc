@@ -319,7 +319,7 @@ Built and tested today:
 - A local SHA-256 content-addressed artifact store.
 - The governed dispatch gateway, including envelope, policy, registry, and budget checks.
 - The live [agent.sh](skills/codex-bridge/scripts/agent.sh)/[agent_runner.py](skills/codex-bridge/scripts/agent_runner.py) dispatch path (shells out to the Codex CLI directly; [bridge.py](bridge.py) is a separate HTTP path for a second device, see appendix).
-- 914 automated tests passing locally with `python3 -m unittest discover -s tests -p 'test_*.py'`, plus 26 workerbee skill tests under `skills/workerbee/tests`.
+- 989 automated tests passing locally with `python3 -m unittest discover -s tests -p 'test_*.py'`, plus 28 workerbee skill tests under `skills/workerbee/tests`.
 
 New dispatch tooling:
 
@@ -502,7 +502,7 @@ PYTHONPATH=. python3 -m agents_inc.install.cli dispatch --slots slots.json --mod
 
 The CoS writes the slots file; [skills/workerbee/slots.md](skills/workerbee/slots.md) holds one worked example. Claude models launch through `claude -p`. Codex models launch through the existing Codex runner. Free providers stay on `agent.sh`. No API-key path exists. All other output, including the run record (`run.json`), stays in the run directory. Other flags: `--effort`, `--cwd`, `--tier grunt`, `--run-dir`, `--resume`, `--message`.
 
-Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna and the free providers never get one, and `--no-tools` turns it off for any run.
+Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna and the free providers never get one, and `--no-tools` turns it off for any run. A Codex Lead can request Workers without holding provider credentials: the CoS creates a run directory and runs `agents-inc dispatch --serve <run-dir>`; the Lead drops JSON requests into its `inbox/`, waits with `agents-inc dispatch --wait`, and reads back each Worker's result and report (D51).
 
 ### How it feels to use
 
