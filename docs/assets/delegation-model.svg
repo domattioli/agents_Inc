@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GRILL: [inferred] The revision mentions three active-participation labels, but the specification defines four curves. [assumed] One label is retained for each curve. -->
+<!-- REPORT: [verified] No files created; inline SVG only. [assumed] Repo edits, rendering, network access, and version-control actions remain out of scope. -->
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1"
+  viewBox="0 0 1536 1024" width="1536" height="1024"
+  role="img" aria-labelledby="diagram-title diagram-desc">
+  <title id="diagram-title">Delegation and support flow</title>
+  <desc id="diagram-desc">Example flow from request through nine delivery phases, gates, and outcome.</desc>
+
+  <defs>
+    <marker id="arrow-dark" viewBox="0 0 12 12" refX="11" refY="6"
+      markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse"
+      orient="auto" overflow="visible">
+      <path d="M 1 1 L 11 6 L 1 11 z" fill="#0f1b33"/>
+    </marker>
+    <marker id="arrow-dark-small" viewBox="0 0 12 12" refX="11" refY="6"
+      markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse"
+      orient="auto" overflow="visible">
+      <path d="M 1 1 L 11 6 L 1 11 z" fill="#0f1b33"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 12 12" refX="10" refY="6"
+      markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse"
+      orient="auto">
+      <path d="M 1 1 L 11 6 L 1 11 z" fill="#1f5fbf"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 12 12" refX="10" refY="6"
+      markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse"
+      orient="auto">
+      <path d="M 1 1 L 11 6 L 1 11 z" fill="#8b1a2b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1536" height="1024" fill="#ffffff"/>
+
+  <g font-family="Helvetica, Arial, sans-serif" fill="#0f1b33">
+    <text x="768" y="56" text-anchor="middle" font-size="36" font-weight="700">Delegation and support flow</text>
+    <text x="768" y="88" text-anchor="middle" font-size="24">Example run: add input validation to the export endpoint</text>
+  </g>
+
+  <path d="M 1350 145 L 1350 115 L 250 115 L 250 138"
+    fill="none" stroke="#8b1a2b" stroke-width="5"
+    marker-end="url(#arrow-red)"/>
+  <text x="1105" y="139"
+    font-family="Helvetica, Arial, sans-serif"
+    font-size="19" font-weight="700" fill="#8b1a2b">outcome after CLOSURE</text>
+
+  <g font-family="Helvetica, Arial, sans-serif" fill="#0f1b33">
+    <rect x="140" y="140" width="220" height="76" rx="16"
+      fill="#d7a6f5" stroke="#0f1b33" stroke-width="3"/>
+    <text x="250" y="174" text-anchor="middle" font-size="30" font-weight="700">CEO</text>
+    <text x="250" y="199" text-anchor="middle" font-size="16">the operator</text>
+
+    <rect x="140" y="350" width="220" height="76" rx="16"
+      fill="#6ad4dc" stroke="#0f1b33" stroke-width="3"/>
+    <text x="250" y="384" text-anchor="middle" font-size="30" font-weight="700">CoS</text>
+    <text x="250" y="409" text-anchor="middle" font-size="16">Chief of Staff</text>
+
+    <rect x="140" y="560" width="220" height="76" rx="16"
+      fill="#fbc23d" stroke="#0f1b33" stroke-width="3"/>
+    <text x="250" y="594" text-anchor="middle" font-size="30" font-weight="700">Lead</text>
+    <text x="250" y="619" text-anchor="middle" font-size="16">runs the mandate</text>
+
+    <rect x="140" y="800" width="220" height="76" rx="16"
+      fill="#9edb93" stroke="#0f1b33" stroke-width="3"/>
+    <text x="250" y="834" text-anchor="middle" font-size="30" font-weight="700">Worker</text>
+    <text x="250" y="859" text-anchor="middle" font-size="16">reports to the Lead</text>
+  </g>
+
+  <g fill="none" stroke="#0f1b33" stroke-width="6">
+    <path d="M 220 216 L 220 344" marker-end="url(#arrow-dark)"/>
+    <path d="M 280 350 L 280 222" marker-end="url(#arrow-dark)"/>
+    <path d="M 220 426 L 220 554" marker-end="url(#arrow-dark)"/>
+    <path d="M 220 636 L 220 794" marker-end="url(#arrow-dark)"/>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#0f1b33">
+    <text x="210" y="286" text-anchor="end">request</text>
+    <text x="295" y="486">dispatches the mandate</text>
+    <text x="236" y="708">spins up</text>
+    <text x="236" y="736" font-size="17">after ANALYZE only</text>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#0f1b33">
+    <text x="382" y="257">grilling: iterative refinement</text>
+    <text x="382" y="280">of the request into a</text>
+    <text x="382" y="303">concise dispatch</text>
+  </g>
+
+  <path d="M 360 388 C 665 405 685 785 360 838"
+    fill="none" stroke="#1f5fbf" stroke-width="3"
+    stroke-dasharray="3 10" stroke-linecap="round"
+    marker-end="url(#arrow-blue)"/>
+  <rect x="500" y="650" width="170" height="60" rx="5" fill="#ffffff"/>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#1f5fbf">
+    <text x="520" y="676">direct message</text>
+    <text x="550" y="699">(as needed)</text>
+  </g>
+
+  <g fill="none" stroke="#0f1b33" stroke-width="4" stroke-dasharray="11 9">
+    <path d="M 140 838 L 70 838 L 70 178"/>
+    <path d="M 70 598 L 134 598" marker-end="url(#arrow-dark-small)"/>
+    <path d="M 70 388 L 134 388" marker-end="url(#arrow-dark-small)"/>
+    <path d="M 70 178 L 134 178" marker-end="url(#arrow-dark-small)"/>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#0f1b33">
+    <text x="40" y="914">support / escalation: Worker asks Lead, Lead asks CoS,</text>
+    <text x="40" y="938">CoS asks CEO</text>
+  </g>
+
+  <g fill="none" stroke-width="3">
+    <path d="M 360 178 C 500 180 625 232 750 246" stroke="#8b3fb2"/>
+    <path d="M 360 579 C 520 560 620 330 750 246" stroke="#c17f00"/>
+    <path d="M 360 388 C 520 388 620 450 750 462" stroke="#168d99"/>
+    <path d="M 360 613 C 530 615 625 495 750 462" stroke="#c17f00"/>
+  </g>
+
+  <g fill="#ffffff">
+    <rect x="485" y="142" width="190" height="30" rx="4"/>
+    <rect x="515" y="312" width="190" height="30" rx="4"/>
+    <rect x="465" y="350" width="190" height="30" rx="4"/>
+    <rect x="485" y="528" width="190" height="30" rx="4"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700">
+    <text x="495" y="164" fill="#8b3fb2">active participation</text>
+    <text x="525" y="334" fill="#c17f00">active participation</text>
+    <text x="475" y="372" fill="#168d99">active participation</text>
+    <text x="495" y="550" fill="#c17f00">active participation</text>
+  </g>
+
+  <g font-family="Helvetica, Arial, sans-serif">
+    <path d="M 748 130 L 725 130 L 725 790 L 748 790"
+      fill="none" stroke="#1f5fbf" stroke-width="5"/>
+    <path d="M 1012 130 L 1035 130 L 1035 790 L 1012 790"
+      fill="none" stroke="#1f5fbf" stroke-width="5"/>
+
+    <g fill="#dcebfb" stroke="#1f5fbf" stroke-width="3">
+      <rect x="760" y="145" width="240" height="58" rx="10"/>
+      <rect x="760" y="217" width="240" height="58" rx="10"/>
+      <rect x="760" y="289" width="240" height="58" rx="10"/>
+      <rect x="760" y="361" width="240" height="58" rx="10"/>
+      <rect x="760" y="433" width="240" height="58" rx="10"/>
+      <rect x="760" y="505" width="240" height="58" rx="10"/>
+      <rect x="760" y="577" width="240" height="58" rx="10"/>
+      <rect x="760" y="649" width="240" height="58" rx="10"/>
+      <rect x="760" y="721" width="240" height="58" rx="10"/>
+    </g>
+
+    <g text-anchor="middle" fill="#0f1b33">
+      <text x="880" y="169" font-size="20" font-weight="700">SPECIFY</text>
+      <text x="880" y="191" font-size="17">(Actor: Lead)</text>
+
+      <text x="880" y="241" font-size="20" font-weight="700">CLARIFY</text>
+      <text x="880" y="263" font-size="17">(Actor: CEO, CoS, Lead)</text>
+
+      <text x="880" y="313" font-size="20" font-weight="700">PLAN</text>
+      <text x="880" y="335" font-size="17">(Actor: Lead)</text>
+
+      <text x="880" y="385" font-size="20" font-weight="700">TASKS</text>
+      <text x="880" y="407" font-size="17">(Actor: Lead)</text>
+
+      <text x="880" y="457" font-size="20" font-weight="700">ANALYZE</text>
+      <text x="880" y="479" font-size="17">(Actor: CoS, Lead)</text>
+
+      <text x="880" y="529" font-size="20" font-weight="700">CHECKLIST</text>
+      <text x="880" y="551" font-size="17">(Actor: Lead, Worker)</text>
+
+      <text x="880" y="601" font-size="20" font-weight="700">IMPLEMENT</text>
+      <text x="880" y="623" font-size="17">(Actor: Lead, Worker)</text>
+
+      <text x="880" y="673" font-size="20" font-weight="700">REVIEW</text>
+      <text x="880" y="695" font-size="17">(Actor: Lead, Worker)</text>
+
+      <text x="880" y="745" font-size="20" font-weight="700">CLOSURE</text>
+      <text x="880" y="767" font-size="17">(Actor: Lead, Worker)</text>
+    </g>
+
+    <g fill="none" stroke="#1f5fbf" stroke-width="2">
+      <path d="M 880 204 L 880 213" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 276 L 880 285" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 348 L 880 357" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 420 L 880 429" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 492 L 880 501" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 564 L 880 573" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 636 L 880 645" marker-end="url(#arrow-blue)"/>
+      <path d="M 880 708 L 880 717" marker-end="url(#arrow-blue)"/>
+    </g>
+  </g>
+
+  <text x="880" y="820" text-anchor="middle"
+    font-family="Helvetica, Arial, sans-serif"
+    font-size="18" font-weight="700" fill="#1f5fbf">Lead owns and runs all nine phases end to end.</text>
+
+  <g font-family="Helvetica, Arial, sans-serif" fill="#0f1b33">
+    <rect x="1190" y="145" width="326" height="112" rx="14"
+      fill="#d9f2d5" stroke="#2e7d32" stroke-width="3"/>
+    <text x="1208" y="174" font-size="20" font-weight="700">Success gate:</text>
+    <text x="1208" y="198" font-size="18">validation rejects invalid</text>
+    <text x="1208" y="221" font-size="18">export input and accepts</text>
+    <text x="1208" y="244" font-size="18">valid input.</text>
+
+    <rect x="1190" y="280" width="326" height="126" rx="14"
+      fill="#f7d6dc" stroke="#8b1a2b" stroke-width="3"/>
+    <text x="1208" y="309" font-size="20" font-weight="700">Failure gate:</text>
+    <text x="1208" y="333" font-size="18">invalid input passes,</text>
+    <text x="1208" y="356" font-size="18">valid input breaks, or</text>
+    <text x="1208" y="379" font-size="18">verification is missing.</text>
+
+    <rect x="1190" y="432" width="326" height="194" rx="14"
+      fill="#eceff3" stroke="#596273" stroke-width="3"/>
+    <text x="1208" y="461" font-size="19" font-weight="700">Cost classes (rungs, not roles)</text>
+    <text x="1208" y="491" font-size="18">Executive: fable, astra</text>
+    <text x="1208" y="517" font-size="18">Orchestrator: opus, sol</text>
+    <text x="1208" y="543" font-size="18">Workhorse: sonnet, terra</text>
+    <text x="1208" y="569" font-size="18">Grunt: haiku, luna</text>
+    <text x="1208" y="597" font-size="15">Any rung can serve as Lead or Worker.</text>
+
+    <rect x="1190" y="650" width="326" height="258" rx="14"
+      fill="#ffffff" stroke="#596273" stroke-width="3"/>
+    <text x="1208" y="681" font-size="20" font-weight="700">Legend</text>
+
+    <line x1="1210" y1="714" x2="1272" y2="714"
+      stroke="#0f1b33" stroke-width="6"/>
+    <text x="1286" y="720" font-size="17">thick solid = delegation</text>
+
+    <line x1="1210" y1="755" x2="1272" y2="755"
+      stroke="#1f5fbf" stroke-width="3"
+      stroke-dasharray="3 9" stroke-linecap="round"/>
+    <text x="1286" y="761" font-size="17">dotted = direct message</text>
+
+    <line x1="1210" y1="796" x2="1272" y2="796"
+      stroke="#8b3fb2" stroke-width="3"/>
+    <text x="1286" y="802" font-size="17">thin solid = active participation</text>
+
+    <line x1="1210" y1="837" x2="1272" y2="837"
+      stroke="#0f1b33" stroke-width="4" stroke-dasharray="10 8"/>
+    <text x="1286" y="843" font-size="17">dashed = support / escalation</text>
+
+    <line x1="1210" y1="878" x2="1272" y2="878"
+      stroke="#8b1a2b" stroke-width="5"/>
+    <text x="1286" y="884" font-size="17">dark red = outcome</text>
+  </g>
+</svg>

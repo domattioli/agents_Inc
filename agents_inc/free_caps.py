@@ -3,6 +3,7 @@
 CLI: python3 -m agents_inc.free_caps probe-openrouter [--from-file]
 """
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -14,7 +15,51 @@ from pathlib import Path
 from agents_inc import free_health
 
 
-def calls_today(provider: str, now: datetime | None = None, db_path: str | None = None) -> int:
+def _calls_today_jsonl(provider: str, today: str, usage_path: str) -> int:
+    """Count usage.jsonl records for provider on UTC date today.
+
+    Streams the file line by line. Malformed or incomplete records are
+    ignored. Duplicates collapse on the ingestion identity used by
+    usage_db.ingest_delegated_usage (ts, backend, model, input, output).
+    """
+    seen = set()
+    try:
+        with open(usage_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                ts_str = obj.get("ts")
+                backend = obj.get("backend")
+                model = obj.get("model")
+                if not ts_str or not isinstance(ts_str, str) or not backend or model == "" or backend != provider:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    continue
+                # Exact ingestion uid (usage_db.ingest_delegated_usage): sha1 of the
+                # str() forms, so 1 and 1.0 tokens are distinct rows there and here.
+                uid = hashlib.sha1(
+                    f"{ts.isoformat()}|{backend}|{model}|{obj.get('input_tokens', 0)}|{obj.get('output_tokens', 0)}".encode()
+                ).hexdigest()
+                utc = ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+                if utc.astimezone(timezone.utc).date().isoformat() != today:
+                    continue
+                seen.add(uid)
+    except OSError:
+        return 0
+    return len(seen)
+
+
+def calls_today(provider: str, now: datetime | None = None, db_path: str | None = None,
+                usage_path: str | None = None) -> int:
     """Return call count for provider on current UTC date.
 
     Queries usage DB for rows with backend=provider and day=today.
@@ -25,6 +70,7 @@ def calls_today(provider: str, now: datetime | None = None, db_path: str | None 
         provider: Backend provider name (e.g., "openrouter", "gemini", "mistral")
         now: Aware UTC datetime, default datetime.now(timezone.utc)
         db_path: Path to usage.db, default ~/.codex-bridge/usage.db
+        usage_path: Path to usage.jsonl, default ~/.codex-bridge/usage.jsonl
 
     Returns:
         Integer count, or 0 if DB missing/unreadable
@@ -32,6 +78,8 @@ def calls_today(provider: str, now: datetime | None = None, db_path: str | None 
     now = now or datetime.now(timezone.utc)
     if db_path is None:
         db_path = str(Path(os.path.expanduser("~")) / ".codex-bridge" / "usage.db")
+    if usage_path is None:
+        usage_path = str(Path(os.path.expanduser("~")) / ".codex-bridge" / "usage.jsonl")
 
     today = now.date().isoformat()
 
@@ -67,7 +115,9 @@ def calls_today(provider: str, now: datetime | None = None, db_path: str | None 
     except Exception:
         pass
 
-    return max(db_count, health_count)
+    jsonl_count = _calls_today_jsonl(provider, today, usage_path)
+
+    return max(db_count, jsonl_count, health_count)
 
 
 def cap_for(provider: str) -> int | None:
@@ -116,13 +166,15 @@ def cap_for(provider: str) -> int | None:
     return None
 
 
-def at_cap(provider: str, now: datetime | None = None, db_path: str | None = None) -> bool:
+def at_cap(provider: str, now: datetime | None = None, db_path: str | None = None,
+           usage_path: str | None = None) -> bool:
     """Check if provider has reached daily call limit.
 
     Args:
         provider: Backend provider name
         now: Aware UTC datetime, default datetime.now(timezone.utc)
         db_path: Path to usage.db, default ~/.codex-bridge/usage.db
+        usage_path: Path to usage.jsonl, default ~/.codex-bridge/usage.jsonl
 
     Returns:
         True if calls_today >= cap, False if cap is None or calls_today < cap
@@ -131,7 +183,7 @@ def at_cap(provider: str, now: datetime | None = None, db_path: str | None = Non
     if cap is None:
         return False
 
-    count = calls_today(provider, now=now, db_path=db_path)
+    count = calls_today(provider, now=now, db_path=db_path, usage_path=usage_path)
     return count >= cap
 
 
