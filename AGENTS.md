@@ -50,9 +50,9 @@ python3 bridge.py --port 8787
 ## Project rules
 
 - Incremental spend is capped at $0 per task. Pause and report quota exhaustion. Do not add a paid API fallback.
-- Claude and Codex are required providers. Optional providers may handle only allowed Grunt work. Current optional-provider routing is limited to `extract` and `summarize` tasks.
+- Claude is the required provider; Codex is optional (2026-10-03). Optional providers may handle only allowed Grunt work. Current optional-provider routing is limited to `extract` and `summarize` tasks.
 - Confidential inputs may reach optional providers only after explicit per-workspace authorization.
-- A worker never accepts its own output. Use deterministic verification, then a reviewer from a different vendor. Record the result in the ledger.
+- A worker never accepts its own output. Use deterministic verification, then a reviewer; the reviewer comes from a different vendor for canon edits and irreversible changes, and may share the vendor for routine code (D46). Record the result in the ledger.
 - `WORKERBEES_GOVERNANCE` defaults to `off`. Do not describe the governed path as enabled by default.
 - Optional provider keys go through the hidden local prompt. Never put a key in a command argument or model prompt. The non-coder key store is `~/.config/workerbees/.env` with mode `0600`; operator storage rules are in `docs/DECISIONS.md`.
 - The 14-field delegation prompt contract lives in `skills/workerbee/SKILL.md` Step 11. Apply it to every dispatch that touches this repository, including dispatches from another repository.

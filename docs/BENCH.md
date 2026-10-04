@@ -182,6 +182,41 @@
 | `z-ai/glm-5.2:free` | probed_fail | 0.170 | HTTP 404; free route unavailable |
 
 
+## Free-model probe — 2026-09-29
+
+One call per model asking for `PONG`. This checks that a model answers, not how good it is. Paid models (no `:free` tag) and `openrouter/free` are left out; `oask.sh` refuses them.
+
+Watch out: `oask.sh` saves every reply to the same file, `/tmp/oask_response.json`. Calls run at the same time overwrite each other and look like empty replies. Run OpenRouter probes one at a time. The "empty completion" failures in the 2026-09-06 probe above may have the same cause.
+
+| Provider | Model | Result |
+|---|---|---|
+| Gemini | gemini-3.8-flash (`digest`) | Works |
+| Gemini | gemini-flash-lite-latest (`cheap`) | Works |
+| Gemini | gemini-3.1-pro-preview (`deep`) | 429, retry after about 47s |
+| Mistral | ministral-3b-latest (`cheap`) | Works |
+| Mistral | codestral-latest (`code`) | Works |
+| Mistral | mistral-large-latest (`deep`) | 403, not in our subscription tier |
+| OpenRouter | cohere/north-mini-code | Works |
+| OpenRouter | dots-studio/dots-3-note-preview | Works (adds blank lines before the answer) |
+| OpenRouter | inclusionai/ling-3.0-flash-sante | Works |
+| OpenRouter | liquid/lfm-2.5-2.6b | Works |
+| OpenRouter | nvidia/nemotron-3-super-120b-a12b | Works |
+| OpenRouter | nvidia/nemotron-3-ultra-550b-a55b | Works |
+| OpenRouter | nvidia/nemotron-3.5-lightning | Works |
+| OpenRouter | nvidia/nemotron-3.5-content-safety | Answers, but only as a safety filter (see below) |
+| OpenRouter | nvidia/nemotron-3-nano-omni-30b-a3b-reasoning | Out of capacity at Nvidia |
+| OpenRouter | qwen/qwen3.8-27b | 429 |
+| OpenRouter | poolside/laguna-s-2.1, laguna-xs-2.1 | 429 |
+| OpenRouter | google/gemma-4-26b-a4b-it, gemma-4-31b-it | 404: blocked by the account's zero-data-retention setting |
+| OpenRouter | thinkingmachines/inkling, inkling-small | 403: only work through agent tools |
+| Ollama (local) | qwen2.5-coder:3b, qwen2.5-coder:7b, qwen3:8b | Work when called directly (3-7s). The adapter's memory guard may refuse a call when free RAM is low (`WB_LOCAL_PROJECTED_LOW_MEMORY`). |
+
+Suggested picks (based on model size and purpose, not measured quality): gemini-3.8-flash for general work, nemotron-3-ultra-550b as the large OpenRouter option, codestral for code, gemini-flash-lite or ministral-3b for bulk jobs, and Ollama qwen2.5-coder:7b for private work.
+
+`nemotron-3.5-content-safety` is not a general classifier. Asked to sort a task into extract, summarize, code or review, it ignored the question and returned `User Safety: safe`. Use it only as a safety filter. For label tasks, use Haiku, gemini-flash-lite or ministral-3b.
+
+To see which models hit 429s most often: `PYTHONPATH=. python3 -m agents_inc.free_health rate-limits`. The counts start from 2026-09-29.
+
 ## T15 governance benchmark — 2026-09-06
 
 **Reading of record (fable, 2026-09-06):** 40 rows ran end to end (5 repeats × Tim/Dom × haiku/gpt-5.4-mini × off/enforce), 59 wrapper-observed calls.
