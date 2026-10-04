@@ -118,3 +118,78 @@ class TestGruntTier(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContractLineIntegrity(unittest.TestCase):
+    """Malformed sha256 suffixes and non-file contract paths are rejected."""
+
+    SCRIPT = ROOT / "skills" / "workerbee" / "scripts" / "check_dispatch_prompt.py"
+    HEADER = ROOT / "skills" / "workerbee" / "header.md"
+
+    def _run(self, contract_line):
+        import os
+        import subprocess
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+            fh.write(contract_line + "\n" + COMPLIANT_PROMPT)
+        try:
+            script = os.environ.get("CHECK_DISPATCH_SCRIPT", str(self.SCRIPT))
+            return subprocess.run([sys.executable, script, fh.name],
+                                  capture_output=True, text=True)
+        finally:
+            os.unlink(fh.name)
+
+    def _sha(self):
+        import hashlib
+        return hashlib.sha256(self.HEADER.read_bytes()).hexdigest()
+
+    def test_truncated_sha_rejected(self):
+        r = self._run(f"CONTRACT: {self.HEADER} (sha256 {self._sha()[:63]})")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("contract-sha256-malformed", r.stdout)
+
+    def test_overlong_sha_rejected(self):
+        r = self._run(f"CONTRACT: {self.HEADER} (sha256 {self._sha()}a)")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("contract-sha256-malformed", r.stdout)
+
+    def test_directory_contract_rejected_cleanly(self):
+        r = self._run(f"CONTRACT: {self.HEADER.parent}")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("contract-not-regular-file", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_exact_sha_still_accepted(self):
+        r = self._run(f"CONTRACT: {self.HEADER} (sha256 {self._sha()})")
+        self.assertNotIn("contract-sha256", r.stdout)
+        self.assertNotIn("contract-not-regular-file", r.stdout)
+
+
+class TestFanOutAndReport(unittest.TestCase):
+    def _p(self, fan):
+        return COMPLIANT_PROMPT + f"FAN_OUT: {fan}\n"
+
+    def test_over_ceiling_by_model(self):
+        self.assertIn("fan-out-over-ceiling", cdp.check(self._p("width 3, total 6, depth 2"), model="sonnet"))
+        self.assertIn("fan-out-over-ceiling", cdp.check(self._p("width 1, total 1, depth 0"), model="haiku"))
+
+    def test_at_ceiling_ok(self):
+        self.assertEqual(cdp.check(self._p("width 2, total 4, depth 1"), model="sonnet"), [])
+        self.assertEqual(cdp.check(self._p("width 3, total 6, depth 2"), model="opus"), [])
+
+    def test_rung_slot_used_when_no_model(self):
+        text = self._p("width 3, total 6, depth 2") + "RUNG: grunt\n"
+        self.assertIn("fan-out-over-ceiling", cdp.check(text))
+
+    def test_unknown_rung_and_missing_fan_out_accepted(self):
+        self.assertEqual(cdp.check(self._p("width 9, total 9, depth 9")), [])
+        self.assertEqual(cdp.check(COMPLIANT_PROMPT, model="haiku"), [])
+
+    REPORT = ("caveman ultra. grill. [verified] exit code 0.\nOUT OF SCOPE / INCOMPLETE: none\n")
+
+    def test_report_requires_one_integer_line(self):
+        self.assertEqual(cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\n"), [])
+        self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "WORKERS SPAWNED: unknown\n"))
+        self.assertIn("workers-spawned", cdp.check_report(self.REPORT))
+        self.assertIn("workers-spawned",
+                      cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\nWORKERS SPAWNED: 1\n"))
