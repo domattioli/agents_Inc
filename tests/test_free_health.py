@@ -767,3 +767,27 @@ class TestFreeHealthReportTransitions:
             # Cooldown should be capped at 3600 from a reasonable point
             diff = (cooldown_until - current_time).total_seconds()
             assert diff <= 3600
+
+
+class TestFreeHealthRateLimitStats:
+    def test_lifetime_counters_survive_ok_calls(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        from agents_inc import free_health
+        free_health.report("openrouter", "a:free", "rate_limited", retry_after=1)
+        free_health.report("openrouter", "a:free", "ok")
+        free_health.report("openrouter", "b:free", "ok")
+        rows = {r[0]: r for r in free_health.rate_limit_stats()}
+        a = rows["openrouter/a:free"]
+        assert a[1:3] == (2, 1) and a[4] is not None
+        assert free_health.rate_limit_stats()[0][0] == a[0]
+
+
+def load_tests(loader, tests, pattern):
+    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    return bridge.bridge_suite(__file__)

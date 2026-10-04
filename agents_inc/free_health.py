@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -50,6 +51,41 @@ def _save_json_file(path: Path, data: dict) -> None:
         except OSError:
             pass
         raise
+
+
+@contextmanager
+def _state_lock():
+    """Serialize read-modify-write of the ~/.codex-bridge state files.
+
+    Wrappers call report() in parallel; without this lock concurrent calls
+    lose counter updates. POSIX uses fcntl.flock on a sidecar lock file;
+    where fcntl is missing the lock is a no-op (writes stay atomic).
+    """
+    try:
+        import fcntl
+    except ImportError:  # non-POSIX
+        yield
+        return
+    lock = health_path().parent / ".free-health.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def stats_path() -> Path:
+    return Path(os.path.expanduser("~")) / ".codex-bridge" / "rate-limit-stats.json"
+
+
+def load_stats() -> dict:
+    return _load_json_file(stats_path())
+
+
+def save_stats(data: dict) -> None:
+    _save_json_file(stats_path(), data)
 
 
 def load_health() -> dict:
@@ -118,6 +154,12 @@ def _default_models_path() -> Path:
 
 def report(provider: str, model: str, outcome: str, retry_after: float | None = None,
            message: str | None = None, now: datetime | None = None) -> None:
+    with _state_lock():
+        _report_locked(provider, model, outcome, retry_after, message, now)
+
+
+def _report_locked(provider: str, model: str, outcome: str, retry_after: float | None,
+                   message: str | None, now: datetime | None) -> None:
     now = now or datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
 
@@ -165,6 +207,14 @@ def report(provider: str, model: str, outcome: str, retry_after: float | None = 
 
     health[key] = record
     save_health(health)
+
+    stats = load_stats()
+    entry = stats.setdefault("%s/%s" % (provider, model), {})
+    entry["calls_total"] = entry.get("calls_total", 0) + 1
+    if outcome in ("rate_limited", "overloaded"):
+        entry["rate_limited_total"] = entry.get("rate_limited_total", 0) + 1
+        entry["last_rate_limited_at"] = now.isoformat()
+    save_stats(stats)
 
 
 def in_cooldown(provider: str, model: str | None = None, now: datetime | None = None) -> bool:
@@ -248,6 +298,24 @@ def _cmd_pick_default(args) -> int:
     return 0
 
 
+def rate_limit_stats() -> list:
+    rows = []
+    for key, rec in load_stats().items():
+        calls = rec.get("calls_total", 0)
+        limited = rec.get("rate_limited_total", 0)
+        rate = limited / calls if calls else 0.0
+        rows.append((key, calls, limited, rate, rec.get("last_rate_limited_at")))
+    rows.sort(key=lambda r: (-r[3], -r[2], r[0]))
+    return rows
+
+
+def _cmd_rate_limits(args) -> int:
+    print("%-60s %6s %6s %6s  %s" % ("provider/model", "calls", "429s", "rate", "last 429"))
+    for key, calls, limited, rate, last in rate_limit_stats():
+        print("%-60s %6d %6d %5.0f%%  %s" % (key, calls, limited, rate * 100, last or "-"))
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="free_health")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -269,6 +337,9 @@ def main(argv=None) -> int:
     p_pick.add_argument("--provider", required=True)
     p_pick.add_argument("--task", required=True)
     p_pick.set_defaults(func=_cmd_pick_default)
+
+    p_rl = sub.add_parser("rate-limits")
+    p_rl.set_defaults(func=_cmd_rate_limits)
 
     args = parser.parse_args(argv)
     return args.func(args)
