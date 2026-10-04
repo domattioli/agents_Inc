@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GRILL [inferred]: No missing or contradictory requirements. -->
+<!-- ASSUMED [assumed]: Optional office motifs and wordmark included. -->
+<!-- SCOPE [inferred]: Inline SVG only; no PNG, repo edits, network, or git work. -->
+<!-- FILES [inferred]: None created. Lead validation required; no commands run. -->
+<svg xmlns="http://www.w3.org/2000/svg"
+     version="1.1"
+     viewBox="0 0 512 512"
+     width="512"
+     height="512"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">agents_Inc monster workforce logo</title>
+  <desc id="description">Five cheerful original cartoon monsters posing for an office team photo.</desc>
+
+  <rect x="12" y="12" width="488" height="488" rx="38" fill="#FFF8E7"/>
+
+  <!-- Office door -->
+  <rect x="159" y="44" width="194" height="310" rx="13"
+        fill="#DDE9E7" stroke="#263746" stroke-width="7"/>
+  <rect x="178" y="65" width="156" height="270" rx="7"
+        fill="#F4FBF8" stroke="#263746" stroke-width="5"/>
+  <rect x="220" y="78" width="72" height="24" rx="12" fill="#A9C9C3"/>
+  <circle cx="313" cy="207" r="8" fill="#F7B32B" stroke="#263746" stroke-width="4"/>
+
+  <!-- Floor -->
+  <ellipse cx="256" cy="398" rx="207" ry="34" fill="#D8D0F0"/>
+
+  <!-- Orange monster -->
+  <g stroke="#263746" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M72 207 Q58 184 76 171 Q92 185 92 207Z" fill="#FF9F43"/>
+    <path d="M116 205 Q126 177 145 183 Q148 204 131 218Z" fill="#FF9F43"/>
+    <path d="M55 275 Q35 270 31 248" fill="none"/>
+    <circle cx="29" cy="242" r="8" fill="#FF9F43"/>
+    <path d="M151 275 Q170 255 181 264" fill="none"/>
+    <circle cx="185" cy="267" r="8" fill="#FF9F43"/>
+    <ellipse cx="103" cy="287" rx="57" ry="82" fill="#FF9F43"/>
+    <path d="M78 360 L72 393" fill="none"/>
+    <path d="M126 360 L134 393" fill="none"/>
+    <ellipse cx="66" cy="396" rx="19" ry="9" fill="#FF9F43"/>
+    <ellipse cx="141" cy="396" rx="19" ry="9" fill="#FF9F43"/>
+    <circle cx="83" cy="258" r="16" fill="#FFFFFF"/>
+    <circle cx="124" cy="258" r="16" fill="#FFFFFF"/>
+    <circle cx="87" cy="260" r="6" fill="#263746" stroke="none"/>
+    <circle cx="120" cy="260" r="6" fill="#263746" stroke="none"/>
+    <path d="M78 302 Q103 324 129 302 Q105 345 78 302Z" fill="#6D3246"/>
+    <path d="M89 308 L97 320 L103 307Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M113 307 L120 320 L125 307Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M95 342 L103 351 L111 342 L103 333Z" fill="#3B5CCC" stroke-width="4"/>
+  </g>
+
+  <!-- Purple monster -->
+  <g stroke="#263746" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M153 207 Q139 180 157 166 Q174 183 171 210Z" fill="#8E5BE8"/>
+    <path d="M202 205 Q212 178 229 183 Q231 205 215 219Z" fill="#8E5BE8"/>
+    <path d="M143 281 Q126 268 116 282" fill="none"/>
+    <circle cx="112" cy="285" r="8" fill="#8E5BE8"/>
+    <path d="M219 275 Q235 251 248 260" fill="none"/>
+    <circle cx="252" cy="263" r="8" fill="#8E5BE8"/>
+    <rect x="135" y="199" width="91" height="179" rx="44" fill="#8E5BE8"/>
+    <path d="M157 372 L153 399" fill="none"/>
+    <path d="M203 372 L208 399" fill="none"/>
+    <ellipse cx="149" cy="401" rx="18" ry="9" fill="#8E5BE8"/>
+    <ellipse cx="213" cy="401" rx="18" ry="9" fill="#8E5BE8"/>
+    <ellipse cx="181" cy="254" rx="27" ry="30" fill="#FFFFFF"/>
+    <circle cx="185" cy="258" r="9" fill="#263746" stroke="none"/>
+    <circle cx="189" cy="253" r="3" fill="#FFFFFF" stroke="none"/>
+    <path d="M158 305 Q181 323 204 305 Q181 341 158 305Z" fill="#61364F"/>
+    <path d="M168 311 L176 323 L181 309Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M188 309 L194 323 L201 311Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M157 220 Q181 208 205 220" fill="none" opacity="0.35"/>
+  </g>
+
+  <!-- Central teal monster -->
+  <g stroke="#263746" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M218 151 Q199 124 210 105 Q231 116 238 148Z" fill="#22B8A7"/>
+    <path d="M275 148 Q282 116 303 105 Q314 128 295 154Z" fill="#22B8A7"/>
+    <path d="M202 243 Q179 221 169 196" fill="none"/>
+    <circle cx="166" cy="190" r="9" fill="#22B8A7"/>
+    <path d="M310 242 Q333 221 343 193" fill="none"/>
+    <circle cx="346" cy="187" r="9" fill="#22B8A7"/>
+    <rect x="187" y="137" width="138" height="247" rx="67" fill="#22B8A7"/>
+    <path d="M220 376 L214 410" fill="none"/>
+    <path d="M292 376 L299 410" fill="none"/>
+    <ellipse cx="207" cy="412" rx="23" ry="11" fill="#22B8A7"/>
+    <ellipse cx="306" cy="412" rx="23" ry="11" fill="#22B8A7"/>
+    <circle cx="229" cy="215" r="24" fill="#FFFFFF"/>
+    <circle cx="282" cy="215" r="24" fill="#FFFFFF"/>
+    <circle cx="235" cy="218" r="8" fill="#263746" stroke="none"/>
+    <circle cx="276" cy="218" r="8" fill="#263746" stroke="none"/>
+    <circle cx="238" cy="214" r="3" fill="#FFFFFF" stroke="none"/>
+    <circle cx="279" cy="214" r="3" fill="#FFFFFF" stroke="none"/>
+    <path d="M216 270 Q256 300 296 270 Q258 326 216 270Z" fill="#704052"/>
+    <path d="M229 279 L240 295 L248 277Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M265 277 L274 295 L285 279Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M226 150 Q256 139 288 151" fill="none" opacity="0.3"/>
+    <path d="M225 324 Q256 347 286 324" fill="none" opacity="0.3"/>
+    <path d="M226 148 Q256 170 286 148" fill="none"/>
+    <path d="M235 151 L256 176 L277 151" fill="none"/>
+    <path d="M256 176 L244 207 L256 219 L268 207Z" fill="#FF5B8D" stroke-width="5"/>
+    <path d="M222 150 L256 174 L290 150" fill="#FFFFFF" stroke-width="5"/>
+  </g>
+
+  <!-- Lime monster -->
+  <g stroke="#263746" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M331 215 Q319 190 334 177 Q351 191 350 216Z" fill="#9EDB3A"/>
+    <path d="M382 214 Q392 188 409 194 Q411 215 394 228Z" fill="#9EDB3A"/>
+    <path d="M327 284 Q306 265 295 277" fill="none"/>
+    <circle cx="291" cy="281" r="8" fill="#9EDB3A"/>
+    <path d="M405 285 Q424 271 436 282" fill="none"/>
+    <circle cx="440" cy="286" r="8" fill="#9EDB3A"/>
+    <rect x="316" y="207" width="101" height="174" rx="48" fill="#9EDB3A"/>
+    <path d="M339 375 L335 402" fill="none"/>
+    <path d="M392 375 L397 402" fill="none"/>
+    <ellipse cx="330" cy="404" rx="19" ry="9" fill="#9EDB3A"/>
+    <ellipse cx="403" cy="404" rx="19" ry="9" fill="#9EDB3A"/>
+    <ellipse cx="367" cy="259" rx="29" ry="31" fill="#FFFFFF"/>
+    <circle cx="371" cy="262" r="9" fill="#263746" stroke="none"/>
+    <circle cx="375" cy="258" r="3" fill="#FFFFFF" stroke="none"/>
+    <path d="M343 310 Q367 330 392 310 Q368 347 343 310Z" fill="#62424B"/>
+    <path d="M354 316 L362 328 L368 314Z" fill="#FFFFFF" stroke-width="3"/>
+    <path d="M376 314 L383 328 L389 316Z" fill="#FFFFFF" stroke-width="3"/>
+    <rect x="392" y="286" width="42" height="56" rx="5" fill="#FFF1A8" stroke-width="4"/>
+    <rect x="402" y="278" width="22" height="12" rx="5" fill="#F7B32B" stroke-width="4"/>
+    <path d="M401 302 H425 M401 314 H422 M401 326 H416" fill="none" stroke-width="3"/>
+  </g>
+
+  <!-- Pink monster -->
+  <g stroke="#263746" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M437 223 Q438 197 453 187 Q468 201 459 227Z" fill="#FF5B8D"/>
+    <path d="M424 224 Q413 202 423 188 Q440 199 440 226Z" fill="#FF5B8D"/>
+    <path d="M413 286 Q395 276 388 289" fill="none"/>
+    <circle cx="385" cy="294" r="7" fill="#FF5B8D"/>
+    <path d="M465 287 Q479 271 486 282" fill="none"/>
+    <circle cx="487" cy="287" r="7" fill="#FF5B8D"/>
+    <rect x="405" y="218" width="70" height="148" rx="34" fill="#FF5B8D"/>
+    <path d="M424 360 L421 387" fill="none"/>
+    <path d="M457 360 L461 387" fill="none"/>
+    <ellipse cx="417" cy="390" rx="15" ry="8" fill="#FF5B8D"/>
+    <ellipse cx="466" cy="390" rx="15" ry="8" fill="#FF5B8D"/>
+    <circle cx="427" cy="259" r="14" fill="#FFFFFF"/>
+    <circle cx="454" cy="259" r="14" fill="#FFFFFF"/>
+    <circle cx="430" cy="261" r="5" fill="#263746" stroke="none"/>
+    <circle cx="451" cy="261" r="5" fill="#263746" stroke="none"/>
+    <path d="M422 298 Q441 314 459 298 Q442 328 422 298Z" fill="#71364F"/>
+    <path d="M430 302 L436 313 L441 301Z" fill="#FFFFFF" stroke-width="2.5"/>
+    <path d="M445 301 L451 313 L456 302Z" fill="#FFFFFF" stroke-width="2.5"/>
+  </g>
+
+  <!-- ID badge and lanyard -->
+  <g stroke="#263746" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M168 327 Q181 347 195 327" fill="none" stroke-width="4"/>
+    <rect x="163" y="340" width="38" height="30" rx="5"
+          fill="#FFFFFF" stroke-width="4"/>
+    <circle cx="174" cy="352" r="5" fill="#22B8A7" stroke="none"/>
+    <path d="M184 350 H194 M184 358 H194" stroke-width="3"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="256" y="479"
+        text-anchor="middle"
+        fill="#263746"
+        font-family="sans-serif"
+        font-size="34"
+        font-weight="800"
+        letter-spacing="1.5">agents_Inc</text>
+</svg>
