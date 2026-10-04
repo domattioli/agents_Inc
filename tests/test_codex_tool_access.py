@@ -1,0 +1,226 @@
+"""D49: Codex tool access by rung. Unit checks always run; live probes need AGENTS_INC_LIVE_PROBES=1."""
+from __future__ import annotations
+
+import contextlib
+import io
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from agents_inc.install import runtime
+from agents_inc.install.runtime import HARD_DENY, PROFILE, build_codex_argv, permission_profile, run_codex, tools_for
+
+REPO = Path(__file__).resolve().parents[1]
+MAP = {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"}
+EFF = {slug: ["medium"] for slug in MAP.values()}
+EXE = Path("/x/codex")
+
+
+def _argv(alias, tools=False, write=False, cwd=Path("/w"), no_tools=False):
+    return build_codex_argv(EXE, alias, "medium", cwd, EFF, MAP, tools_for(alias, no_tools, tools), write)
+
+
+class RungArgvTest(unittest.TestCase):
+    def test_default_on_for_tool_rungs(self):
+        for alias in ("astra", "sol", "terra"):
+            self.assertTrue(tools_for(alias))
+            self.assertNotIn("-s", _argv(alias))
+
+    def test_off_argv_for_every_alias(self):
+        for alias in MAP:
+            argv = _argv(alias, no_tools=True)
+            self.assertIn("features.shell_tool=false", argv, alias)
+            self.assertEqual(argv[argv.index("-s") + 1], "read-only")
+            self.assertFalse(any("permissions" in a or "set.PATH" in a for a in argv), alias)
+
+    def test_tools_flag_gets_shell_profile_and_path(self):
+        for alias in ("astra", "sol", "terra"):
+            argv = _argv(alias, tools=True)
+            self.assertNotIn("features.shell_tool=false", argv, alias)
+            self.assertIn(f'default_permissions="{PROFILE}"', argv)
+            self.assertNotIn("-s", argv)
+            self.assertIn('"/w"="read"', argv[-2])
+            self.assertIn('web_search="disabled"', argv)
+            self.assertIn('shell_environment_policy.set.PATH="/usr/bin:/bin:/usr/sbin:/sbin"', argv)
+            self.assertIn('shell_environment_policy.inherit="none"', argv)
+            self.assertEqual(argv[-1], "-")
+
+    def test_luna_and_unknown_stay_tool_free(self):
+        for model in ("luna", "gpt-5.6-sol"):  # raw slug fails closed
+            with self.assertRaises(ValueError):
+                tools_for(model, tools=True)
+        argv = _argv("luna")
+        self.assertIn("features.shell_tool=false", argv)
+        self.assertFalse(any("permissions" in a or "set.PATH" in a for a in argv))
+
+    def test_no_tools_forces_off(self):
+        self.assertFalse(tools_for("astra", no_tools=True, tools=True))
+        self.assertFalse(tools_for("luna", no_tools=True, tools=True))  # --no-tools wins before the luna check
+
+    def test_write_needs_tools(self):
+        with self.assertRaises(ValueError):
+            _argv("luna", write=True)
+        with self.assertRaises(ValueError):
+            _argv("sol", no_tools=True, write=True)
+
+    def test_write_mode(self):
+        argv = _argv("terra", tools=True, write=True)
+        self.assertNotIn("-s", argv)
+        self.assertIn('"/w"="write"', argv[-2])
+
+
+class ProfileTest(unittest.TestCase):
+    def test_deny_list_and_grants(self):
+        prof = permission_profile(Path("/w"), False, home=Path("/h"))
+        for name in HARD_DENY:
+            self.assertEqual(prof[f'"/h/{name}"'], "none", name)
+        self.assertEqual(prof['"/w"'], "read")
+        self.assertEqual(prof['"/private/tmp"'], "read")
+        self.assertNotIn('"/h"', prof)  # rest of HOME is absent, so unreadable
+        self.assertFalse(any(v == "write" for v in prof.values()))
+
+    def test_bad_path_rejected(self):
+        with self.assertRaises(ValueError):
+            permission_profile(Path('/w"x'), False)
+
+
+class RunRecordTest(unittest.TestCase):
+    def _run(self, alias, **kw):
+        done = SimpleNamespace(stdout="OK\n", stderr="", returncode=0)
+        err = io.StringIO()
+        with mock.patch.object(runtime, "load_model_map", return_value=MAP), \
+                mock.patch.object(runtime.subprocess, "run", return_value=done) as sp, \
+                mock.patch.object(runtime.os, "access", return_value=True), \
+                mock.patch.object(Path, "is_file", return_value=True), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = run_codex(alias, "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF, **kw)
+        return rc, err.getvalue(), sp.call_args[0][0]
+
+    def test_record_fields(self):
+        _, err, argv = self._run("sol")
+        self.assertIn('"tools": "on", "sandbox": "read-only"', err)
+        self.assertNotIn("-s", argv)
+        _, err, argv = self._run("sol", tools=True, write=True)
+        self.assertIn('"tools": "on", "sandbox": "workspace-write"', err)
+        _, err, argv = self._run("luna")
+        self.assertIn('"tools": "off", "sandbox": "read-only"', err)
+        self.assertIn("features.shell_tool=false", argv)
+        _, err, argv = self._run("astra", tools=True, no_tools=True)
+        self.assertIn('"tools": "off"', err)
+
+
+LIVE = os.environ.get("AGENTS_INC_LIVE_PROBES") == "1"
+LIVE_TOOLS = os.environ.get("AGENTS_INC_LIVE_TOOLS") == "1"
+CODEX = Path("/opt/homebrew/bin/codex") if Path("/opt/homebrew/bin/codex").exists() else (shutil.which("codex") and Path(shutil.which("codex")))
+SKIP = "set AGENTS_INC_LIVE_PROBES=1" if not LIVE else ("codex executable absent" if not CODEX else
+       ("sandbox-exec absent (not macOS)" if not shutil.which("sandbox-exec") else None))
+
+
+# Seatbelt text from the tool, or Codex's own policy refusal when it declines to run the command.
+# Observed 2026-10-04: seatbelt "Operation not permitted"; Codex refusals "denied by policy", "restricted by policy",
+# "denied by the sandbox", "denied by the active filesystem policy". A denial also requires that no tool command succeeded.
+DENIAL = r"Operation not permitted|(denied|restricted) by (the )?(active filesystem )?(policy|sandbox)"
+
+
+@unittest.skipIf(SKIP or not LIVE_TOOLS, f"live sol probes skipped: {SKIP or 'tools are opt-in (D49 provisional); set AGENTS_INC_LIVE_TOOLS=1'}")
+class LiveSolProbes(unittest.TestCase):
+    """One sol call per probe. Assertions read Codex's transcript for the tool's own result line."""
+
+    def _sol(self, command, write=False):
+        prompt = f"Use the shell tool to run exactly: {command}\nThen reply with the verbatim output, nothing else."
+        out, err = io.StringIO(), io.StringIO()
+        slug = runtime.load_model_map().get("sol", "gpt-5.6-sol")
+        with tempfile.TemporaryFile("w+") as stdin:  # subprocess needs a real file descriptor
+            stdin.write(prompt); stdin.seek(0)
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = run_codex("sol", "medium", REPO, stdin, SimpleNamespace(codex_path=CODEX), {slug: ["medium"]}, tools=True, write=write)
+        text = out.getvalue() + err.getvalue()
+        print(f"\n--- probe `{command}` rc={rc}\n{text[-1500:]}", file=sys.stderr)
+        log = os.environ.get("AGENTS_INC_PROBE_LOG_DIR")
+        if log:
+            Path(log, f"probe_{self._testMethodName}.log").write_text(f"command: {command}\nrc: {rc}\n{text}")
+        if rc == 75:
+            self.skipTest("codex usage limit hit (rc 75); probe not run")
+        self.assertIn('"tools": "on"', text)
+        return rc, text
+
+    def test_a_read_readme(self):
+        first = (REPO / "README.md").read_text().splitlines()[0][:40]
+        rc, text = self._sol("head -1 README.md")
+        self.assertEqual(rc, 0)
+        self.assertIn(first, text)
+
+    def test_b_ssh_denied(self):
+        _, text = self._sol("ls ~/.ssh")
+        self.assertRegex(text, DENIAL)
+        self.assertNotRegex(text, r"\bsucceeded in \d+")
+
+    def test_c_config_denied(self):
+        _, text = self._sol("ls ~/.config")
+        self.assertRegex(text, DENIAL)
+        self.assertNotRegex(text, r"\bsucceeded in \d+")
+
+    def test_d_writes_fail(self):
+        name = "agents_inc_d49_probe"
+        _, text = self._sol(f"touch /tmp/{name}; touch ./{name}; ls /tmp/{name} ./{name}")
+        self.assertFalse((Path("/tmp") / name).exists())
+        self.assertFalse((REPO / name).exists())
+        self.assertIn("Operation not permitted", text)
+
+    def test_e_network_fails(self):
+        _, text = self._sol("curl -sS -m 10 https://example.com")
+        self.assertNotIn("Example Domain", text)
+        self.assertRegex(text, r"Could not resolve host|Operation not permitted|Failed to connect|curl: \(\d+\)")
+
+    def test_g_write_mode(self):
+        name = "agents_inc_d49_write_probe"
+        _, text = self._sol(f"touch ./{name} && ls ./{name} && rm ./{name} && echo CWD_WRITE_OK; touch /tmp/{name}", write=True)
+        self.assertIn("CWD_WRITE_OK", text)
+        self.assertFalse((REPO / name).exists())
+        self.assertFalse((Path("/tmp") / name).exists())
+        self.assertIn(f"touch: /tmp/{name}: Operation not permitted", text)
+
+    def test_f_luna_argv_tool_free(self):
+        argv = build_codex_argv(CODEX, "luna", "medium", REPO, EFF, MAP, tools_for("luna"))  # default off
+        self.assertIn("features.shell_tool=false", argv)
+
+
+@unittest.skipIf(SKIP, f"live probes skipped: {SKIP}")
+class SeatbeltProbes(unittest.TestCase):
+    """No model call: run the same permission profile through `codex sandbox`, the seatbelt Codex uses for tool commands."""
+
+    def _sh(self, script):
+        args = runtime.permission_args(REPO, False)
+        res = subprocess.run([str(CODEX), "sandbox", *args, "--", "/bin/sh", "-c", script], cwd=REPO,
+                             capture_output=True, text=True, timeout=60)
+        return res.stdout + res.stderr
+
+    def test_read_cwd(self):
+        self.assertIn((REPO / "README.md").read_text().splitlines()[0][:40], self._sh("head -1 README.md"))
+
+    def test_home_denied(self):
+        for target in ("~/.ssh", "~/.config", "~/.claude", "~/.local", "~"):
+            self.assertIn("Operation not permitted", self._sh(f"ls {target} >/dev/null"), target)
+
+    def test_writes_denied(self):
+        name = "agents_inc_d49_seatbelt"
+        out = self._sh(f"touch /tmp/{name}; touch ./{name}")
+        self.assertEqual(out.count("Operation not permitted"), 2, out)
+        self.assertFalse((Path("/tmp") / name).exists() or (REPO / name).exists())
+
+    def test_network_denied(self):
+        out = self._sh("curl -sS -m 10 https://example.com")
+        self.assertNotIn("Example Domain", out)
+        self.assertRegex(out, r"Could not resolve host|Operation not permitted|Failed to connect")
+
+
+if __name__ == "__main__":
+    unittest.main()

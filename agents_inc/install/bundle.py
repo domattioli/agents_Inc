@@ -15,6 +15,8 @@ from .receipt import InstallReceipt
 
 ALLOWLIST = ("agents_inc", "skills/workerbee", "skills/codex-bridge")
 OPTIONAL_ALLOWLIST = ("workerbees",)
+# Single files the runtime reads; agents_inc/schema.py parses the 3NF doc.
+FILE_ALLOWLIST = ("docs/governance/SCHEMA-3NF.md",)
 EXCLUDED = {".git", ".env", ".workerbees", "__pycache__", "bridge.py"}
 
 @dataclass(frozen=True)
@@ -56,6 +58,11 @@ def stage_bundle(source: Path, paths: InstallPaths) -> StagedBundle:
                     # Installed skills must not depend on PATH or source checkout.
                     text = target.read_text()
                     target.write_text(text.replace("@AGENTS_INC_LAUNCHER@", str(paths.current / "bin/agents-inc")))
+        for item in FILE_ALLOWLIST:
+            origin = source / item
+            if origin.is_file() and not origin.is_symlink():
+                target = temp / item; target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(origin, target)
         launcher = temp / "bin/agents-inc"
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_text(
