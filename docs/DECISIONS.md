@@ -561,3 +561,19 @@ Claude Code is the only required provider. The Codex CLI is optional: the system
 README.md, CONTEXT.md, and AGENTS.md now state this. README.md previously said both providers were optional in one place and listed both CLIs as requirements in another.
 
 `agents-inc doctor` already reports a missing Codex as a warning, not a failure (doctor.py:42). `agents-inc run --model <codex alias>` still refuses without Codex, which is the intended behaviour.
+
+## D51 — Credential-blind dispatch broker (2026-10-04, status: accepted)
+A Codex Lead may request Workers without receiving provider credentials.
+The CoS starts `agents-inc dispatch --serve <run-dir>` outside the sandbox.
+The Lead has repository read access and write access only to the inbox in its run directory.
+The CoS creates the run directory, its inbox, and run.json before the Lead starts.
+It writes versioned JSON requests to the inbox; requests never carry credentials or executable paths.
+The broker validates schema, contract, model allowlist, workspace, and fan-out before D47 dispatch.
+It writes an immutable result and Worker report in the run directory, outside the inbox.
+The broker launches every Worker with a scrubbed environment (fixed PATH, HOME, USER, TERM, LANG, and a per-Worker TMPDIR under the broker-owned child directory), so no key, token, or secret variable reaches it.
+It wraps `claude -p` in `sandbox-exec` and refuses Claude requests where that is unavailable; the profile denies the D49 home deny list, `~/.claude.json*`, and `~/.claude` except projects, todos, statsig, scripts, and settings.json (the last two read-only), and allows writes only to cwd, the Worker TMPDIR, /dev, the writable `~/.claude` paths, the login keychain, and `/private/tmp/claude-<uid>` (Claude Code's Bash tool scratch root; the rest of /private/tmp stays denied).
+Known gap: a Claude Worker can launch a nested `claude -p` from its shell with the same keychain login, bypassing broker fan-out; closing it needs a Claude Code setting or a process-exec rule and is queued for the CEO.
+The Lead waits by bounded file polling; it never reads provider homes.
+The broker owns run.json and refuses requests beyond the Lead's FAN_OUT total.
+MVP is the request schema, sequential serve loop, haiku proof, and this ruling.
+Parallel width, cancellation, free-provider routing, and broker resume are later.

@@ -78,6 +78,13 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual((a.slots, a.model, a.effort, a.cwd, a.tier, a.run_dir, a.dry_run),
                          ("s.json", "sonnet", "high", "/x", "grunt", "/r", True))
 
+    def test_dispatch_cli_rejects_non_grunt_tier(self):
+        with mock.patch.object(dispatch, "run") as run, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main(["dispatch", "--slots", "s.json", "--model", "haiku", "--cwd", "/x", "--tier", "workhorse"])
+        self.assertEqual(ctx.exception.code, 2)
+        run.assert_not_called()
+
     def test_render_refusal_missing_out_of_scope(self):
         rc, out, _ = self._main("--slots", str(self._slots(drop="OUT_OF_SCOPE")), "--model", "haiku",
                                 "--cwd", str(self.repo), "--run-dir", str(self.runs), "--dry-run")

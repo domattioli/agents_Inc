@@ -77,6 +77,10 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | NOTES | optional | default `none`; a path must sit under the dispatch scratchpad, never the repo or home |
 | STYLE | optional | empty by default; see below |
 
+D51 broker: a Lead sends these slots inline as `slots` in `<run-dir>/inbox/<id>.request.json`
+(write `.tmp`, then rename; keys schema_version, request_id, model, effort, tier, slots; never PERMISSION_MODE or credential paths).
+It waits with `agents-inc dispatch --wait <run-dir> <id> [--timeout 600]` (1 s polls; exit 124 on timeout), reads `<run-dir>/<id>.report.md`; `inbox/lead.done` stops the broker.
+
 ## STYLE slot (experimental, #4)
 
 Opt-in, for extractive and summarization dispatches only. It is not

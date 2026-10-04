@@ -85,23 +85,35 @@ def _toml_key(path) -> str:
     return f'"{text}"'
 
 
-def permission_profile(cwd: Path, write: bool, home: Path | None = None) -> dict[str, str]:
-    """Filesystem grants for tool commands. Anything absent (all of HOME except cwd) is unreadable."""
+def permission_profile(cwd: Path, write: bool, home: Path | None = None,
+                       write_dir: Path | None = None) -> dict[str, str]:
+    """Filesystem grants for tool commands. Anything absent (all of HOME except cwd) is unreadable.
+    D51: with write_dir (the Lead's run directory), write goes to write_dir/inbox only; write_dir and cwd stay
+    read, so run.json, workers/ and results are broker-owned. Without it, --write grants cwd (legacy)."""
     home = Path(home or Path.home())
+    if write_dir is not None and not write:
+        raise ValueError("--run-dir needs --write")
     grants = {'":minimal"': "read", _toml_key("/opt/homebrew"): "read", _toml_key("/tmp"): "read",
-              _toml_key("/private/tmp"): "read", _toml_key(cwd): "write" if write else "read"}
+              _toml_key("/private/tmp"): "read",
+              _toml_key(cwd): "write" if (write and write_dir is None) else "read"}
+    if write_dir is not None:
+        if (Path(write_dir) / "inbox").is_symlink():
+            raise ValueError(f"run-dir inbox must not be a symlink: {Path(write_dir) / 'inbox'}")
+        grants[_toml_key(write_dir)] = "read"
+        grants[_toml_key(Path(write_dir) / "inbox")] = "write"
     for name in HARD_DENY:
         grants[f'"{os.path.realpath(home)}/{name}"'] = "none"
     return grants
 
 
-def permission_args(cwd: Path, write: bool, home: Path | None = None) -> list[str]:
-    body = ", ".join(f"{k}={chr(34)}{v}{chr(34)}" for k, v in permission_profile(cwd, write, home).items())
+def permission_args(cwd: Path, write: bool, home: Path | None = None, write_dir: Path | None = None) -> list[str]:
+    body = ", ".join(f"{k}={chr(34)}{v}{chr(34)}" for k, v in permission_profile(cwd, write, home, write_dir).items())
     return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}.filesystem={{{body}}}"]
 
 
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
-                     model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False) -> list[str]:
+                     model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False,
+                     write_dir: Path | None = None) -> list[str]:
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
@@ -119,11 +131,12 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
     # The profile alone sets access: cwd "read", or "write" with --write; network stays off.
     # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
     return ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
-            + permission_args(cwd, write) + ["-"])
+            + permission_args(cwd, write, write_dir=write_dir) + ["-"])
 
 
 def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]],
-              no_tools: bool = False, write: bool = False, tools: bool = False) -> int:
+              no_tools: bool = False, write: bool = False, tools: bool = False, write_dir: Path | None = None,
+              env: dict | None = None) -> int:
     if receipt.codex_path is None:
         raise FileNotFoundError("WB_CLI_NOT_FOUND: Codex not installed (receipt has no codex_path); install codex, then run agents-inc repair")
     executable = Path(receipt.codex_path)
@@ -139,15 +152,18 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
     tools = tools_for(model, no_tools, tools)
     if write and not tools:
         raise ValueError("--write needs --tools (rung astra, sol, or terra, without --no-tools)")
+    if write_dir is not None and not write:
+        raise ValueError("--run-dir needs --write")
     sys.stderr.write("agents-inc run: record " + json.dumps({"model": model, "slug": slug, "tools": "on" if tools else "off",
                      "sandbox": "workspace-write" if write else "read-only"}) + "\n")
     result = subprocess.run(
-        build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write),
+        build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir),
         stdin=prompt_stream,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        check=False
+        check=False,
+        env=env,  # None inherits (CLI default); the D51 broker passes a scrubbed env
     )
 
     # Write captured output unchanged
