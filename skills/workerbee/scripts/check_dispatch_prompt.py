@@ -80,15 +80,11 @@ REPORT_KEYWORDS: dict[str, list[str]] = {
 # D48: exactly one report line `WORKERS SPAWNED: <integer>`.
 WORKERS_LINE_RE = re.compile(r"^\W*workers spawned:\s*\d+\W*$", re.IGNORECASE)
 
-# D48 ceilings per rung: (width, total, depth).
-FAN_OUT_CEILINGS = {
-    "executive": (3, 6, 2), "orchestrator": (3, 6, 2),
-    "workhorse": (2, 4, 1), "grunt": (0, 0, 0),
-}
-MODEL_RUNG = {
-    "fable": "executive", "astra": "executive", "opus": "orchestrator", "sol": "orchestrator",
-    "sonnet": "workhorse", "terra": "workhorse", "haiku": "grunt", "luna": "grunt",
-}
+# D48 ceilings per rung and model-to-rung table: dispatch_rungs.py.
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+from dispatch_rungs import FAN_OUT_BY_RUNG, MODEL_RUNG  # noqa: E402
 RUNG_RE = re.compile(r"^rung:\s*(\w+)", re.MULTILINE)
 
 
@@ -97,7 +93,7 @@ def known_rung(text: str, model: str | None = None) -> str | None:
     if model and model.strip().lower() in MODEL_RUNG:
         return MODEL_RUNG[model.strip().lower()]
     m = RUNG_RE.search(text.lower())
-    if m and m.group(1) in FAN_OUT_CEILINGS:
+    if m and m.group(1) in FAN_OUT_BY_RUNG:
         return m.group(1)
     return None
 
@@ -202,7 +198,7 @@ def check(text: str, tier: str | None = None, prompt_text: str | None = None,
             missing.append("fan-out")
         else:
             rung = known_rung(text, model)
-            if rung and any(v > c for v, c in zip(parse_fan_out(text), FAN_OUT_CEILINGS[rung])):
+            if rung and any(v > c for v, c in zip(parse_fan_out(text), FAN_OUT_BY_RUNG[rung])):
                 missing.append("fan-out-over-ceiling")
 
     # Check tier-specific requirements.
@@ -283,6 +279,12 @@ def main() -> int:
             return 2
         transport = args[k + 1]
         del args[k:k + 2]
+    if profile not in (None, "report"):
+        print(f"--profile must be report, got {profile!r}", file=sys.stderr)
+        return 2
+    if tier not in (None, "grunt"):
+        print(f"--tier must be grunt, got {tier!r}", file=sys.stderr)
+        return 2
     if len(args) != 1:
         print("usage: check_dispatch_prompt.py <prompt_file> [--with-handoff-lint] [--profile report] [--tier grunt] [--transport file|bare]",
               file=sys.stderr)

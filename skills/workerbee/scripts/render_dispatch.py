@@ -22,19 +22,11 @@ from pathlib import Path
 
 
 
-# D48 fan-out defaults per Lead rung: (width, total, depth).
-FAN_OUT_DEFAULTS = {
-    "executive": (3, 6, 2),
-    "orchestrator": (3, 6, 2),
-    "workhorse": (2, 4, 1),
-    "grunt": (0, 0, 0),
-}
-MODEL_RUNG = {
-    "fable": "executive", "astra": "executive",
-    "opus": "orchestrator", "sol": "orchestrator",
-    "sonnet": "workhorse", "terra": "workhorse",
-    "haiku": "grunt", "luna": "grunt",
-}
+# D48 fan-out defaults per Lead rung and model-to-rung table: dispatch_rungs.py.
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+from dispatch_rungs import FAN_OUT_BY_RUNG, MODEL_RUNG  # noqa: E402
 
 
 def default_fan_out(slots: dict) -> str:
@@ -44,14 +36,14 @@ def default_fan_out(slots: dict) -> str:
         value = slots.get(key)
         if isinstance(value, str) and value.strip():
             word = value.strip().lower()
-            if word in FAN_OUT_DEFAULTS:
+            if word in FAN_OUT_BY_RUNG:
                 rung = word
                 break
             hit = next((r for m, r in MODEL_RUNG.items() if m in word), None)
             if hit:
                 rung = hit
                 break
-    width, total, depth = FAN_OUT_DEFAULTS[rung]
+    width, total, depth = FAN_OUT_BY_RUNG[rung]
     return f"width {width}, total {total}, depth {depth}"
 
 def extract_template(slots_path: Path) -> str:

@@ -203,5 +203,31 @@ class FanOutTest(unittest.TestCase):
     def test_prompt_without_fan_out_line_passes(self):
         self.assertNotIn("fan-out", cdp.check("ROLE: old prompt before D48"))
 
+class SharedRungSourceTest(unittest.TestCase):
+    def test_renderer_and_checker_share_rung_source(self):
+        import dispatch_rungs
+        import render_dispatch
+        self.assertIs(render_dispatch.MODEL_RUNG, dispatch_rungs.MODEL_RUNG)
+        self.assertIs(render_dispatch.FAN_OUT_BY_RUNG, dispatch_rungs.FAN_OUT_BY_RUNG)
+        self.assertIs(cdp.MODEL_RUNG, dispatch_rungs.MODEL_RUNG)
+        self.assertIs(cdp.FAN_OUT_BY_RUNG, dispatch_rungs.FAN_OUT_BY_RUNG)
+        self.assertFalse(hasattr(render_dispatch, "FAN_OUT_DEFAULTS"))
+        self.assertFalse(hasattr(cdp, "FAN_OUT_CEILINGS"))
+
+    def test_dispatch_load_resolves_shared_rungs_fresh_process(self):
+        code = ("import sys\n"
+                "from agents_inc.install import dispatch\n"
+                "a = dispatch._load('check_dispatch_prompt')\n"
+                "b = dispatch._load('render_dispatch')\n"
+                "d = sys.modules['dispatch_rungs']\n"
+                "assert a.MODEL_RUNG is d.MODEL_RUNG and b.MODEL_RUNG is d.MODEL_RUNG\n"
+                "assert a.FAN_OUT_BY_RUNG is d.FAN_OUT_BY_RUNG is b.FAN_OUT_BY_RUNG\n"
+                "print('SHARED', d.__file__)\n")
+        r = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONPATH=str(ROOT)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(str(WB / "scripts" / "dispatch_rungs.py"), r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
