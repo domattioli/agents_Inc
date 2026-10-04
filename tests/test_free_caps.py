@@ -281,6 +281,83 @@ class TestAtCap:
         assert result is False, "Expected at_cap=False when cap is None"
 
 
+class TestUsageJsonl:
+    """A1: calls_today and at_cap count un-ingested usage.jsonl rows."""
+
+    @staticmethod
+    def _seed_db(path, n, day):
+        conn = sqlite3.connect(str(path))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS usage(
+                uid TEXT PRIMARY KEY, ts TEXT NOT NULL, day TEXT NOT NULL,
+                backend TEXT NOT NULL, model TEXT,
+                input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
+                cache_read INTEGER DEFAULT 0, cache_write INTEGER DEFAULT 0,
+                reasoning INTEGER DEFAULT 0)
+        """)
+        for i in range(n):
+            conn.execute(
+                "INSERT INTO usage (uid, ts, day, backend, model) VALUES (?, ?, ?, ?, ?)",
+                (f"uid-{i}", datetime.now(timezone.utc).isoformat(), day, "openrouter", "m"),
+            )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def _row(ts, backend="openrouter", i=0):
+        return json.dumps({"ts": ts, "backend": backend, "model": "m",
+                           "input_tokens": i, "output_tokens": 1})
+
+    def test_at_cap_sees_uningested_jsonl(self, hermetic, tmp_path):
+        from agents_inc import free_caps
+        codex_dir = tmp_path / ".codex-bridge"
+        codex_dir.mkdir()
+        now = datetime.now(timezone.utc)
+        self._seed_db(codex_dir / "usage.db", 10, now.date().isoformat())
+        ts = now.isoformat()
+        (codex_dir / "usage.jsonl").write_text(
+            "\n".join(self._row(ts, i=i) for i in range(50)) + "\n")
+        assert free_caps.at_cap("openrouter", db_path=str(codex_dir / "usage.db")) is True
+        assert free_caps.calls_today("openrouter", db_path=str(codex_dir / "usage.db")) == 50
+
+    def test_jsonl_filters_provider_day_malformed_and_duplicates(self, hermetic, tmp_path):
+        from agents_inc import free_caps
+        jsonl = tmp_path / "usage.jsonl"
+        now = datetime.now(timezone.utc)
+        ts = now.isoformat()
+        yesterday = (now - timedelta(days=1)).isoformat()
+        lines = [
+            self._row(ts, i=1),
+            self._row(ts, i=1),                      # duplicate
+            self._row(ts, i=2),
+            self._row(ts, backend="gemini", i=3),    # other provider
+            self._row(yesterday, i=4),               # yesterday
+            '{"ts": "' + ts + '", "backend": "openrouter"',  # malformed tail
+        ]
+        jsonl.write_text("\n".join(lines))
+        count = free_caps.calls_today("openrouter", db_path=str(tmp_path / "none.db"),
+                                      usage_path=str(jsonl))
+        assert count == 2
+        assert free_caps.calls_today("gemini", db_path=str(tmp_path / "none.db"),
+                                     usage_path=str(jsonl)) == 1
+
+    def test_jsonl_dedupe_matches_ingestion_uid(self, hermetic, tmp_path):
+        """1 and 1.0 tokens are distinct uids in usage_db ingestion, so both count here too."""
+        from agents_inc import free_caps
+        ts = datetime.now(timezone.utc).isoformat()
+        rows = [{"ts": ts, "backend": "openrouter", "model": "m", "input_tokens": 1, "output_tokens": 1},
+                {"ts": ts, "backend": "openrouter", "model": "m", "input_tokens": 1.0, "output_tokens": 1},
+                {"ts": ts, "backend": "openrouter", "model": "m", "input_tokens": 1, "output_tokens": 1}]
+        jsonl = tmp_path / "usage.jsonl"
+        jsonl.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        assert free_caps.calls_today("openrouter", db_path=str(tmp_path / "x.db"), usage_path=str(jsonl)) == 2
+
+    def test_jsonl_missing_is_zero(self, hermetic, tmp_path):
+        from agents_inc import free_caps
+        assert free_caps.calls_today("openrouter", db_path=str(tmp_path / "x.db"),
+                                     usage_path=str(tmp_path / "missing.jsonl")) == 0
+
+
 class TestProbeOpenRouter:
     """Test probe_openrouter: fetch and store key limits."""
 
