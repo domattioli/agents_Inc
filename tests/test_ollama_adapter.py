@@ -16,6 +16,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from agents_inc.adapters import ollama
 from agents_inc import router, policy
 
+# Keep adapter tests from appending to the real ~/.codex-bridge/usage.jsonl.
+_log_patch = patch.object(ollama, "_log_usage")
+
+
+def setUpModule():
+    _log_patch.start()
+
+
+def tearDownModule():
+    _log_patch.stop()
+
 # ollama.time IS the stdlib time module (same object) -- patching ollama.time.sleep
 # patches time.sleep everywhere. Capture the real sleep before any test patches it, so
 # fake HTTP handlers can still impose a short real delay to keep the worker thread alive

@@ -1,5 +1,5 @@
 # agents_inc/adapters/codex.py
-"""Codex Worker: exec, read-only sandbox, empty cwd, no inherited env, no web. Prompt on stdin."""
+"""Codex stdin worker: exec, read-only sandbox, empty cwd, no inherited env, no web. Prompt on stdin."""
 import tempfile
 from pathlib import Path
 
