@@ -228,6 +228,19 @@ def _unload_and_verify(endpoint: str, model: str, state_dir: Path) -> bool:
     # Unload not confirmed
     return False
 
+def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+    from datetime import datetime, timezone
+    path = Path(os.path.expanduser("~")) / ".codex-bridge" / "usage.jsonl"
+    entry = {"ts": datetime.now(timezone.utc).isoformat(), "backend": "ollama", "model": model,
+             "input_tokens": input_tokens, "output_tokens": output_tokens}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass
+
+
 def main():
     """Read prompt from stdin; model arg. Checks: breaker, lock, budget, telemetry+admit. POST /api/generate with watchdog."""
     global _LOCK_HANDLE
@@ -353,6 +366,7 @@ def main():
                     return
                 data = json.loads(body)
                 result["output"] = data.get("response", "")
+                result["usage"] = (data.get("prompt_eval_count", 0), data.get("eval_count", 0))
             except ValueError as e:
                 # raised by _http_req for non-loopback/redirect/malformed target -- not a
                 # connect-fail, server was reachable enough to answer wrong.
@@ -438,7 +452,9 @@ def main():
             print(reason, file=sys.stderr)
             sys.exit(1)
 
-        # Success: print response, exit 0
+        # Success: log usage (best effort), print response, exit 0
+        if result.get("usage"):
+            _log_usage(model, *result["usage"])
         if result["output"] is not None:
             print(result["output"], end="")
         sys.exit(0)

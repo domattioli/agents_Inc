@@ -683,3 +683,14 @@ class TestRouterGuards:
                     for route in chain:
                         assert route.provider not in free_providers, \
                             f"Task {task}, tier {tier}, auth {auth}: free provider {route.provider} in chain"
+
+
+def load_tests(loader, tests, pattern):
+    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    return bridge.bridge_suite(__file__)
