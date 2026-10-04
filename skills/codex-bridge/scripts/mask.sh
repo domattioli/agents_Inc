@@ -378,22 +378,5 @@ try:
 except OSError:
     pass
 
-# Log to SQLite (fail silently)
-try:
-    import uuid
-    import sqlite3
-    uid = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    day = now[:10]
-
-    db_path = os.path.expanduser("~/.codex-bridge/usage.db")
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.execute(
-        "INSERT INTO usage (uid, ts, day, backend, model, input_tokens, output_tokens, cache_read, cache_write, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (uid, now, day, "mistral", response_model, input_tokens, output_tokens, 0, 0, 0)
-    )
-    conn.commit()
-    conn.close()
-except Exception:
-    pass
+# SQLite row comes from usage_db.ingest_delegated_usage (sha1 uid); no direct insert here.
 PYTHON

@@ -1,4 +1,4 @@
-"""Markdown source -> cheap Worker extract+draft -> deterministic Verifier -> receipt.
+"""Markdown source -> cheap stdin worker extract+draft -> deterministic Verifier -> receipt.
 Phase 1 ships no Reviewer, so the best reachable status is needs-review (D5 quality floor)."""
 from __future__ import annotations
 import hashlib, json, re, time, uuid, os

@@ -1,4 +1,4 @@
-"""Pick catalog-eligible Worker models. routing.json sets provider order and defaults."""
+"""Pick catalog-eligible stdin worker models. routing.json sets provider order and defaults."""
 from __future__ import annotations
 import json
 import os

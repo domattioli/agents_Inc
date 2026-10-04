@@ -1,4 +1,4 @@
-"""Other-vendor semantic review of Verifier-passed claims. Never the same provider as the Worker."""
+"""Other-vendor semantic review of Verifier-passed claims. Never the same provider as the stdin worker."""
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field

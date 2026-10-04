@@ -206,3 +206,14 @@ class TestCatalogRefreshCLI:
         with open(models_path) as f:
             data = json.load(f)
         assert NEW_FREE_TEXT in data["models"], "New model should be added in apply mode"
+
+
+def load_tests(loader, tests, pattern):
+    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    return bridge.bridge_suite(__file__)
