@@ -168,10 +168,11 @@ def claude_scratch_dir() -> str:
     return f"/private/tmp/claude-{os.getuid()}"
 
 
-def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str) -> str:
+def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = ()) -> str:
     """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain, and the
     CLAUDE_HOME_ALLOW subpaths; reads and writes denied under the D49 home deny list, ~/.claude.json*,
-    and ~/.claude outside CLAUDE_HOME_ALLOW."""
+    and ~/.claude outside CLAUDE_HOME_ALLOW. deny_paths (the broker run directory, the Lead's isolated CODEX_HOME) are
+    unreadable and unwritable except the child's own tmpdir, even when they sit under a granted cwd."""
     h = _sb(home)
     claude_ok = [f"{h}/.claude/{name}" for name in CLAUDE_HOME_ALLOW]
     writable = [_sb(cwd), _sb(tmpdir), claude_scratch_dir(), f"{h}/Library/Keychains", "/dev"] + claude_ok
@@ -179,8 +180,12 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str) -> str:
     deny = " ".join(f'(subpath "{h}/{name}")' for name in CLAUDE_WORKER_DENY)
     claude_read = claude_ok + [f"{h}/.claude/{name}" for name in CLAUDE_HOME_READ]
     claude_keep = " ".join(f'(require-not (subpath "{w}"))' for w in claude_read)
+    broker_deny = "".join(
+        f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}") (require-not (subpath "{_sb(tmpdir)}"))))\n'
+        for d in deny_paths)
     return ("(version 1)\n(allow default)\n"
             f"(deny file-write* (require-all {keep}))\n"
+            + broker_deny +
             f"(deny file-read* file-write* {deny})\n"
             f'(deny file-read* file-write* (regex #"^{re.escape(h)}/\\.claude\\.json"))\n'
             f'(deny file-read* file-write* (require-all (subpath "{h}/.claude") {claude_keep}))\n'
@@ -207,7 +212,8 @@ def launch(kind: str, model: str, effort: str, cwd: Path, prompt: str, run_dir: 
             env["TMPDIR"] = str(_child_tmp(run_dir))
             extra["env"] = env
             profile = Path(run_dir) / "sandbox.sb"
-            _wtext(profile, claude_sandbox_profile(Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"]))
+            _wtext(profile, claude_sandbox_profile(Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"],
+                                                   _BROKER_DENY))
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
         res = subprocess.run(argv, input=prompt, cwd=str(cwd), capture_output=True, text=True, **extra)
         text, session = res.stdout, None
@@ -228,7 +234,8 @@ def launch(kind: str, model: str, effort: str, cwd: Path, prompt: str, run_dir: 
         env["TMPDIR"] = str(_child_tmp(run_dir))
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env)
+        rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env,
+                       extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES)
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)], "session_id": None}
 
@@ -244,6 +251,7 @@ def _kind(model: str) -> str | None:
 # D51: True while the broker runs a Worker. Artifact writes then never follow a
 # planted link and never overwrite (run.json is replaced atomically instead).
 _BROKER_SAFE_WRITES = False
+_BROKER_DENY: tuple = ()  # D51: broker run directory (+ isolated CODEX_HOME) denied to Claude Workers
 _LAUNCHES = 0  # Worker launches started by run(); the broker charges fan-out from this, not from disk
 
 
@@ -544,6 +552,10 @@ def _load_run_manifest(run_dir: Path) -> dict:
     cwd = spec.get("cwd")
     if not isinstance(cwd, str) or not os.path.isabs(cwd) or not Path(cwd).is_dir():
         raise ValueError("run.json cwd must be an existing absolute directory")
+    # A Worker with a writable cwd could rewrite the broker's own scripts (`_load` re-executes them per call).
+    # An installed release under ~/.local is never inside a Worker cwd, so it is unaffected.
+    if REPO_ROOT.resolve().is_relative_to(Path(cwd).resolve()):
+        raise ValueError("broker-code-in-workspace: the broker source checkout is inside the Worker cwd")
     mode = spec.get("permission_mode", DEFAULT_PERMISSION_MODE)
     if not isinstance(mode, str) or not mode:
         raise ValueError("run.json permission_mode must be a string")
@@ -577,12 +589,17 @@ def _validate_request(inbox: Path, name: str, spec: dict) -> tuple[dict | None, 
         req = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         return None, "bad-json"
+    return _validate_fields(req, spec, m.group(1))
+
+
+def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, str | None]:
+    """Shared by the file inbox and the MCP transport: check a parsed request against run.json."""
     if not isinstance(req, dict) or set(req) != REQUEST_KEYS:
         return None, "bad-keys"
     if req["schema_version"] != REQUEST_SCHEMA_VERSION or type(req["schema_version"]) is not int:
         return None, "bad-schema-version"
     rid = req["request_id"]
-    if not isinstance(rid, str) or not REQUEST_ID_RE.match(rid) or rid != m.group(1):
+    if not isinstance(rid, str) or not REQUEST_ID_RE.match(rid) or rid != expected_id:
         return None, "bad-request-id"
     model = req["model"]
     if not isinstance(model, str) or model not in spec["worker_models"] or not _kind(model):
@@ -661,22 +678,26 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
     _atomic_write_json(slots_path, slots)
     child_parent = wdir / "runs"
     spec["workers_spawned"] += 1  # reserved before launch
+    _atomic_write_json(run_dir / "run.json", spec, overwrite=True)  # persist the reservation at once
     import argparse
     args = argparse.Namespace(slots=str(slots_path), model=req["model"], effort=req["effort"], cwd=spec["cwd"],
                               tier="grunt" if req["tier"] == "grunt" else None, run_dir=str(child_parent),
                               dry_run=False, resume=None, message=None, home_repo=home_repo)
     out = io.StringIO()
     crash = None
-    global _BROKER_SAFE_WRITES
+    global _BROKER_SAFE_WRITES, _BROKER_DENY
     launches_before = _LAUNCHES
-    _BROKER_SAFE_WRITES = True
     with contextlib.redirect_stdout(out):
         try:
+            _BROKER_SAFE_WRITES = True
+            codex_home = os.environ.get("CODEX_HOME")  # read, never logged
+            _BROKER_DENY = (Path(run_dir).resolve(),) + ((Path(codex_home).resolve(),) if codex_home else ())
             rc = run(args)
         except Exception as exc:  # one bad request never stops the broker
             rc, crash = REQ_RED, f"dispatch-exception:{type(exc).__name__}"
         finally:
             _BROKER_SAFE_WRITES = False
+            _BROKER_DENY = ()
     child = None
     children = sorted(p for p in child_parent.iterdir() if p.is_dir() and not p.is_symlink()) if child_parent.is_dir() else []
     if children:
@@ -718,6 +739,13 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
                                   f"refused: {reason}\n")
         _set_aside(req_path, f"{name}.rejected")
         return
+    result, report_text = _run_validated(run_dir, rid, req, spec, home_repo)
+    _write_request_result(run_dir, rid, result, report_text)
+    _set_aside(req_path, f"{name}.processed")
+
+
+def _run_validated(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: str | None) -> tuple[dict, str]:
+    """Process one validated request and count it; return (result fields, report text). Both transports use this."""
     try:
         result = _process_request(run_dir, rid, req, spec, home_repo)
     except FileExistsError:
@@ -728,14 +756,26 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
     if report_src:
         with contextlib.suppress(OSError):
             report_text = Path(report_src).read_text(encoding="utf-8")
-    counts[result["status"]] = counts.get(result["status"], 0) + 1
-    _write_request_result(run_dir, rid, result, report_text)
-    _set_aside(req_path, f"{name}.processed")
+    spec["request_counts"][result["status"]] = spec["request_counts"].get(result["status"], 0) + 1
+    return result, report_text
 
 
 def _set_aside(path: Path, new_name: str) -> None:
     with contextlib.suppress(OSError):
         os.rename(str(path), str(path.with_name(new_name)))
+
+
+def init_broker_state(spec: dict, poll_interval: float | None = None, idle_timeout: float | None = None,
+                      transport: str = "file") -> None:
+    """Broker owns run.json from here on: in-memory state wins over any later on-disk edit."""
+    spec.setdefault("workers_spawned", 0)
+    if type(spec["workers_spawned"]) is not int or spec["workers_spawned"] < 0:
+        spec["workers_spawned"] = 0
+    counts = spec.get("request_counts")
+    spec["request_counts"] = {k: (counts or {}).get(k, 0) if isinstance(counts, dict) else 0
+                              for k in ("green", "red", "usage-error", "refused", "duplicate")}
+    spec["broker"] = {"pid": os.getpid(), "started_at": _now(), "status": "serving", "transport": transport,
+                      "poll_interval": poll_interval, "idle_timeout": idle_timeout}
 
 
 def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float = 600.0,
@@ -758,15 +798,7 @@ def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float =
     except (OSError, ValueError) as exc:
         print(f"dispatch --serve: invalid run.json: {exc}", file=sys.stderr)
         return BROKER_USAGE
-    # Broker owns run.json from here on: in-memory state wins over any later on-disk edit.
-    spec.setdefault("workers_spawned", 0)
-    if type(spec["workers_spawned"]) is not int or spec["workers_spawned"] < 0:
-        spec["workers_spawned"] = 0
-    counts = spec.get("request_counts")
-    spec["request_counts"] = {k: (counts or {}).get(k, 0) if isinstance(counts, dict) else 0
-                              for k in ("green", "red", "usage-error", "refused", "duplicate")}
-    spec["broker"] = {"pid": os.getpid(), "started_at": _now(), "status": "serving",
-                      "poll_interval": poll_interval, "idle_timeout": idle_timeout}
+    init_broker_state(spec, poll_interval, idle_timeout)
     seen: set = set()
     try:
         _atomic_write_json(root / "run.json", spec, overwrite=True)

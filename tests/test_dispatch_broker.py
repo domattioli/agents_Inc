@@ -659,6 +659,204 @@ class BrokerTest(unittest.TestCase):
             cli.main(["run", "--model", "sol", "--cwd", str(self.repo), "--write"])
         self.assertIsNone(rc_mock.call_args.args[-1])
 
+    def test_claude_profile_denies_run_dir_and_codex_home_under_cwd(self):
+        cwd = self.root / "cwd"
+        run = cwd / "run"
+        tmp = run / "workers" / "r1" / "tmp"
+        tmp.mkdir(parents=True)
+        codex_home = self.root / "lead-home"
+        codex_home.mkdir()
+        text = dispatch.claude_sandbox_profile(cwd, self.root, str(tmp), (run.resolve(), codex_home.resolve()))
+        for path in (run, codex_home):
+            self.assertIn(f'(deny file-read* file-write* (require-all (subpath "{path.resolve()}") '
+                          f'(require-not (subpath "{tmp.resolve()}"))))', text)
+        plain = dispatch.claude_sandbox_profile(cwd, self.root, str(tmp))
+        self.assertNotIn(str(codex_home.resolve()), plain)
+
+    def test_process_request_passes_run_dir_and_codex_home_to_launch(self):
+        seen = {}
+
+        def fake_run(args):
+            seen["deny"] = dispatch._BROKER_DENY
+            return 1
+        self._manifest()
+        spec = dispatch._load_run_manifest(self.run_dir)
+        dispatch.init_broker_state(spec)
+        req = {"schema_version": 1, "request_id": "d1", "model": "haiku", "effort": "low", "tier": "grunt",
+               "slots": json.loads(EXAMPLE.read_text())}
+        with mock.patch.object(dispatch, "run", side_effect=fake_run), \
+                mock.patch.dict(os.environ, {"CODEX_HOME": str(self.root)}):
+            dispatch._process_request(self.run_dir, "d1", req, spec)
+        self.assertEqual(seen["deny"], (self.run_dir.resolve(), self.root.resolve()))
+        self.assertEqual(dispatch._BROKER_DENY, ())
+
+    @unittest.skipUnless(os.access(dispatch.SANDBOX_EXEC, os.X_OK), "sandbox-exec unavailable")
+    def test_sandbox_deny_paths_enforced(self):
+        run = self.repo / "broker-run"  # under cwd on purpose
+        tmp = run / "workers" / "r1" / "tmp"
+        tmp.mkdir(parents=True)
+        (run / "run.json").write_text("broker state")
+        prof = self.root / "p2.sb"
+        prof.write_text(dispatch.claude_sandbox_profile(self.repo, self.root / "home", str(tmp), (run.resolve(),)))
+        sb = [dispatch.SANDBOX_EXEC, "-f", str(prof)]
+        denied = subprocess.run(sb + ["/bin/cat", str(run / "run.json")], capture_output=True, text=True)
+        if "sandbox_apply" in denied.stderr:
+            self.skipTest("nested sandbox: " + denied.stderr.strip())
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertNotIn("broker state", denied.stdout)
+        ok = subprocess.run(sb + ["/usr/bin/touch", str(tmp / "mine")], capture_output=True, text=True)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+
+    def test_broker_code_inside_worker_cwd_refused(self):
+        for cwd in (dispatch.REPO_ROOT, dispatch.REPO_ROOT.parent):
+            self._manifest(cwd=str(cwd))
+            with self.assertRaisesRegex(ValueError, "broker-code-in-workspace"):
+                dispatch._load_run_manifest(self.run_dir)
+        self._manifest()
+        dispatch._load_run_manifest(self.run_dir)  # a separate repo is fine
+
+    def test_reservation_persisted_during_run_and_released_when_setup_fails(self):
+        self._manifest(total=2)
+        spec = dispatch._load_run_manifest(self.run_dir)
+        dispatch.init_broker_state(spec)
+        req = {"schema_version": 1, "request_id": "p1", "model": "haiku", "effort": "low", "tier": "grunt",
+               "slots": json.loads(EXAMPLE.read_text())}
+        on_disk = {}
+
+        def fake_run(args):
+            on_disk["n"] = json.loads((self.run_dir / "run.json").read_text())["workers_spawned"]
+            return 1
+        with mock.patch.object(dispatch, "run", side_effect=fake_run):
+            dispatch._process_request(self.run_dir, "p1", req, spec)
+        self.assertEqual(on_disk["n"], 1)
+        self.assertEqual(spec["workers_spawned"], 0)  # never launched: released
+        # a resolve() failure inside the setup must not hold the reservation
+        req2 = dict(req, request_id="p2")
+        with mock.patch.object(Path, "resolve", side_effect=OSError("boom")), mock.patch.object(dispatch, "run") as run:
+            result = dispatch._process_request(self.run_dir, "p2", req2, spec)
+        run.assert_not_called()
+        self.assertEqual(spec["workers_spawned"], 0)
+        self.assertEqual(result["status"], "red")
+        self.assertFalse(dispatch._BROKER_SAFE_WRITES)
+        self.assertEqual(dispatch._BROKER_DENY, ())
+
+    def test_launch_codex_in_broker_mode_isolates_home_and_denies_run_dir(self):
+        from agents_inc.install import runtime
+        captured = {}
+        receipt = SimpleNamespace(codex_path="/opt/x/bin/codex")
+        paths = SimpleNamespace(receipt=self.root / "r.json", current=self.root)
+
+        def fake_run_codex(*a, **kw):
+            captured.update(kw)
+            return 0
+        with mock.patch.object(cli, "_paths", return_value=paths), mock.patch.object(cli, "_efforts", return_value={}), \
+                mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt), \
+                mock.patch.object(runtime, "run_codex", side_effect=fake_run_codex):
+            dispatch._BROKER_SAFE_WRITES, dispatch._BROKER_DENY = True, (self.run_dir.resolve(),)
+            try:
+                dispatch.launch("codex", "sol", "high", self.repo, "p", self.run_dir)
+            finally:
+                dispatch._BROKER_SAFE_WRITES, dispatch._BROKER_DENY = False, ()
+        self.assertTrue(captured["isolate_home"])
+        self.assertEqual(captured["extra_deny"], (self.run_dir.resolve(),))
+
+    def test_luna_argv_carries_deny_grants_only_in_broker_mode(self):
+        from agents_inc.install import runtime
+        argvs = []
+        receipt = SimpleNamespace(codex_path="/opt/x/bin/codex")
+        paths = SimpleNamespace(receipt=self.root / "r.json", current=self.root)
+        eff = {"gpt-5.6-luna": ["medium"]}
+        home = self.root / "iso-home"
+        home.mkdir()
+
+        def fake_run(argv, **kw):
+            argvs.append(argv)
+            return SimpleNamespace(stdout="OK\n", stderr="", returncode=0)
+        for broker in (True, False):
+            dispatch._BROKER_SAFE_WRITES = broker
+            dispatch._BROKER_DENY = (self.run_dir.resolve(), home.resolve()) if broker else ()
+            try:
+                with mock.patch.object(cli, "_paths", return_value=paths), \
+                        mock.patch.object(cli, "_efforts", return_value=eff), \
+                        mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt), \
+                        mock.patch.object(runtime, "load_model_map", return_value={"luna": "gpt-5.6-luna"}), \
+                        mock.patch.object(runtime, "lead_codex_home", return_value=home), \
+                        mock.patch.object(runtime.subprocess, "run", side_effect=fake_run), \
+                        mock.patch.object(runtime.os, "access", return_value=True), \
+                        mock.patch.object(runtime.Path, "is_file", return_value=True), \
+                        mock.patch.dict(os.environ, {"HOME": str(self.root)}):
+                    dispatch.launch("codex", "luna", "medium", self.repo, "p", self.run_dir)
+            finally:
+                dispatch._BROKER_SAFE_WRITES, dispatch._BROKER_DENY = False, ()
+        broker_argv, plain_argv = " ".join(argvs[0]), " ".join(argvs[1])
+        self.assertIn(f'"{os.path.realpath(self.run_dir)}"="none"', broker_argv)
+        self.assertIn(f'"{os.path.realpath(home)}"="none"', broker_argv)
+        self.assertIn("features.shell_tool=false", broker_argv)
+        self.assertNotIn(" -s ", broker_argv)
+        self.assertNotIn('"="none"', plain_argv.replace('inherit="none"', ""))
+        self.assertNotIn("default_permissions", plain_argv)
+        self.assertIn("-s read-only", plain_argv)
+
+    def test_broker_codex_launch_passes_prompt_as_input_not_stdin(self):
+        from agents_inc.install import runtime
+        calls = []
+        receipt = SimpleNamespace(codex_path="/opt/x/bin/codex")
+        paths = SimpleNamespace(receipt=self.root / "r.json", current=self.root)
+        home = self.root / "iso-home2"
+        home.mkdir()
+
+        def fake_run(argv, **kw):
+            calls.append(kw)
+            return SimpleNamespace(stdout="OK\n", stderr="", returncode=0)
+        dispatch._BROKER_SAFE_WRITES, dispatch._BROKER_DENY = True, (self.run_dir.resolve(),)
+        try:
+            with mock.patch.object(cli, "_paths", return_value=paths), \
+                    mock.patch.object(cli, "_efforts", return_value={"gpt-5.6-luna": ["medium"]}), \
+                    mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt), \
+                    mock.patch.object(runtime, "load_model_map", return_value={"luna": "gpt-5.6-luna"}), \
+                    mock.patch.object(runtime, "lead_codex_home", return_value=home), \
+                    mock.patch.object(runtime.subprocess, "run", side_effect=fake_run), \
+                    mock.patch.object(runtime.os, "access", return_value=True), \
+                    mock.patch.object(runtime.Path, "is_file", return_value=True), \
+                    mock.patch.dict(os.environ, {"HOME": str(self.root)}):
+                dispatch.launch("codex", "luna", "medium", self.repo, "the prompt text", self.run_dir)
+        finally:
+            dispatch._BROKER_SAFE_WRITES, dispatch._BROKER_DENY = False, ()
+        self.assertEqual(calls[0]["input"], "the prompt text")
+        self.assertNotIn("stdin", calls[0])
+
+    def test_prompt_reaches_a_real_child_process(self):
+        from agents_inc.install import runtime
+        exe = self.root / "fakecodex"
+        exe.write_text("#!/bin/sh\ncat\n")
+        exe.chmod(0o755)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(runtime, "load_model_map", return_value={"luna": "gpt-5.6-luna"}), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = runtime.run_codex("luna", "medium", self.repo, io.StringIO("prompt via StringIO\n"),
+                                   SimpleNamespace(codex_path=str(exe)), {"gpt-5.6-luna": ["medium"]})
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertEqual(out.getvalue(), "prompt via StringIO\n")
+
+    def test_cli_run_threads_lead(self):
+        receipt = self.root / "receipt.json"
+        receipt.write_text("{}")
+        paths = SimpleNamespace(receipt=receipt, current=self.root)
+        with mock.patch.object(cli, "_paths", return_value=paths), \
+                mock.patch.object(cli.InstallReceipt, "load", return_value=SimpleNamespace(codex_path=None)), \
+                mock.patch.object(cli, "_efforts", return_value={}), \
+                mock.patch.object(cli, "run_codex", return_value=0) as rc_mock:
+            cli.main(["run", "--model", "terra", "--cwd", str(self.repo), "--lead", str(self.run_dir)])
+        self.assertEqual(rc_mock.call_args.kwargs["lead_dir"], self.run_dir.resolve())
+        self.assertIsNone(rc_mock.call_args.kwargs["home_repo"])
+        with mock.patch.object(cli, "_paths", return_value=paths), \
+                mock.patch.object(cli.InstallReceipt, "load", return_value=SimpleNamespace(codex_path=None)), \
+                mock.patch.object(cli, "_efforts", return_value={}), \
+                mock.patch.object(cli, "run_codex", return_value=0) as rc_mock:
+            cli.main(["run", "--model", "terra", "--cwd", str(self.repo), "--lead", str(self.run_dir),
+                      "--home-repo", "/home/repo"])
+        self.assertEqual(rc_mock.call_args.kwargs["home_repo"], "/home/repo")
+
 
 if __name__ == "__main__":
     unittest.main()
