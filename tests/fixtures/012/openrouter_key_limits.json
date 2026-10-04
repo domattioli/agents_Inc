@@ -1,0 +1,10 @@
+{
+  "data": {
+    "daily_requests_limit": 50,
+    "daily_requests_used": 12,
+    "monthly_requests_limit": 1000,
+    "monthly_requests_used": 350,
+    "rate_limit_requests_per_minute": 60,
+    "rate_limit_requests_per_second": 2
+  }
+}
