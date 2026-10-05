@@ -497,7 +497,7 @@ Source: operator grill of 2026-10-03 (operator as CEO, the fable session as CoS)
 5. **CoS hands.** The CoS reads to route and to verify delegate claims, and answers lookups of 3 tool calls or fewer itself. Every repository edit goes through a delegate, including one-line edits. Basis: a delegate floor of about 3.2k tokens against 2-5k of permanent CoS context per self-done lookup. Delegation multiplies tokens 10-50x but keeps the CoS window flat.
 6. **CEO report shape.** Decisions first, with the CoS's pick. Then one line per result, marked verified or not. Then lessons that need sign-off. Transcripts and reports stay in files, named once. Big lifts require a status card.
 7. **Big lift.** A run that spawned 2 or more delegates, or that edited canon (`AGENTS.md`, `CONTEXT.md`, `docs/DECISIONS.md`, any `SKILL.md`, policy).
-8. **Run spec.** One short run spec per run (ask, resolved chain, gates, snapshot path, outcome) goes in the home repo under `specs/consumers/<repo>/runs/`. The home repo for this operator is DomI. Other consumers of agents_Inc name their own home repo in their `AGENTS.md`. Agent-only artifacts (specs, run specs, teach-me notes, introspect records, grill notes) live there, never in the consumer repo.
+8. **Run spec.** One short run spec per run (ask, resolved chain, gates, snapshot path, outcome) goes in the home repo under `specs/consumers/<repo>/runs/`. The home repo for this operator is DomI. Other consumers of agents_Inc name their own home repo in their `AGENTS.md`. `agents-inc dispatch` resolves it in this order: `--home-repo`, then `AGENTS_INC_HOME_REPO`, then the first `agents-inc home repo: <path>` line in `<cwd>/AGENTS.md` (the path may start with `~`). Agent-only artifacts (specs, run specs, teach-me notes, introspect records, grill notes) live there, never in the consumer repo.
 9. **Kickoff grammar.** `<task>. <models>.` Example: "Fix the parser. opus, haiku." Defaults: chain by ladder, effort medium, gates derived from the task, home repo from the consumer's `AGENTS.md`. Each extra word (effort, budget mode, review vendor) overrides exactly one default.
 10. **Hard separations, enforced by gate, not title.** (a) An author never grades their own work. (b) The reviewer is a different vendor for canon edits and irreversible acts; the same vendor is allowed for routine code. (c) Only the CoS commits and pushes. (d) A delegate sees only its slice: never the run tree, sibling reports, or the CEO's reasoning.
 11. **Chain mechanics.** The CoS dispatches only the Lead (the top-ranked named model) with the full mandate and the remaining roster. The Lead runs its own delegates to completion and reports up once, at mandate end. No progress updates flow up. Escalation path only: Worker asks Lead, Lead asks CoS, CoS asks CEO.
@@ -542,7 +542,7 @@ Count source: every Lead report carries the line `WORKERS SPAWNED: n`. `agents-i
 
 Source: operator ruling of 2026-10-03, "lets allow tool access to all but grunts and free".
 
-Under `agents-inc run`, astra, sol, and terra now get Codex's shell tool. luna and any raw slug stay tool-free with `features.shell_tool=false`. Free providers (Gemini, Mistral, OpenRouter, Ollama) stay tool-free. Their wrappers and adapters have no shell flag, so nothing changed there. `--no-tools` turns the tool off for any rung. `--write` lets tool commands write in the working directory. It needs the tool on, and network stays off.
+Under `agents-inc run`, astra, sol, and terra now get Codex's shell tool. luna gets it only with `--tools` (D49.1); without it, luna and any raw slug stay tool-free with `features.shell_tool=false`. Free providers (Gemini, Mistral, OpenRouter, Ollama) stay tool-free. Their wrappers and adapters have no shell flag, so nothing changed there. `--no-tools` turns the tool off for any rung. `--write` lets tool commands write in the working directory. It needs the tool on, and network stays off.
 
 Reads outside the repository are denied by a Codex permission profile. Tool commands may read system paths (`:minimal`), `/opt/homebrew`, `/tmp`, and the working directory. Nothing else in the home directory is readable. `~/.ssh`, `~/.config`, `~/.claude`, `~/.codex-bridge`, `~/.local`, `~/.aws`, `~/.gnupg`, and `~/.netrc` are also denied by name. Writes outside the working directory and all network access stay blocked.
 
@@ -575,7 +575,7 @@ The MCP server, not the Lead, polls stored results, only for request IDs it issu
 Accepted exception: Codex may rewrite the symlinked auth.json in place (token refresh), so the isolated home hides the file from shell tools but does not isolate the operator's credential file from Codex itself.
 The file inbox is the fallback transport: the CoS starts `agents-inc dispatch --serve <run-dir>`, the Lead writes requests only to `inbox/`, waits by bounded file polling with `--wait`, and never reads provider homes.
 MVP is the request schema, sequential serve loop, haiku proof, and this ruling.
-Parallel width, cancellation, free-provider routing, and broker resume are later.
+Parallel width, cancellation, and free-provider routing are later. Broker resume landed in D54.
 
 ## D52 — Model pins, drift warnings, operator-decided bumps (2026-10-04, status: accepted)
 
@@ -584,3 +584,19 @@ Codex aliases are pinned to explicit versioned slugs; a pin never follows the ca
 ## D53 — QUICKREF loads by hook on first dispatch (2026-10-04, status: accepted)
 
 The owned `agent-nudge` PreToolUse hook (matchers `Agent|Task`, `Bash`, `mcp__.*__DelegateAgent`) adds skills/workerbee/QUICKREF.md to context on the first dispatch-shaped call, once per session (marker under the state dir `quickref/<session_id>`); plain Bash commands get no output, and the hook still fails open.
+
+## D54 — Delegate turns: resume for both vendors, broker resume tool (2026-10-04, status: accepted)
+
+A finished delegate can take one more turn in its own session, for Claude and for Codex. A Worker that is still running can ask its Lead a question. No other message reaches a running Worker.
+Codex runs now use `--json -o`. The `thread.started` event gives the thread id, which `run.json` records as `session_id`. `agents-inc dispatch --resume <run> --message <text>` runs `claude -p --resume <id>` or `codex exec resume <id>` with the same model, effort, permission profile, and sandbox. The output goes to `stdout.<n>.md` and `verify.<n>.txt`.
+The broker has a `resume` MCP tool. The file inbox takes the same request as `kind: resume`. The request_id must be one this broker issued, and its result must be green or red. The message passes the credential screen and the 64 KiB size limit.
+Cap: 1 resume for a Grunt Worker and 2 for Workhorse and above. Past the cap the broker refuses with `resume-cap`. The new id is `<root>-r<n>`. The turn runs in the Worker's child run directory and writes `<id>.result.json` and `<id>.report.md`, with `resumed_from` and `turn`. A resume adds to `request_counts` and `resumes`. It never adds to `workers_spawned`.
+Every broker Worker gets `worker_mcp.py`, a stdio MCP server with one tool, `ask_lead(question)`. The server never exposes dispatch, status, wait, resume, or answer. Claude Workers get it through `--mcp-config --strict-mcp-config`, and Codex Workers through `-c mcp_servers.agents_inc.*`.
+ask_lead writes the question to the Worker's `ask/` channel. It waits up to 30 minutes for an answer, then returns "no answer from Lead after 30 minutes; decide or stop". The broker relays each question to the Lead after a 16 KiB limit and redaction of every environment value of 8 or more characters. `wait` (and `dispatch` or `resume` over MCP) returns status `needs-lead`, and `--wait` exits 10.
+The Lead replies with the `answer` tool or a `kind: answer` request. The broker refuses unknown ids, unknown questions, questions already answered, credential-seeking text, and oversize text. `run.json` counts `questions`. The broker runs one Worker turn at a time.
+The limit stays: the Lead cannot push a message into a running Worker. The Lead splits work into shorter turns and uses resume between them. The Worker must ask when it is blocked.
+
+## D49.1 — luna may use tools (2026-10-04, status: accepted)
+
+`agents-inc run --model luna --tools` turns on Codex's shell tool for luna under the D49 permission profile. `--write` then works as it does for the other rungs. Without `--tools`, luna stays tool-free. `--lead` still refuses luna, and the broker's Grunt path for luna is unchanged.
+Reason: a read-only luna left no Codex Grunt for code edits once the Claude quota was spent.

@@ -101,5 +101,60 @@ class LiveMcpTest(unittest.TestCase):
             self.assertIn("tool=dispatch ok", log)
 
 
+CODE_WORD = "HERON-7731"
+
+
+@unittest.skipUnless(os.environ.get("AGENTS_INC_LIVE_MCP") == "1", "set AGENTS_INC_LIVE_MCP=1")
+class LiveResumeTest(unittest.TestCase):
+    """D54 live proof: one luna Worker through the broker, then one `resume` turn in the same Codex thread.
+    The code word appears only in the first prompt, so the resume report can hold it only if the thread resumed.
+    Launches two luna turns. Run alone:
+    AGENTS_INC_LIVE_MCP=1 python3 -m unittest tests.test_mcp_broker_live.LiveResumeTest"""
+
+    def test_luna_dispatch_then_resume_keeps_context(self):
+        if not CODEX:
+            self.skipTest("codex CLI not on PATH")
+        from agents_inc.install import mcp_broker
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            cwd = root / "repo"
+            cwd.mkdir()
+            (cwd / "README.md").write_text("resume probe\n")
+            for cmd in (["git", "init", "-q"], ["git", "add", "README.md"],
+                        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
+                subprocess.run(cmd, cwd=cwd, check=True, capture_output=True)
+            run_dir = root / "lead-run"
+            run_dir.mkdir()
+            (run_dir / "run.json").write_text(json.dumps({
+                "schema_version": 1, "run_id": "live-resume", "model": "terra", "effort": "high", "cwd": str(cwd),
+                "chain": ["CoS", "terra"], "worker_models": ["luna"], "permission_mode": "default",
+                "fan_out": {"width": 1, "total": 1, "depth": 1}}))
+            slots = json.loads(EXAMPLE.read_text())
+            slots["TASK"] = (f"Remember this code word for a later question: {CODE_WORD}. Do not repeat it now. "
+                             "Reply with these lines verbatim as plain text:\n" + REPORT.replace(
+                                 "README_PROBE: README_LINE\n", ""))
+            slots["SUCCESS_GATE"] = "The reply holds the report lines."
+            slots["FAILURE_GATE"] = "The reply lacks the report lines, report RED."
+            slots["PRE_EXISTING_CHANGES"] = "none: no writes."
+            broker = mcp_broker.Broker(run_dir)
+            first, is_error, note = broker.tool_dispatch({"model": "luna", "effort": "low", "slots": slots})
+            print("\nFIRST:", json.dumps(first, indent=1)[-2500:], file=sys.stderr)
+            text = json.dumps(first)
+            if QUOTA_RE.search(text) and first.get("status") != "green":
+                self.skipTest("quota exhausted (evidence): " + text[-300:])
+            self.assertIn(first["status"], ("green", "red"), first)
+            rid = first["request_id"]
+            res, is_error, note = broker.tool_resume({
+                "request_id": rid, "timeout": 900,
+                "message": "What was the code word from your first task? Reply with one line: CODE: <the word>."})
+            print("RESUME:", json.dumps(res, indent=1)[-2500:], file=sys.stderr)
+            if QUOTA_RE.search(json.dumps(res)) and res.get("status") != "green":
+                self.skipTest("quota exhausted (evidence): " + json.dumps(res)[-300:])
+            self.assertEqual((res.get("request_id"), res.get("turn"), res.get("resumed_from")), (f"{rid}-r1", 1, rid), res)
+            self.assertIn(CODE_WORD, res["report"])
+            spec = json.loads((run_dir / "run.json").read_text())
+            self.assertEqual((spec["workers_spawned"], spec["resumes"]), (1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

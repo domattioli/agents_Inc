@@ -268,12 +268,31 @@ class DispatchCliTest(unittest.TestCase):
             self.assertIn(f"effort {effort} not allowed for haiku", err)
             self.assertFalse(self.runs.exists())
 
-    def test_resume_codex_exits_2(self):
+    def test_resume_codex_without_thread_exits_2(self):
         self._launch("terra")
         run = self._run_dir()
-        rc, out, _ = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
+        rc, _, err = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
         self.assertEqual(rc, 2)
-        self.assertEqual(out.strip(), "resume unsupported for codex")
+        self.assertIn("no session id recorded", err)
+
+    def test_resume_codex_uses_thread_id(self):
+        self._launch("terra")
+        run = self._run_dir()
+        spec = json.loads((run / "run.json").read_text())
+        spec["session_id"] = "thread-abc"
+        (run / "run.json").write_text(json.dumps(spec))
+        seen = {}
+
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+            seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, {"kind": "codex", "resume": "thread-abc", "prompt": "go on", "effort": "medium"})
+        self.assertTrue((run / "stdout.1.md").is_file())
+        self.assertTrue((run / "verify.1.txt").is_file())
+        self.assertEqual(len(json.loads((run / "run.json").read_text())["resumes"]), 1)
 
     def test_resume_claude_uses_session(self):
         self._launch("haiku")
