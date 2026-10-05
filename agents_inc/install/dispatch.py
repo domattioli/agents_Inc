@@ -183,13 +183,14 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple
     broker_deny = "".join(
         f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}") (require-not (subpath "{_sb(tmpdir)}"))))\n'
         for d in deny_paths)
+    claude_write_denies = " ".join(f'(subpath "{h}/.claude/{n}")' for n in CLAUDE_HOME_READ)
     return ("(version 1)\n(allow default)\n"
             f"(deny file-write* (require-all {keep}))\n"
             + broker_deny +
             f"(deny file-read* file-write* {deny})\n"
             f'(deny file-read* file-write* (regex #"^{re.escape(h)}/\\.claude\\.json"))\n'
             f'(deny file-read* file-write* (require-all (subpath "{h}/.claude") {claude_keep}))\n'
-            f'(deny file-write* {" ".join(f"(subpath \"{h}/.claude/{n}\")" for n in CLAUDE_HOME_READ)})\n')
+            f'(deny file-write* {claude_write_denies})\n')
 
 
 def _child_tmp(run_dir: Path) -> Path:
