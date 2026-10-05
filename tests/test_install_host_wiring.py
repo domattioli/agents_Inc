@@ -90,6 +90,15 @@ class HostWiringTest(unittest.TestCase):
         self.assertEqual(target.read_text(), "original\n")
         self.assertFalse((self.home / ".claude/settings.json").exists())
 
+    def test_claude_host_wires_quickref_matchers_and_strip_removes_them(self):
+        from agents_inc.install.host_wiring import HOSTS, add_hooks, hook_command, strip_hooks
+        claude = next(h for h in HOSTS if h.name == "claude")
+        config = add_hooks({}, self.paths, claude)
+        nudge = hook_command(self.paths, "agent-nudge")
+        matchers = {g["matcher"] for g in config["hooks"]["PreToolUse"] if any(h["command"] == nudge for h in g["hooks"])}
+        self.assertEqual(matchers, {"Agent|Task", "Bash", "mcp__.*__DelegateAgent"})
+        self.assertIsNone(strip_hooks(config, self.paths).get("hooks", {}).get("PreToolUse"))
+
     def test_agent_nudge_fires_once_per_session(self):
         first = hook.agent_nudge(self.paths, {"session_id": "s1"})
         self.assertIn("agents-inc", json.loads(first)["hookSpecificOutput"]["additionalContext"])

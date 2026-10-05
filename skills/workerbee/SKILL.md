@@ -379,6 +379,14 @@ same description and prompt are already in flight from another session. Check
 that session before re-dispatching. For intentional fan-out, add the line
 `agents-inc: fan-out` to each prompt.
 
+**Quickref by hook (D53).** The owned `agent-nudge` `PreToolUse` hook also
+fires on `Bash` and `mcp__.*__DelegateAgent`. On the first dispatch-shaped
+call of a session (`Agent`/`Task`, the DelegateAgent tool, or a `Bash`
+command matching `agents-inc dispatch`, `gask.sh`, `mask.sh`, `oask.sh`,
+`agent.sh`, or `codex exec`), it adds `skills/workerbee/QUICKREF.md` to
+context once. Other `Bash` commands get no output. The full `SKILL.md` is
+still required for non-Claude rungs, prompts from scratch, and disputed gates.
+
 ### Step 3a: Poll every dispatch. Default on.
 
 A dispatch you are not polling is a dispatch that can hang silently. A
