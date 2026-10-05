@@ -22,3 +22,6 @@ prune tests
 global-exclude .gitattributes
 global-exclude .gitignore
 # <<< release-ignore:end
+include LICENSE README.md CHANGELOG.md CITATION.cff
+recursive-include agents_inc *.json
+global-exclude __pycache__ *.py[cod]

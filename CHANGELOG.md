@@ -6,6 +6,23 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-04
+
+### Added
+
+- D47 — `agents-inc dispatch` wraps the dispatch loop.
+- D48 — Fan-out cap for delegation.
+- D49 — Codex tool access by rung.
+- D50 — Codex becomes optional; both-optional deferred to v1.0.
+- D51 — Credential-blind dispatch broker.
+- D52 — Model pins, drift warnings, operator-decided bumps.
+- D53 — QUICKREF loads by hook on first dispatch.
+- D54 — delegate turns (`--resume` for Claude and Codex, broker `resume` tool) and a live `ask_lead` channel from a running Worker to its Lead.
+- D49.1 — luna accepts `--tools` and `--write` like the other Codex aliases.
+- LICENSE: PolyForm Small Business License 1.0.0 plus a licensor-added term that forbids AI/ML training use.
+- First PyPI package, `agents-inc` (import name `agents_inc`), built and published by a tag-triggered release workflow.
+- Citation metadata for 0.2.0 in `CITATION.cff` and `.zenodo.json`.
+
 ## [0.1.0] — 2026-10-01
 
 First tagged release. The project is experimental: the governed path
