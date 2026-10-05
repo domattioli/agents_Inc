@@ -6,12 +6,20 @@ type: software
 authors:
   - family-names: "Mattioli"
     given-names: "Dominik"
-version: 0.1.0
-date-released: 2026-10-01
+    orcid: "TODO-operator"
+version: 0.2.0
+date-released: 2026-10-04
+# TODO-operator: confirm this is the concept DOI, not the 0.1.0 version DOI
 doi: 10.5281/zenodo.22670100
+license: PolyForm-Small-Business-1.0.0
+license-url: "https://github.com/domattioli/agents_Inc/blob/main/LICENSE"
 repository-code: "https://github.com/domattioli/agents_Inc"
 keywords:
   - claude-code
   - multi-agent
   - model-pooling
   - governance
+  - codex
+  - delegation
+  - verification
+  - llm

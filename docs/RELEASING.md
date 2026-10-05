@@ -1,0 +1,134 @@
+# Releasing agents_Inc
+
+This runbook covers release 0.2.0: a GitHub tag and release, a Zenodo archive, and the first PyPI upload of the `agents-inc` package (import name `agents_inc`). Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
+
+## Decisions
+
+### What a pip install gives you
+
+- The wheel ships two packages, `agents_inc` and `workerbees`, plus every `*.json` file under `agents_inc/`.
+- `skills/` and `docs/governance/SCHEMA-3NF.md` are not in the wheel for 0.2.0.
+- A `pip install agents-inc` or `uvx agents-inc` gives the `agents-inc` command and the library.
+- `agents-inc install --source <checkout>` still needs a git checkout, because the installer copies `skills/workerbee`, `skills/codex-bridge`, and the schema doc from that checkout (`agents_inc/install/bundle.py:16` and `:19`).
+
+These lookups resolve paths relative to a source checkout. In a plain pip install they point into `site-packages`, where the files they want do not exist (line numbers from commit ed35b0b):
+
+| Call site | Looks for | Effect in a pip install |
+|---|---|---|
+| `agents_inc/schema.py:6` | `docs/governance/SCHEMA-3NF.md` | The 3NF store raises `FileNotFoundError` on first use |
+| `agents_inc/doctor.py:147` | `skills/codex-bridge/scripts/oask.sh` | The OpenRouter health probe cannot find its wrapper |
+| `agents_inc/install/dispatch.py:19` | `skills/workerbee/scripts/` via `REPO_ROOT` | `agents-inc dispatch` cannot render or lint prompts |
+| `agents_inc/install/models_cmd.py:10` | `routing.json` and `models.json` beside the package | Reads work; `models bump` would rewrite files inside `site-packages` |
+| `agents_inc/bench.py:10` | top-level `fixtures/` | The bench cannot load its fixtures |
+| `agents_inc/install/mcp_broker.py:19` | adds the checkout root to `sys.path` | Harmless; the package is already importable |
+
+The smallest follow-up loader change fixes the schema doc only. It is written here as text and is not applied. It also needs a committed copy of the doc at `agents_inc/data/SCHEMA-3NF.md` and a test that the copy matches `docs/governance/SCHEMA-3NF.md`.
+
+```diff
+--- a/agents_inc/schema.py
++++ b/agents_inc/schema.py
+@@ -1,7 +1,11 @@
+ import re
+ import sqlite3
++from importlib import resources
+ from pathlib import Path
+
+ SCHEMA_VERSION = "2026-09-05.1"
+ SCHEMA_DOC = Path(__file__).parent.parent / "docs" / "governance" / "SCHEMA-3NF.md"
++if not SCHEMA_DOC.is_file():
++    # pip or uvx install: no checkout beside the package, so use the packaged copy.
++    SCHEMA_DOC = Path(str(resources.files("agents_inc") / "data" / "SCHEMA-3NF.md"))
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -53,3 +53,4 @@
+ [tool.setuptools.package-data]
+ "*" = ["*.json"]
+ agents_inc = ["*.json"]
++"agents_inc.data" = ["*.md"]
+```
+
+Shipping `skills/` in the wheel, so that `agents-inc install` works without a checkout, is a larger change and is not planned for 0.2.0.
+
+### License identifiers
+
+The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, followed by a licensor-added term that forbids AI and machine-learning training use. The combined text is therefore not the plain SPDX license, and each file says so in the form it supports:
+
+| File | Value | Why |
+|---|---|---|
+| `pyproject.toml` | `license = "LicenseRef-PolyForm-Small-Business-1.0.0-NoAI-Training"` | PEP 639 needs an SPDX expression. A `LicenseRef-` id marks a custom license, and the plain `PolyForm-Small-Business-1.0.0` id would misstate the terms. No license classifier is used, because PEP 639 replaces them and none fits. |
+| `pyproject.toml` | `license-files = ["LICENSE"]` | The wheel carries the full text under `dist-info/licenses/`. |
+| `CITATION.cff` | `license: PolyForm-Small-Business-1.0.0` plus `license-url` to `LICENSE` | The CFF schema accepts only SPDX ids. The URL points readers to the full terms, including the added term. |
+| `.zenodo.json` | no `license` field; a `notes` field names the added term | No network access was available while preparing this release, so the Zenodo license id for PolyForm Small Business 1.0.0 could not be checked in the Zenodo documentation. Before tagging, check https://help.zenodo.org and https://developers.zenodo.org. Add a `license` field only if a documented id exists. |
+
+### DOI handling
+
+- `CITATION.cff` and the README badge carry DOI `10.5281/zenodo.22670100`.
+- It is not yet confirmed whether that is the concept DOI (all versions) or the 0.1.0 version DOI. `CITATION.cff` has a `TODO-operator` comment above the `doi` line for this.
+- The citation should carry the concept DOI, so it stays valid across versions. Zenodo mints a new version DOI for 0.2.0 when the GitHub release is published.
+
+## Operator steps (before the tag)
+
+1. Turn on the Zenodo GitHub integration for `domattioli/agents_Inc`, and flip the repository switch on in Zenodo's GitHub settings page.
+2. On PyPI, create a pending trusted publisher with these values:
+   - Project name: `agents-inc`
+   - Owner: `domattioli`
+   - Repository: `agents_Inc`
+   - Workflow: `release.yml`
+   - Environment: `pypi`
+3. In the GitHub repository settings, create an environment named `pypi`. Adding a required reviewer gives one manual approval before each upload.
+4. Fill every `TODO-operator` in `CITATION.cff` (the ORCID and the DOI comment) and in `.zenodo.json` (the ORCID). The ORCID in `CITATION.cff` must be a full URL, for example `https://orcid.org/0000-0000-0000-0000`. Remove the DOI comment once the DOI is confirmed. The release workflow refuses to build while any `TODO-operator` remains.
+
+## CoS steps (cutting the release)
+
+1. Pre-tag gate. Both commands must pass:
+   - `grep -c TODO-operator CITATION.cff .zenodo.json` prints 0 for both files.
+   - `python3 -m unittest discover -s tests -p 'test_*.py'` ends with `OK`.
+2. Decide the D54 line in `CHANGELOG.md`: keep it only if D54 merged before the tag, otherwise delete it.
+3. Merge `development` into `main` by pull request.
+4. On `main`, create the tag: `git tag -a v0.2.0 -m "agents_Inc 0.2.0"`.
+5. Push the tag: `git push origin v0.2.0`.
+6. Watch the `release` workflow in the Actions tab. The `publish` job waits for the `pypi` environment approval if a reviewer was set.
+7. Confirm that https://pypi.org/project/agents-inc/0.2.0/ exists and that the GitHub release lists the wheel and the sdist.
+8. Confirm that Zenodo minted a DOI for 0.2.0.
+9. Paste the DOI badge into `README.md` (item 3 of the last section).
+
+## Rollback
+
+- PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.2.1.
+- GitHub: delete the release with `gh release delete v0.2.0`, then delete the tag with `git push origin :refs/tags/v0.2.0` and `git tag -d v0.2.0`.
+- Zenodo: published records cannot be deleted. Leave the 0.2.0 record and publish 0.2.1 with the fix.
+
+## README EDIT PLAN
+
+These edits go in after the release or in the release pull request. Another session owns `README.md` and `docs/`, so this file only lists them. Line numbers come from commit ed35b0b.
+
+1. Install from PyPI. `README.md` line 427, under "### Install and configure providers".
+   - Current: `Run the project from the repository root. Its Python code uses the standard library. No Python package-install step exists.`
+   - Proposed: `Install the command and library with pip install agents-inc, or run it without installing with uvx agents-inc doctor. The package uses only the standard library. agents-inc install --source <checkout> still needs a git checkout, because the installer copies skills/ from it. To work on the project itself, run it from the repository root.`
+
+2. PyPI and license badges. `README.md` line 14, after the DOI badge.
+   - Current: `[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg)](https://doi.org/10.5281/zenodo.22670100)`
+   - Proposed: keep that line, then add:
+     - `[![PyPI](https://img.shields.io/pypi/v/agents-inc)](https://pypi.org/project/agents-inc/)`
+     - `[![License: PolyForm Small Business 1.0.0 + no AI training](https://img.shields.io/badge/license-PolyForm%20Small%20Business%201.0.0%20%2B%20no%20AI%20training-lightgrey)](LICENSE)`
+
+3. DOI badge. `README.md` line 14.
+   - Current: the DOI badge with `10.5281/zenodo.22670100`.
+   - Proposed: once Zenodo confirms it, use the concept DOI in both the badge image and the link, `[![DOI](https://zenodo.org/badge/DOI/<concept DOI>.svg)](https://doi.org/<concept DOI>)`. Do not change the line if `10.5281/zenodo.22670100` is already the concept DOI.
+
+4. Version line. `README.md` line 312, under "## 5. Project status".
+   - Current: `**Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md).`
+   - Proposed: `**Version 0.2.0. Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md). Changes per release are in [CHANGELOG.md](CHANGELOG.md).`
+
+5. License section. `README.md` line 547.
+   - Current: `No LICENSE file exists yet.`
+   - Proposed: a `### License` heading, then: `agents_Inc is licensed under the PolyForm Small Business License 1.0.0 with one licensor-added term that forbids using the software for AI or machine-learning training. The full terms are in [LICENSE](LICENSE). Small businesses, individuals, and noncommercial users may use it under those terms. For commercial use or AI training rights, contact the address in LICENSE.`
+
+6. Citation section. `README.md`, a new `### Citation` block after the proposed License section (after line 547).
+   - Current: none.
+   - Proposed: `If you use agents_Inc in research, please cite it. GitHub's "Cite this repository" button reads CITATION.cff. The DOI for all versions is <concept DOI>.` Replace `<concept DOI>` once Zenodo confirms it.
+
+7. Start-here install line. `docs/START-HERE.md` line 5, under "## Cross-project direct Codex install (pre-MVP)".
+   - Current: ``From a source checkout: `python3 -m agents_inc.install.cli install --source "$PWD"`.``
+   - Proposed: ``From a source checkout: `python3 -m agents_inc.install.cli install --source "$PWD"`. With the PyPI package installed (`pip install agents-inc`), the same step is `agents-inc install --source <path to your checkout>`; it still needs the checkout, because the installer copies `skills/` from it.``
