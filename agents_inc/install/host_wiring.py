@@ -111,6 +111,8 @@ def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": hook_command(paths, f"session-start --host {host.name}"), "timeout": 10}]})
     if host.nudge:
         hooks.setdefault("PreToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
+        for matcher in ("Bash", "mcp__.*__DelegateAgent"):  # quickref on first dispatch-shaped call (hook.py filters Bash)
+            hooks["PreToolUse"].append({"matcher": matcher, "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
         hooks.setdefault("PostToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
         hooks["PostToolUse"].append({"matcher": "mcp__.*__DelegateAgent", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
     if host.prompt_hook:  # timeout above the hook's own 120 s alarm
