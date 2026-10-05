@@ -105,14 +105,19 @@ def strip_hooks(config: dict, paths: InstallPaths, legacy: bool = False) -> dict
         else: del hooks[event]
     return config
 
+BASH_NUDGE_PATTERNS = ("agents-inc", "gask.sh", "mask.sh", "oask.sh", "agent.sh", "codex exec")
+
 def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
     config = strip_hooks(config, paths, legacy=True)
     hooks = config.setdefault("hooks", {})
     hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": hook_command(paths, f"session-start --host {host.name}"), "timeout": 10}]})
     if host.nudge:
         hooks.setdefault("PreToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
-        for matcher in ("Bash", "mcp__.*__DelegateAgent"):  # quickref on first dispatch-shaped call (hook.py filters Bash)
-            hooks["PreToolUse"].append({"matcher": matcher, "hooks": [{"type": "command", "command": hook_command(paths, "agent-nudge"), "timeout": 5}]})
+        nudge = hook_command(paths, "agent-nudge")
+        # Bash: one handler per dispatch-shaped pattern, so ordinary Bash calls spawn no process (hook.py still filters).
+        bash_handlers = [{"type": "command", "if": f"Bash(*{p}*)", "command": nudge, "timeout": 5} for p in BASH_NUDGE_PATTERNS]
+        hooks["PreToolUse"].append({"matcher": "Bash", "hooks": bash_handlers})
+        hooks["PreToolUse"].append({"matcher": "mcp__.*__DelegateAgent", "hooks": [{"type": "command", "command": nudge, "timeout": 5}]})
         hooks.setdefault("PostToolUse", []).append({"matcher": "Agent|Task", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
         hooks["PostToolUse"].append({"matcher": "mcp__.*__DelegateAgent", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
     if host.prompt_hook:  # timeout above the hook's own 120 s alarm
