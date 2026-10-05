@@ -1,9 +1,18 @@
+import argparse
+import contextlib
+import io
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from agents_inc.install import catalog, cli
 from agents_inc.install.doctor import check_install
 from agents_inc.install.paths import InstallPaths
+
+CATALOG_DIR = Path(__file__).parent / "fixtures/catalog"
 
 
 class DoctorTest(unittest.TestCase):
@@ -12,3 +21,74 @@ class DoctorTest(unittest.TestCase):
             report = check_install(InstallPaths.for_home(Path(raw) / "home"))
             self.assertFalse(report.ready)
             self.assertIn("WB_RELEASE_UNTRUSTED", report.codes)
+
+
+class DoctorWarningsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        raw = Path(self.tmp.name)
+        self.source = raw / "source"
+        (self.source / "agents_inc").mkdir(parents=True)
+        (self.source / "agents_inc" / "models.json").write_text("{}")
+        for name in ("workerbee", "codex-bridge"):
+            (self.source / "skills" / name).mkdir(parents=True)
+            (self.source / "skills" / name / "SKILL.md").write_text("x")
+        scripts = self.source / "skills/codex-bridge/scripts"; scripts.mkdir(parents=True)
+        (scripts / "at_route.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+        self.home = raw / "home"; (self.home / ".claude").mkdir(parents=True)
+        self.paths = InstallPaths.for_home(self.home)
+        self.models = catalog.load(CATALOG_DIR / "models_cache.json")
+        args = argparse.Namespace(source=str(self.source), adopt_existing_workerbee=False, without_codex=True, no_host_wiring=False)
+        with mock.patch.object(cli, "_paths", return_value=self.paths):
+            self.assertEqual(cli.install(args), 0)
+
+    def tearDown(self): self.tmp.cleanup()
+
+    def test_model_drift_is_a_warning_not_a_code(self):
+        report = check_install(self.paths, models=self.models)
+        self.assertEqual(report.codes, ())
+        self.assertTrue(report.ready)
+        self.assertIn("MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", report.warnings)
+
+    def test_no_cache_means_no_drift_warning(self):
+        report = check_install(self.paths, catalog_path=self.home / "missing.json")
+        self.assertFalse([w for w in report.warnings if w.startswith("MODEL_DRIFT")])
+
+    def test_cli_text_puts_ready_first_and_warnings_after(self):
+        out = io.StringIO()
+        env = {"CODEX_HOME": str(CATALOG_DIR)}
+        with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out):
+            code = cli.main(["doctor"])
+        lines = out.getvalue().splitlines()
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0], "READY")
+        self.assertIn("WARNING: MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", lines[1:])
+
+    def test_cli_json_shape_unchanged(self):
+        out = io.StringIO()
+        with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, {"CODEX_HOME": str(CATALOG_DIR)}), contextlib.redirect_stdout(out):
+            cli.main(["doctor", "--json"])
+        self.assertEqual(set(json.loads(out.getvalue())), {"ready", "codes", "live", "warnings"})
+
+    def test_install_stale_absent_when_checkout_matches(self):
+        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models).warnings)
+
+    def test_install_stale_present_when_checkout_changed(self):
+        (self.source / "agents_inc" / "extra.txt").write_text("new")
+        report = check_install(self.paths, models=self.models)
+        self.assertIn("INSTALL_STALE", report.warnings)
+        self.assertEqual(report.codes, ())
+
+    def test_install_stale_silent_without_record(self):
+        (self.paths.state / "source-checkout").unlink()
+        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models).warnings)
+
+    def test_stale_check_writes_nothing_under_releases(self):
+        before = sorted(p.name for p in self.paths.releases.iterdir())
+        (self.source / "agents_inc" / "extra.txt").write_text("new")
+        check_install(self.paths, models=self.models)
+        self.assertEqual(sorted(p.name for p in self.paths.releases.iterdir()), before)
+
+
+if __name__ == "__main__":
+    unittest.main()

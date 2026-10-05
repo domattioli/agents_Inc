@@ -10,8 +10,16 @@ from pathlib import Path
 import json
 import sys
 
+def _aliases_from_routing() -> dict[str, str]:
+    """D52: alias -> slug from routing.json (the single source); alias is the text after the slug's last hyphen."""
+    path = Path(__file__).resolve().parents[1] / "routing.json"
+    tiers = json.loads(path.read_text(encoding="utf-8"))["tiers"]
+    slugs = [tier["codex"] for tier in tiers.values() if tier.get("codex")]
+    return {slug.rsplit("-", 1)[-1]: slug for slug in slugs}
+
+
 # Built-in DEFAULTS only; resolution goes through load_model_map().
-MODEL_ALIASES = {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"}
+MODEL_ALIASES = _aliases_from_routing()
 
 
 def _read_map(raw: str) -> dict[str, str]:
