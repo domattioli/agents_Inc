@@ -93,14 +93,14 @@ class McpBrokerTest(unittest.TestCase):
         self.assertEqual(init["protocolVersion"], "2024-11-05")
         self.assertIn("tools", init["capabilities"])
         names = [t["name"] for t in c.call("tools/list")["result"]["tools"]]
-        self.assertEqual(names, ["dispatch", "status", "wait"])
+        self.assertEqual(names, ["dispatch", "status", "wait", "resume", "answer"])
 
     def test_initialize_and_tools_list_need_no_run_json(self):
         (self.run_dir / "run.json").write_text("{broken")
         c = PipeClient(self.run_dir)
         self.addCleanup(c.close)
         self.assertIn("result", c.call("initialize", {}))
-        self.assertEqual(len(c.call("tools/list")["result"]["tools"]), 3)
+        self.assertEqual(len(c.call("tools/list")["result"]["tools"]), 5)
         res = c.call("tools/call", {"name": "status", "arguments": {}})["result"]
         self.assertTrue(res["isError"])
 
@@ -207,7 +207,7 @@ class McpBrokerTest(unittest.TestCase):
         self.assertEqual(data["report"], report)
         listed = c.call("tools/list")  # still in sync: next reply is the matching tools/list
         self.assertEqual(listed["id"], c.n)
-        self.assertEqual(len(listed["result"]["tools"]), 3)
+        self.assertEqual(len(listed["result"]["tools"]), 5)
 
     def test_mcp_refusal_writes_result_file_and_wait_returns_it(self):
         c = self._client()
@@ -303,7 +303,7 @@ class McpBrokerTest(unittest.TestCase):
         replies = [json.loads(ln) for ln in out.splitlines()]
         self.assertEqual(len(replies), 3, err)
         self.assertEqual(replies[1]["error"]["code"], -32700)
-        self.assertEqual(len(replies[2]["result"]["tools"]), 3)
+        self.assertEqual(len(replies[2]["result"]["tools"]), 5)
         self.assertEqual(proc.returncode, 0)
 
     def test_bad_run_dir_exits_usage(self):

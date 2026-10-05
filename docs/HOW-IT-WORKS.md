@@ -4,8 +4,12 @@
 
 Installation stages an allowlisted immutable bundle under
 `~/.local/share/agents-inc/releases`, atomically activates `current`, and links
-both hosts to it. The launcher records absolute runtime paths and invokes Codex
-read-only with inherited environment, web search, and shell tool disabled. HTTP
+both hosts to it. The launcher records absolute runtime paths. Claude Code is
+required and Codex optional (D50). Codex runs with web search off; astra, sol
+and terra get the shell tool, luna only with `--tools`, raw slugs never (D49,
+D49.1). A Codex permission profile denies home-directory reads and network;
+writes need `--write`. `--lead <run-dir>` starts the credential-blind MCP
+broker, and Workers launch with a scrubbed environment (D51). HTTP
 bridge/daemon lifecycle is unsupported by this installer.
 
 - Reader

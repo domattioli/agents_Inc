@@ -54,13 +54,19 @@ class RungArgvTest(unittest.TestCase):
             self.assertIn('shell_environment_policy.inherit="none"', argv)
             self.assertEqual(argv[-1], "-")
 
-    def test_luna_and_unknown_stay_tool_free(self):
-        for model in ("luna", "gpt-5.6-sol"):  # raw slug fails closed
-            with self.assertRaises(ValueError):
-                tools_for(model, tools=True)
+    def test_luna_tools_opt_in_and_unknown_refused(self):
+        # D49.1: luna takes tools only with --tools; default stays tool-free; a raw slug fails closed.
+        self.assertTrue(tools_for("luna", tools=True))
+        argv = _argv("luna", tools=True, write=True)
+        self.assertNotIn("features.shell_tool=false", argv)
+        self.assertIn('"/w"="write"', argv[-2])
+        with self.assertRaisesRegex(ValueError, "allowed only for astra, sol, terra, luna"):
+            tools_for("gpt-5.6-sol", tools=True)
         argv = _argv("luna")
         self.assertIn("features.shell_tool=false", argv)
         self.assertFalse(any("permissions" in a or "set.PATH" in a for a in argv))
+        with self.assertRaisesRegex(ValueError, "--lead is allowed only for astra, sol, terra"):
+            runtime.lead_args("luna", REPO)
 
     def test_no_tools_forces_off(self):
         self.assertFalse(tools_for("astra", no_tools=True, tools=True))

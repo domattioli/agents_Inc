@@ -463,9 +463,12 @@ respawn"; the ceiling rarely binds.
 
 Exceptions, use a fresh delegate: the premise changed (Step 9 wins); an
 adversarial review needs a reviewer without the author's context; the
-backend cannot resume. Resume support: Codex yes (`ask.sh` thread id);
-Mistral partial (`mask.sh` keeps one global conversation, so parallel
-delegates share it; treat as no resume); Gemini and OpenRouter no. When a
+backend cannot resume. Resume support: Claude and Codex yes (`agents-inc
+dispatch --resume <run> --message <text>`; broker `resume` tool, cap 1
+Grunt, 2 above, D54); Mistral partial (`mask.sh` keeps one global
+conversation, so parallel delegates share it; treat as no resume);
+Gemini and OpenRouter no. A running broker Worker can only ask
+(`ask_lead`); the Lead answers, never pushes. When a
 transport reports no token count, the supervisor decides and states it.
 
 Every nested dispatch prompt carries the inheritance line from
