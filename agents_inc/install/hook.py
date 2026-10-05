@@ -17,6 +17,10 @@ PERSONA_DENY_REASON = ("FR-002: Agent/Task descriptions cannot begin with a Code
 AGENT_TOOLS = {"Agent", "Task"}
 FAN_OUT = "agents-inc: fan-out"
 INFLIGHT_TTL_S = 7200  # a spawn that never reports done stops warning after 2 h
+DISPATCH_RE = re.compile(r"agents-inc\s+dispatch|\b(?:gask|mask|oask|agent)\.sh\b|\bcodex\s+exec\b")
+DELEGATE_RE = re.compile(r"\Amcp__.*__DelegateAgent\Z")
+QUICKREF_HEADER = ("agents-inc quickref (skills/workerbee/QUICKREF.md, loaded once per session on first dispatch; full "
+                   "SKILL.md still required for non-Claude rungs, prompts from scratch, or disputed gates):")
 
 def session_start(paths: InstallPaths, host: str) -> str:
     report = check_install(paths)
@@ -45,6 +49,20 @@ def _nudge_text(paths: InstallPaths, payload: dict) -> str:
     if marker.exists(): return ""
     marker.parent.mkdir(parents=True, exist_ok=True); marker.touch()
     return NUDGE
+
+def _is_dispatch(payload: dict) -> bool:
+    tool = str(payload.get("tool_name") or "")
+    if tool in AGENT_TOOLS or DELEGATE_RE.match(tool): return True
+    return tool == "Bash" and bool(DISPATCH_RE.search(str(_tool_input(payload).get("command") or "")))
+
+def _quickref_text(paths: InstallPaths, payload: dict) -> str:
+    """Once per session, on the first dispatch-shaped call; a missing file yields a note, never an error."""
+    marker = paths.state / "quickref" / _session(payload)
+    if marker.exists(): return ""
+    marker.parent.mkdir(parents=True, exist_ok=True); marker.touch()
+    source = paths.current / "skills/workerbee/QUICKREF.md"
+    try: return f"{QUICKREF_HEADER}\n\n{source.read_text(encoding='utf-8')}"
+    except OSError: return f"agents-inc quickref missing: {source} not found; read skills/workerbee/SKILL.md before dispatching."
 
 def agent_nudge(paths: InstallPaths, payload: dict) -> str:
     """Once per session, so a run of subagent spawns is not flooded with the same reminder."""
@@ -125,7 +143,9 @@ def run(paths: InstallPaths, event: str, host: str | None, stdin=sys.stdin) -> i
         if event == "session-start": out = session_start(paths, host or "claude")
         elif event == "agent-nudge":
             payload = _payload(stdin)
-            out = persona_deny(payload) or _context(_nudge_text(paths, payload), duplicate_check(paths, payload))
+            if _is_dispatch(payload):  # the Bash matcher sees every command; only dispatch-shaped calls get context
+                nudge = _nudge_text(paths, payload) if payload.get("tool_name") in AGENT_TOOLS else ""  # NUDGE wording is Agent-only
+                out = persona_deny(payload) or _context(nudge, _quickref_text(paths, payload), duplicate_check(paths, payload))
         elif event == "agent-done": agent_done(paths, _payload(stdin))
         if out: print(out)
     except Exception as exc:  # a broken hook must never break the host session
