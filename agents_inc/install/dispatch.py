@@ -114,10 +114,13 @@ def allow_paths(files_in_scope: str) -> list[str]:
     return out
 
 
-def claude_argv(model: str, permission_mode: str, resume: str | None = None) -> list[str]:
+def claude_argv(model: str, permission_mode: str, resume: str | None = None,
+                effort: str | None = None) -> list[str]:
     exe = shutil.which("claude") or "claude"
     argv = [exe, "-p", "--model", CLAUDE_MODELS[model], "--permission-mode", permission_mode,
             "--output-format", "json"]
+    if effort:
+        argv += ["--effort", effort]
     if resume:
         argv += ["--resume", resume]
     return argv
@@ -200,11 +203,11 @@ def _child_tmp(run_dir: Path) -> Path:
     return tmp.resolve()
 
 
-def launch(kind: str, model: str, effort: str, cwd: Path, prompt: str, run_dir: Path,
+def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
            permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}."""
     if kind == "claude":
-        argv = claude_argv(model, permission_mode, resume)
+        argv = claude_argv(model, permission_mode, resume, effort)
         extra = {}
         if _BROKER_SAFE_WRITES:
             if not sandbox_available():
@@ -376,6 +379,12 @@ def run(args) -> int:
     if kind is None:
         print(f"dispatch: {model} not supported, use agent.sh")
         return EXIT_USAGE
+    # Claude without --effort keeps the claude CLI default (operator settings); record null, not a guess.
+    effort = args.effort or (None if kind == "claude" else "medium")
+    if kind == "claude" and effort is not None and effort not in _efforts_for(model):
+        print(f"dispatch: effort {effort} not allowed for {model}, use one of: {' '.join(_efforts_for(model))}",
+              file=sys.stderr)
+        return EXIT_USAGE
     slots_path = Path(args.slots).resolve()
     try:
         slots = json.loads(slots_path.read_text(encoding="utf-8"))
@@ -390,7 +399,6 @@ def run(args) -> int:
         _wtext(run_dir / "slots.json", slots_path.read_text(encoding="utf-8"))
     else:
         shutil.copyfile(slots_path, run_dir / "slots.json")
-    effort = args.effort or "medium"
     spec = {"run_id": run_id, "kind": kind, "slots": str(slots_path), "model": model, "effort": effort,
             "cwd": str(cwd), "chain": ["CoS", model], "snapshot": str(run_dir / "snapshot.json"),
             "gates": {"tier": args.tier, "allow": allow_paths(str(slots.get("FILES_IN_SCOPE", "")))},
@@ -479,7 +487,7 @@ REQUEST_FILE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.request\.json$
 SLOT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 # Slots a request may never set: the broker owns these through run.json.
 BROKER_OWNED_SLOTS = frozenset({"PERMISSION_MODE"})
-# Efforts for a model without `supported_efforts` in models.json (Claude: `claude -p` ignores effort).
+# Efforts for a model without `supported_efforts` in models.json (Claude: passed as `claude -p --effort`).
 DEFAULT_EFFORTS = ("low", "medium", "high", "max")
 INBOX = "inbox"  # the only Lead-writable path in a run directory (D51)
 LEAD_DONE = "lead.done"
