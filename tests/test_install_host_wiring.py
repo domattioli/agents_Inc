@@ -99,6 +99,17 @@ class HostWiringTest(unittest.TestCase):
         self.assertEqual(matchers, {"Agent|Task", "Bash", "mcp__.*__DelegateAgent"})
         self.assertIsNone(strip_hooks(config, self.paths).get("hooks", {}).get("PreToolUse"))
 
+    def test_bash_nudge_handlers_carry_if_filters(self):
+        from agents_inc.install.host_wiring import HOSTS, add_hooks, hook_command
+        claude = next(h for h in HOSTS if h.name == "claude")
+        config = add_hooks({}, self.paths, claude)
+        nudge = hook_command(self.paths, "agent-nudge")
+        bash = [g for g in config["hooks"]["PreToolUse"] if g["matcher"] == "Bash"]
+        self.assertEqual(len(bash), 1)
+        handlers = [h for h in bash[0]["hooks"] if h["command"] == nudge]
+        self.assertEqual([h["if"] for h in handlers], ["Bash(*agents-inc*)", "Bash(*gask.sh*)", "Bash(*mask.sh*)", "Bash(*oask.sh*)", "Bash(*agent.sh*)", "Bash(*codex exec*)"])
+        self.assertTrue(all(h["timeout"] == 5 for h in handlers))
+
     def test_agent_nudge_fires_once_per_session(self):
         first = hook.agent_nudge(self.paths, {"session_id": "s1"})
         self.assertIn("agents-inc", json.loads(first)["hookSpecificOutput"]["additionalContext"])
