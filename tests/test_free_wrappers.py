@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 from tests._free012 import hermetic  # noqa: F401
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.usefixtures("hermetic")
 
@@ -104,7 +105,7 @@ fi
     monkeypatch.setenv("HOME", str(tmp_path))
     existing_path = os.environ.get("PATH", "")
     monkeypatch.setenv("PATH", f"{shimdir}:{existing_path}")
-    monkeypatch.setenv("PYTHONPATH", "/Users/domattioli/Projects/agents_Inc")
+    monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT))
 
     # Set dummy API keys
     monkeypatch.setenv("OPEN_ROUTER_API_KEY", "x" * 30)
@@ -132,7 +133,7 @@ fi
 @pytest.fixture
 def repo_root():
     """Get repo root path."""
-    return Path("/Users/domattioli/Projects/agents_Inc")
+    return REPO_ROOT
 
 
 # === T006: Wrapper pick_default Integration ===
