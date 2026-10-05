@@ -176,18 +176,16 @@ elif [[ "$kind" == "openrouter" ]]; then
     [[ -n "$model" ]] || model="unknown model"
   fi
 else
-  # Fresh thread per question. The persistent agent.sh thread accumulated
-  # 442k input tokens per call by the 6th question (measured 2026-09-23);
-  # --fresh costs ~26k (Codex system prompt) instead.
-  AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/ask.sh" --fresh --raw \
-    --model "$model" "$question" >"$out_f" 2>"$err_f" </dev/null || rc=$?
-  if [[ "$rc" -eq 0 ]]; then
-    resp="$(jq -r '.response // empty' "$out_f" 2>/dev/null || true)"
-    if [[ -n "$resp" ]]; then
-      printf '%s\n' "$resp" >"$out_f"
-    else
-      rc=1; echo "no .response in ask.sh output" >>"$err_f"
-    fi
+  # Codex aliases: one fresh, tool-free `agents-inc run` per question, prompt on stdin. No bridge daemon
+  # is needed. (The persistent agent.sh thread grew to 442k input tokens per call by the 6th question,
+  # measured 2026-09-23.)
+  run_cwd="${cwd:-}"
+  [[ -z "$run_cwd" && "$CLI" != "1" ]] && run_cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+  [[ -d "$run_cwd" ]] || run_cwd="$PWD"
+  printf '%s' "$question" | AT_ROUTE_ACTIVE=1 run_with_timeout "${AT_ROUTE_AGENTS_INC:-agents-inc}" run \
+    --model "$alias_name" --no-tools --cwd "$run_cwd" >"$out_f" 2>"$err_f" || rc=$?
+  if [[ "$rc" -eq 0 && ! -s "$out_f" ]]; then
+    rc=1; echo "empty reply from agents-inc run" >>"$err_f"
   fi
 fi
 elapsed=$((SECONDS - start))
