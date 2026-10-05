@@ -1,15 +1,18 @@
 """Offline installer verification; live probing is deliberately opt-in."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from .bundle import verify_bundle
+from . import catalog
+from .bundle import stage_bundle, verify_bundle
 from .host_wiring import AT_ROUTE, wiring_problems
 from .paths import InstallPaths
 from .receipt import InstallReceipt
-from .runtime import build_codex_argv
+from .runtime import MODEL_ALIASES, build_codex_argv
 
 @dataclass(frozen=True)
 class DoctorReport:
@@ -30,7 +33,31 @@ def _hook_drift(paths: InstallPaths) -> list[str]:
         return ["WB_HOOK_DRIFT"] if source.read_bytes() != installed.read_bytes() else []
     except OSError: return ["WB_HOOK_DRIFT_UNCHECKED"]
 
-def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run) -> DoctorReport:
+def _model_drift(models: list[dict] | None) -> list[str]:
+    """D52: one warning per Codex alias whose pinned slug has a newer catalog slug."""
+    out = []
+    for alias, slug in MODEL_ALIASES.items():
+        newer = catalog.drift(slug, models)
+        if newer: out.append(f"MODEL_DRIFT {alias}: pinned {slug}, newest {newer}")
+    return out
+
+def _install_stale(paths: InstallPaths, release_hash: str) -> list[str]:
+    """D52: warn when the checkout recorded at install time would now stage to a different release hash.
+    Staging goes to a temp dir so nothing is written under ~/.local; any failure is silent."""
+    record = paths.state / "source-checkout"
+    try:
+        if not record.is_file(): return []
+        source = Path(record.read_text().strip())
+        tmp = Path(tempfile.mkdtemp(prefix="agents-inc-stale-"))
+        try:
+            digest = stage_bundle(source, replace(paths, releases=tmp / "releases")).digest
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    except (OSError, ValueError, RuntimeError): return []
+    return ["INSTALL_STALE"] if digest != release_hash else []
+
+def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run,
+                  models: list[dict] | None = None, catalog_path: Path | None = None) -> DoctorReport:
     codes = []; warnings = []
     try: receipt = InstallReceipt.load(paths.receipt)
     except (OSError, ValueError):
@@ -47,6 +74,11 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     # Skills load lazily; without the always-on block and hooks no session learns to delegate.
     if wiring_problems(paths): codes.append("WB_HOST_UNWIRED")
     warnings.extend(_hook_drift(paths))
+    if models is None:  # the catalog of the home being checked; CODEX_HOME still wins. [] stops a re-read of the default.
+        default = catalog.cache_path({**os.environ, "HOME": str(paths.home)})
+        models = catalog.load(catalog_path or default) or []
+    warnings.extend(_model_drift(models))
+    warnings.extend(_install_stale(paths, receipt.release_hash))
     live = None
     if live_model and not codes and receipt.codex_path is not None:
         models = json.loads((release / "agents_inc/models.json").read_text()).get("models", {})
