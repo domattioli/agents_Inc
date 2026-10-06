@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-PROTOCOL_VERSION = "2024-11-05"
+SUPPORTED_VERSIONS = ("2025-06-18", "2024-11-05")  # newest first; the first answers an unsupported request
 SERVER_INFO = {"name": "agents_inc", "version": "1"}
 QUESTION_MAX_BYTES = 16 * 1024
 FRAME_MAX_BYTES = 64 * 1024
@@ -39,6 +39,7 @@ class Channel:
                  wait_sec: float = WAIT_SEC, poll_sec: float = POLL_SEC):
         self.run_dir, self.rid = run_dir, request_id
         self.sleep, self.clock, self.wait_sec, self.poll_sec = sleep, clock, wait_sec, poll_sec
+        self.version = None
 
     def _next_n(self) -> int:
         n = 1
@@ -116,7 +117,9 @@ def handle(channel: Channel, msg) -> dict | None:
     mid, method = msg["id"], msg["method"]
     if method == "initialize":
         params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
-        version = params.get("protocolVersion") if isinstance(params.get("protocolVersion"), str) else PROTOCOL_VERSION
+        requested_version = params.get("protocolVersion") if isinstance(params.get("protocolVersion"), str) else None
+        version = requested_version if requested_version in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
+        channel.version = version
         return _reply(mid, {"protocolVersion": version, "capabilities": {"tools": {}}, "serverInfo": SERVER_INFO})
     if method == "ping":
         return _reply(mid, {})

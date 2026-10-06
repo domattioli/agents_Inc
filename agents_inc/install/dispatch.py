@@ -3,6 +3,7 @@
 Only the status line goes to stdout. Everything else lands in the run directory.
 """
 from __future__ import annotations
+import base64
 import contextlib
 import importlib.util
 import io
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -251,6 +253,7 @@ ASK_LEAD_NOTE = ("\nLEAD CHANNEL: to ask your Lead a question while you work, ca
 def _ask_channel(run_dir: Path, rid: str) -> dict:
     """Create <child>/ask and refresh the server copy and its Claude config (rewritten on every turn, so a
     Worker edit never survives into the next one). Return the paths the launch needs."""
+    from .runtime import MCP_TOOL_TIMEOUT_SEC
     child = Path(run_dir)
     ask = child / ASK_DIR
     if ask.is_symlink():
@@ -261,7 +264,7 @@ def _ask_channel(run_dir: Path, rid: str) -> dict:
     args = [str(script.resolve()), "--run-dir", str(ask.resolve()), "--request-id", rid]
     config = child / "worker_mcp.json"
     _replace_text(config, json.dumps({"mcpServers": {"agents_inc": {
-        "type": "stdio", "command": sys.executable, "args": args}}}, indent=1) + "\n")
+        "type": "stdio", "command": sys.executable, "args": args, "timeout": MCP_TOOL_TIMEOUT_SEC * 1000}}}, indent=1) + "\n")
     return {"ask": ask.resolve(), "script": script.resolve(), "config": config.resolve(), "rid": rid}
 
 
@@ -1005,10 +1008,17 @@ def _read_small(path: Path, limit: int) -> bytes | None:
 
 def screen_text(text: str, limit: int = QUESTION_MAX_BYTES) -> str:
     """What the Lead may see of Worker text: at most limit bytes, and no environment value of 8 or more
-    characters (each is replaced by [redacted])."""
+    characters, plain or encoded as base64 (standard or URL-safe, with or without padding), percent-encoding or
+    hex (each form is replaced by [redacted]; spec 018 FR-011)."""
     text = text.encode("utf-8")[:limit].decode("utf-8", "ignore")
-    for value in sorted({v for v in os.environ.values() if len(v) >= 8}, key=len, reverse=True):
-        text = text.replace(value, "[redacted]")
+    forms = set()
+    for value in {v for v in os.environ.values() if len(v) >= 8}:
+        raw = value.encode()
+        b64, url = base64.b64encode(raw).decode(), base64.urlsafe_b64encode(raw).decode()
+        forms.update((value, b64, b64.rstrip("="), url, url.rstrip("="), urllib.parse.quote(value, safe=""),
+                      raw.hex(), raw.hex().upper()))
+    for form in sorted(forms, key=len, reverse=True):
+        text = text.replace(form, "[redacted]")
     return text
 
 

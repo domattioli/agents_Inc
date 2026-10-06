@@ -519,3 +519,127 @@ class LeadCodexHomeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokerProtocolHygieneTest(unittest.TestCase):
+    """Spec 018 wave 1 (DomI specs/consumers/agents_Inc/specs/018-mcp-channel-hygiene): FR-001, FR-002, FR-007, FR-009."""
+
+    setUp, _client, _slots = McpBrokerTest.setUp, McpBrokerTest._client, McpBrokerTest._slots
+
+    STATUS_KEYS = ["workers_spawned", "request_counts", "fan_out", "remaining_total", "worker_models"]
+
+    def _init(self, c, asked):
+        params = {} if asked is None else {"protocolVersion": asked}
+        return c.call("initialize", params)["result"]
+
+    def test_initialize_negotiates_version(self):
+        c = self._client()
+        for asked in ("2025-06-18", "2024-11-05"):
+            self.assertEqual(self._init(c, asked)["protocolVersion"], asked)
+        for asked in ("2099-01-01", "2026-07-28", "", 20250618, None):
+            self.assertEqual(self._init(c, asked)["protocolVersion"], "2025-06-18", asked)
+        self.assertEqual(mcp_broker.SUPPORTED_VERSIONS, ("2025-06-18", "2024-11-05"))
+
+    def test_tools_list_has_output_schema_only_at_2025_06_18(self):
+        c = self._client()
+        self._init(c, "2025-06-18")
+        tools = {t["name"]: t for t in c.call("tools/list")["result"]["tools"]}
+        for name, tool in tools.items():
+            schema = tool["outputSchema"]
+            self.assertEqual(schema["type"], "object", name)
+            want = self.STATUS_KEYS if name == "status" else ["status"]
+            self.assertEqual(schema["required"], want, name)
+        self._init(c, "2024-11-05")
+        for tool in c.call("tools/list")["result"]["tools"]:
+            self.assertNotIn("outputSchema", tool)
+
+    def test_structured_result_matches_text(self):
+        c = self._client()
+        self._init(c, "2025-06-18")
+        schemas = {t["name"]: t["outputSchema"] for t in c.call("tools/list")["result"]["tools"]}
+        calls = (("status", {}), ("wait", {"request_id": "never1", "timeout": 0}),
+                 ("answer", {"request_id": "never1", "question_n": 1, "text": "x"}))
+        for name, args in calls:
+            res = c.call("tools/call", {"name": name, "arguments": args})["result"]
+            self.assertEqual(json.loads(res["content"][0]["text"]), res["structuredContent"], name)
+            self._conforms(res["structuredContent"], schemas[name], name)
+        self._init(c, "2024-11-05")
+        for name, args in calls:
+            res = c.call("tools/call", {"name": name, "arguments": args})["result"]
+            self.assertNotIn("structuredContent", res, name)
+            json.loads(res["content"][0]["text"])
+
+    JSON_TYPES = {"string": str, "integer": int, "object": dict, "array": list}
+
+    def _conforms(self, data, schema, name):
+        """MCP 2025-06-18 server/tools: structured results MUST conform to the declared outputSchema."""
+        for key in schema["required"]:
+            self.assertIn(key, data, (name, key))
+        for key, prop in schema["properties"].items():
+            if key in data:
+                self.assertIsInstance(data[key], self.JSON_TYPES[prop["type"]], (name, key))
+
+    def test_structured_content_only_when_it_conforms(self):
+        (self.run_dir / "run.json").write_text("{broken")  # status then fails: its error body lacks the five keys
+        c = PipeClient(self.run_dir)
+        self.addCleanup(c.close)
+        self._init(c, "2025-06-18")
+        res = c.call("tools/call", {"name": "status", "arguments": {}})["result"]
+        self.assertTrue(res["isError"])
+        self.assertNotIn("structuredContent", res)
+        json.loads(res["content"][0]["text"])
+
+    def test_no_tasks_capability_declared(self):
+        c = self._client()
+        for asked in ("2025-06-18", "2024-11-05"):
+            self.assertNotIn("tasks", self._init(c, asked)["capabilities"])
+            for tool in c.call("tools/list")["result"]["tools"]:
+                self.assertNotIn("execution", tool)
+
+    def _refused_ids(self, n):
+        c = self._client(total=n)
+        rids = []
+        for _ in range(n):
+            data, _ = c.tool("dispatch", {"model": "nope", "effort": "low", "slots": self._slots()})
+            rids.append(data["request_id"])
+        c.close()
+        return rids
+
+    def test_issued_ids_survive_restart(self):
+        rids = self._refused_ids(5)
+        self.assertTrue((self.run_dir / "issued").is_dir())
+        broker = mcp_broker.Broker(self.run_dir)  # a new process on the same run dir
+        for rid in rids:
+            data, _, _ = broker.tool_wait({"request_id": rid, "timeout": 0})
+            self.assertEqual((data["status"], data["reason"]), ("refused", "model-not-allowed"), rid)
+        data, _, _ = broker.tool_answer({"request_id": rids[0], "question_n": 1, "text": "x"})
+        self.assertEqual(data["reason"], "unknown-question")  # known id; it simply asked nothing
+        data, _, _ = broker.tool_resume({"request_id": rids[0], "message": "go on"})
+        self.assertEqual(data["reason"], "not-resumable")  # known id; a refused turn cannot resume
+        spec = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(spec["workers_spawned"], 0)
+
+    def test_unrecorded_id_still_refused(self):
+        self._client().close()
+        planted = ["plant1", "plant2", "plant3", "plant4", "plant5"]
+        for rid in planted:
+            (self.run_dir / f"{rid}.result.json").write_text(json.dumps({"status": "green"}))
+        broker = mcp_broker.Broker(self.run_dir)
+        for rid in planted:
+            data, _, _ = broker.tool_wait({"request_id": rid, "timeout": 0})
+            self.assertEqual(data["reason"], "unknown-request", rid)
+        # a link planted as a record, or a linked issued/ dir, never makes an id known
+        issued = self.run_dir / "issued"
+        issued.mkdir(exist_ok=True)
+        target = self.root / "elsewhere"
+        target.write_text("")
+        os.symlink(target, issued / "plant1")
+        self.assertEqual(mcp_broker.Broker(self.run_dir).tool_wait(
+            {"request_id": "plant1", "timeout": 0})[0]["reason"], "unknown-request")
+        shutil.rmtree(issued)
+        other = self.root / "other-issued"
+        other.mkdir()
+        (other / "plant2").write_text("")
+        os.symlink(other, issued)
+        self.assertEqual(mcp_broker.Broker(self.run_dir).tool_wait(
+            {"request_id": "plant2", "timeout": 0})[0]["reason"], "unknown-request")
