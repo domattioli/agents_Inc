@@ -397,3 +397,54 @@ class LaunchChannelTest(BrokerTurnBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkerProtocolHygieneTest(unittest.TestCase):
+    """Spec 018 wave 1 (DomI specs/consumers/agents_Inc/specs/018-mcp-channel-hygiene): FR-001, FR-006, FR-009."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ask = Path(self.tmp.name).resolve() / "ask"
+        self.ask.mkdir()
+        self.ch = worker_mcp.Channel(self.ask, "r1")
+
+    def _init(self, params):
+        msg = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+        if params is not None:
+            msg["params"] = params
+        return worker_mcp.handle(self.ch, msg)["result"]
+
+    def test_initialize_negotiates_version(self):
+        for asked in ("2025-06-18", "2024-11-05"):
+            self.assertEqual(self._init({"protocolVersion": asked})["protocolVersion"], asked)
+        for asked in ("2099-01-01", "2026-07-28", "", 20250618):
+            self.assertEqual(self._init({"protocolVersion": asked})["protocolVersion"], "2025-06-18", asked)
+        self.assertEqual(self._init({})["protocolVersion"], "2025-06-18")
+        self.assertEqual(self._init(None)["protocolVersion"], "2025-06-18")
+        self.assertEqual(worker_mcp.SUPPORTED_VERSIONS, ("2025-06-18", "2024-11-05"))
+
+    def test_no_tasks_capability_declared(self):
+        for asked in ("2025-06-18", "2024-11-05"):
+            init = self._init({"protocolVersion": asked})
+            self.assertNotIn("tasks", init["capabilities"])
+            tools = worker_mcp.handle(self.ch, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
+            for tool in tools:
+                self.assertNotIn("execution", tool)
+                self.assertNotIn("outputSchema", tool)  # Worker tools keep plain text (FR-002)
+
+    def test_worker_server_stays_self_contained(self):
+        source = (REPO / "agents_inc/install/worker_mcp.py").read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"(?m)^\s*(from|import)\s+agents_inc")
+
+    def test_client_timeouts_exceed_server_waits(self):
+        child = Path(self.tmp.name).resolve() / "child"
+        child.mkdir()
+        paths = dispatch._ask_channel(child, "r1")
+        server = json.loads(paths["config"].read_text())["mcpServers"]["agents_inc"]
+        self.assertEqual(server["timeout"], runtime.MCP_TOOL_TIMEOUT_SEC * 1000)
+        self.assertGreaterEqual(runtime.MCP_TOOL_TIMEOUT_SEC - worker_mcp.WAIT_SEC, 60)
+        self.assertGreaterEqual(runtime.MCP_TOOL_TIMEOUT_SEC - mcp_broker.AWAIT_MAX_SEC, 60)
+        self.assertEqual(dispatch.WORKER_ENV_KEYS, ("HOME", "USER", "TERM", "LANG", "TMPDIR"))
+        base = {"HOME": "/h", "USER": "u", "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT": "1", "MCP_TIMEOUT": "1"}
+        self.assertEqual(set(dispatch.worker_env("/usr/bin/claude", base)), {"PATH", "HOME", "USER"})
