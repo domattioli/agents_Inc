@@ -236,3 +236,36 @@ class HomeRepoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EncodedRedactionTest(unittest.TestCase):
+    """Spec 018 wave 1 (DomI specs/consumers/agents_Inc/specs/018-mcp-channel-hygiene): FR-011."""
+
+    def test_screen_text_redacts_encoded_forms(self):
+        import base64
+        import urllib.parse
+        value = "s3cr3t/Value+0123@456"  # 21 characters; / + @ make the percent form differ
+        short = "abc1234"  # under 8 characters: never redacted
+        raw = value.encode()
+        forms = {
+            "plain": value,
+            "base64": base64.b64encode(raw).decode(),
+            "urlsafe": base64.urlsafe_b64encode(raw).decode(),
+            "urlsafe-nopad": base64.urlsafe_b64encode(raw).decode().rstrip("="),
+            "base64-nopad": base64.b64encode(raw).decode().rstrip("="),
+            "percent": urllib.parse.quote(value, safe=""),
+            "hex": raw.hex(),
+            "HEX": raw.hex().upper(),
+        }
+        question = " | ".join(f"{k}={v}" for k, v in forms.items()) + f" | short={short}"
+        with mock.patch.dict(os.environ, {"AGENTS_INC_TEST_VALUE": value, "AGENTS_INC_TEST_SHORT": short}):
+            screened = dispatch.screen_text(question)
+        for kind, form in forms.items():
+            self.assertNotIn(form, screened, kind)
+            self.assertIn(f"{kind}=[redacted]", screened, kind)
+        self.assertIn(f"short={short}", screened)
+
+    def test_screen_text_cuts_before_redacting(self):
+        with mock.patch.dict(os.environ, {"AGENTS_INC_TEST_VALUE": "zz-redact-me-zz"}):
+            screened = dispatch.screen_text("a" * (dispatch.QUESTION_MAX_BYTES + 10) + "zz-redact-me-zz")
+        self.assertEqual(screened, "a" * dispatch.QUESTION_MAX_BYTES)
