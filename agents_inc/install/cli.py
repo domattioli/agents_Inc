@@ -132,6 +132,7 @@ def main(argv=None):
     p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
+    p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump",)); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?")
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
@@ -141,6 +142,9 @@ def main(argv=None):
             if args.wait: return dispatch.wait(args.wait[0], args.wait[1], args.timeout)
             if args.serve: return dispatch.serve(args.serve, args.poll_interval, args.idle_timeout, args.home_repo)
             return dispatch.run(args)
+        if args.command == "models":
+            from . import models_cmd  # works from a source checkout, before the receipt check
+            return models_cmd.run(args.verb, args.alias, args.slug)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
         if args.command == "ledger":
             from .. import host_ledger  # lazy: hook events must not depend on the ledger import
@@ -150,10 +154,8 @@ def main(argv=None):
             if args.json:
                 print(json.dumps(report.as_dict()))
             else:
-                output = " ".join(report.codes or ("READY",))
-                if report.warnings:
-                    output += " " + " ".join(f"[WARNING: {w}]" for w in report.warnings)
-                print(output)
+                print(" ".join(report.codes or ("READY",)))
+                for w in report.warnings: print(f"WARNING: {w}")
             return 0 if report.ready else 1
         if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)

@@ -4,6 +4,30 @@
 set -euo pipefail
 
 [[ "${AT_ROUTE_ACTIVE:-}" == "1" ]] && exit 0
+
+# D52: alias -> Codex slug from routing.json, the single source. The same relative path holds in the
+# checkout (skills/codex-bridge/scripts) and in the release bundle.
+ROUTING_JSON="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/../../../agents_inc/routing.json"
+codex_slug() {
+  python3 -c '
+import json, sys
+for tier in json.load(open(sys.argv[2]))["tiers"].values():
+    slug = tier.get("codex")
+    if slug and slug.rsplit("-", 1)[-1] == sys.argv[1]:
+        print(slug)
+        sys.exit(0)
+sys.exit(1)
+' "$1" "$ROUTING_JSON" 2>/dev/null
+}
+
+# CLI mode: "at_route.sh --resolve <alias>" prints the pinned Codex slug (exit 1, no output, if unknown).
+if [[ "${1:-}" == "--resolve" ]]; then
+  slug="$(codex_slug "${2:-}")" || exit 1
+  [[ -n "$slug" ]] || exit 1
+  printf '%s\n' "$slug"
+  exit 0
+fi
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 # Resolve symlinks (~/.local/bin/@luna -> this file) so agent.sh is found.
@@ -56,10 +80,7 @@ case "$alias_name" in
   sonnet) model="claude-sonnet-5" ;;
   opus)   model="claude-opus-5-5" ;;
   fable)  model="claude-fable-5-1" ;;
-  astra)  model="gpt-6-astra"; kind="codex" ;;
-  sol)    model="gpt-5.6-sol"; kind="codex" ;;
-  terra)  model="gpt-5.6-terra"; kind="codex" ;;
-  luna)   model="gpt-5.6-luna"; kind="codex" ;;
+  astra|sol|terra|luna) model="$(codex_slug "$alias_name")" || exit 0; kind="codex" ;;
   gemini) model="gemini-3.8-flash"; kind="gemini" ;;
   mistral) model="codestral-latest"; kind="mistral" ;;
   openrouter) model="unknown model"; kind="openrouter" ;;
@@ -155,18 +176,16 @@ elif [[ "$kind" == "openrouter" ]]; then
     [[ -n "$model" ]] || model="unknown model"
   fi
 else
-  # Fresh thread per question. The persistent agent.sh thread accumulated
-  # 442k input tokens per call by the 6th question (measured 2026-09-23);
-  # --fresh costs ~26k (Codex system prompt) instead.
-  AT_ROUTE_ACTIVE=1 run_with_timeout "$SCRIPT_DIR/ask.sh" --fresh --raw \
-    --model "$model" "$question" >"$out_f" 2>"$err_f" </dev/null || rc=$?
-  if [[ "$rc" -eq 0 ]]; then
-    resp="$(jq -r '.response // empty' "$out_f" 2>/dev/null || true)"
-    if [[ -n "$resp" ]]; then
-      printf '%s\n' "$resp" >"$out_f"
-    else
-      rc=1; echo "no .response in ask.sh output" >>"$err_f"
-    fi
+  # Codex aliases: one fresh, tool-free `agents-inc run` per question, prompt on stdin. No bridge daemon
+  # is needed. (The persistent agent.sh thread grew to 442k input tokens per call by the 6th question,
+  # measured 2026-09-23.)
+  run_cwd="${cwd:-}"
+  [[ -z "$run_cwd" && "$CLI" != "1" ]] && run_cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+  [[ -d "$run_cwd" ]] || run_cwd="$PWD"
+  printf '%s' "$question" | AT_ROUTE_ACTIVE=1 run_with_timeout "${AT_ROUTE_AGENTS_INC:-agents-inc}" run \
+    --model "$alias_name" --no-tools --cwd "$run_cwd" >"$out_f" 2>"$err_f" || rc=$?
+  if [[ "$rc" -eq 0 && ! -s "$out_f" ]]; then
+    rc=1; echo "empty reply from agents-inc run" >>"$err_f"
   fi
 fi
 elapsed=$((SECONDS - start))

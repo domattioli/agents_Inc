@@ -1,0 +1,13 @@
+{
+  "models": [
+    {"slug": "gpt-6.1-sol", "visibility": "list", "supported_in_api": true, "priority": 9, "supported_reasoning_levels": [{"effort": "low", "description": "x"}, {"effort": "medium", "description": "x"}, {"effort": "high", "description": "x"}, {"effort": "xhigh", "description": "x"}, {"effort": "max", "description": "x"}]},
+    {"slug": "gpt-6-sol", "visibility": "list", "supported_in_api": true, "priority": 1, "supported_reasoning_levels": [{"effort": "low", "description": "x"}, {"effort": "medium", "description": "x"}]},
+    {"slug": "gpt-5.6-sol", "visibility": "list", "supported_in_api": true, "priority": 0, "supported_reasoning_levels": [{"effort": "low", "description": "x"}, {"effort": "medium", "description": "x"}]},
+    {"slug": "gpt-6-astra", "visibility": "list", "supported_in_api": true, "priority": 2, "supported_reasoning_levels": [{"effort": "low", "description": "x"}, {"effort": "medium", "description": "x"}]},
+    {"slug": "gpt-6-luna", "visibility": "list", "supported_in_api": true, "priority": 3, "supported_reasoning_levels": [{"effort": "low", "description": "x"}, {"effort": "medium", "description": "x"}]},
+    {"slug": "gpt-5.6-luna", "visibility": "list", "supported_in_api": true, "priority": 4, "supported_reasoning_levels": [{"effort": "low", "description": "x"}]},
+    {"slug": "gpt-5.6-terra", "visibility": "list", "supported_in_api": true, "priority": 5, "supported_reasoning_levels": [{"effort": "low", "description": "x"}]},
+    {"slug": "gpt-9-terra", "visibility": "hide", "supported_in_api": true, "priority": 0, "supported_reasoning_levels": [{"effort": "low", "description": "x"}]},
+    {"slug": "gpt-7-astra", "visibility": "list", "supported_in_api": false, "priority": 0, "supported_reasoning_levels": [{"effort": "low", "description": "x"}]}
+  ]
+}

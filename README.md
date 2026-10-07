@@ -129,7 +129,7 @@ agents-inc dispatch --slots <json> --model <slug>
 
 See [AGENTS.md](AGENTS.md), [skills/workerbee/QUICKREF.md](skills/workerbee/QUICKREF.md), and [skills/workerbee/SKILL.md](skills/workerbee/SKILL.md) Step 11 for the current list.
 
-For a big lift, the CoS keeps one short run spec in your home repo under `specs/consumers/<repo>/runs/`. A big lift is a run with 2 or more delegates, or a run that edits canon. The run spec records the ask, the resolved chain, the gates, the snapshot path, and the outcome. For this operator the home repo is DomI. Other consumers name theirs in `AGENTS.md`.
+For a big lift, the CoS keeps one short run spec in your home repo under `specs/consumers/<repo>/runs/`. A big lift is a run with 2 or more delegates, or a run that edits canon. The run spec records the ask, the resolved chain, the gates, the snapshot path, and the outcome. For this operator the home repo is DomI. Other consumers name theirs in `AGENTS.md` with a line `agents-inc home repo: <path>`. `agents-inc dispatch` checks `--home-repo` first, then `AGENTS_INC_HOME_REPO`, then that line in the working directory's `AGENTS.md`.
 
 ### Patterns and anti-patterns
 
@@ -437,6 +437,10 @@ bash scripts/install_skills.sh --dry-run  # show what would change without touch
 
 The installer also creates an empty `~/.config/agents-inc/roster.json` that you can edit. To override the built-in `luna`/`terra`/`sol`/`astra` slugs, put model aliases in that file or in `AGENTS_INC_MODEL_MAP` (a JSON object or a file path).
 
+**Model pins and drift (D52).** Each Codex alias is pinned to one versioned slug in `agents_inc/routing.json`. The runtime and the `@alias` router both read the pin from that file. A pin never moves on its own. `agents-inc models` prints one line per alias with the pin, the newest slug of the same family, and `DRIFT` or `ok`. It reads the local Codex catalog at `$CODEX_HOME/models_cache.json` or `~/.codex/models_cache.json` and never the network. Only listed, API-supported slugs count, and the highest version wins. `agents-inc models bump <alias> [slug]` moves one pin to the newest slug, or to the slug you name. It rewrites `routing.json` and adds a `models.json` entry whose effort list comes from the catalog. It refuses with exit 2 when the slug is not in the catalog or is already pinned. It prints the two files it changed and never runs git, so you review and commit the bump yourself.
+
+`agents-inc doctor` prints its status on the first line and one `WARNING:` line for each warning after it. Warnings never change the status, so `READY` still prints. `MODEL_DRIFT <alias>: pinned <slug>, newest <slug>` means the catalog lists a newer slug than the pin. `INSTALL_STALE` means the installed release differs from the checkout it was installed from; run `agents-inc repair --source <checkout>` to update it.
+
 **DelegateAgent MCP server.** `skills/codex-bridge/mcp/codex_agent_mcp.py` exposes a `DelegateAgent` tool. The tool forwards a prompt to Codex. The model list comes from the same configurable map. By default only `luna` is exposed. Add `astra`, `sol`, or `terra` (after you test them live) through `~/.config/agents-inc/roster.json`, `AGENTS_INC_MODEL_MAP`, or `CODEXAGENT_MODEL_MAP`.
 
 Registering the server with Claude is a separate, explicit step. The default run only prints the command: `bash skills/codex-bridge/mcp/install.sh` (add `--apply` to execute it). Check the server without Codex with `bash skills/codex-bridge/mcp/tests/smoke_mcp.sh --offline`.
@@ -492,7 +496,7 @@ skills/codex-bridge/scripts/agent.sh submit --backend codex --wait "your prompt"
 @haiku does the caveman plugin auto-update
 ```
 
-The hook answers before the session model runs, so the session model spends zero tokens. Use `! @haiku ...` to put the answer in context. That form costs one session-model turn. Token comparison of every form: [docs/at-route/AT-ROUTE.md](docs/at-route/AT-ROUTE.md#which-form-saves-the-most-session-model-tokens). Aliases, savings table, and install: [docs/at-route/AT-ROUTE.md](docs/at-route/AT-ROUTE.md).
+The hook answers before the session model runs, so the session model spends zero tokens. Codex aliases (`@luna`, `@terra`, and the rest) run through `agents-inc run --model <alias> --no-tools`, so no bridge needs to be running. Use `! @haiku ...` to put the answer in context. That form costs one session-model turn. Token comparison of every form: [docs/at-route/AT-ROUTE.md](docs/at-route/AT-ROUTE.md#which-form-saves-the-most-session-model-tokens). Aliases, savings table, and install: [docs/at-route/AT-ROUTE.md](docs/at-route/AT-ROUTE.md).
 
 4. Run one governed dispatch from a slots file with `agents-inc dispatch` (D47). The command does five jobs. It renders the prompt and lints it. It snapshots the tree and launches the delegate. It then verifies the report and the snapshot, and prints one status line:
 
@@ -500,9 +504,9 @@ The hook answers before the session model runs, so the session model spends zero
 PYTHONPATH=. python3 -m agents_inc.install.cli dispatch --slots slots.json --model sonnet --dry-run
 ```
 
-The CoS writes the slots file; [skills/workerbee/slots.md](skills/workerbee/slots.md) holds one worked example. Claude models launch through `claude -p`. Codex models launch through the existing Codex runner. Free providers stay on `agent.sh`. No API-key path exists. All other output, including the run record (`run.json`), stays in the run directory. Other flags: `--effort`, `--cwd`, `--tier grunt`, `--run-dir`, `--resume`, `--message`.
+The CoS writes the slots file; [skills/workerbee/slots.md](skills/workerbee/slots.md) holds one worked example. Claude models launch through `claude -p`. Codex models launch through the existing Codex runner. Free providers stay on `agent.sh`. No API-key path exists. All other output, including the run record (`run.json`), stays in the run directory. Other flags: `--effort`, `--cwd`, `--tier grunt`, `--run-dir`, `--resume`, `--message`. Without `--run-dir`, runs go to `<cwd>/.scratch/agents-inc-runs` when git ignores `.scratch`, else to the session scratchpad or TMPDIR. `--resume <run> --message <text>` gives a finished Claude or Codex delegate one more turn in its own session; a broker Lead does the same with the `resume` tool, and a running broker Worker can ask its Lead a question through `ask_lead` (D54).
 
-Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna and the free providers never get one, and `--no-tools` turns it off for any run. A Codex Lead can request Workers without holding provider credentials: the CoS creates a run directory and runs `agents-inc dispatch --serve <run-dir>`; the Lead drops JSON requests into its `inbox/`, waits with `agents-inc dispatch --wait`, and reads back each Worker's result and report (D51). A Codex Lead reaches the dispatch broker through an MCP server started by `agents-inc run --lead <run-dir>`, with no write access to the run directory and an isolated CODEX_HOME; the file inbox remains as the fallback.
+Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that cannot read your home directory, write outside the repository (unless `--write`), or reach the network; luna gets the same shell only with `--tools` (D49.1), the free providers never get one, and `--no-tools` turns it off for any run. A Codex Lead can request Workers without holding provider credentials: the CoS creates a run directory and runs `agents-inc dispatch --serve <run-dir>`; the Lead drops JSON requests into its `inbox/`, waits with `agents-inc dispatch --wait`, and reads back each Worker's result and report (D51). A Codex Lead reaches the dispatch broker through an MCP server started by `agents-inc run --lead <run-dir>`, with no write access to the run directory and an isolated CODEX_HOME; the file inbox remains as the fallback.
 
 ### How it feels to use
 
@@ -537,7 +541,8 @@ Under `agents-inc run`, astra, sol, and terra get a sandboxed Codex shell that c
 - Python 3.10 or later. The test suite also runs on Python 3.14.
 - Bash 3.2 or later. The lifecycle and client scripts support macOS system Bash.
 - Claude Code CLI, authenticated through an Anthropic subscription.
-- Optional: Codex CLI, authenticated through a ChatGPT/OpenAI account. Used when present for Codex rungs and cross-vendor review.
+- jq, used by the hook scripts and the `@alias` router.
+- Optional: Codex CLI, authenticated through a ChatGPT/OpenAI account. Used when present for Codex rungs and cross-vendor review. The Codex aliases (astra, sol, terra, luna) map to slugs that depend on your account; `~/.config/agents-inc/roster.json` overrides the pins in `agents_inc/routing.json`.
 - Optional: Gemini, Mistral, or OpenRouter API credentials. A missing optional key skips that provider. It does not block the system.
 
 No LICENSE file exists yet.

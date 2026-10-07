@@ -2,8 +2,11 @@
 
 Spec 016. Fill each `{{NAME}}` slot for one dispatch, then append
 `skills/workerbee/header.md` (or a contract-reference line naming it, for a
-delegate that can read files). `skills/workerbee/scripts/render_dispatch.py
---slots <json>` does both from a JSON object keyed by slot name; it exits 2
+delegate that can read files). `agents-inc dispatch --slots <json> --model
+<alias> --dry-run` does both from a JSON object keyed by slot name (the
+renderer by hand, from any directory:
+`python3 ~/.claude/skills/workerbee/scripts/render_dispatch.py --slots
+<json>`); it exits 2
 naming any required slot that is missing or empty. NOTES defaults to `none`;
 STYLE may stay empty. The renderer strips the header's markdown title and
 authoring comment and emits header text from the CAVEMAN line.
@@ -80,9 +83,11 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 D51 broker: a Lead sends these slots inline as `slots` in `<run-dir>/inbox/<id>.request.json`
 (write `.tmp`, then rename; keys schema_version, request_id, model, effort, tier, slots; never PERMISSION_MODE or credential paths).
 It waits with `agents-inc dispatch --wait <run-dir> <id> [--timeout 600]` (1 s polls; exit 124 on timeout), reads `<run-dir>/<id>.report.md`; `inbox/lead.done` stops the broker.
-MCP transport (primary): `agents-inc run --model terra --lead <run-dir>` (astra, sol, terra only; CoS writes run.json first) gives the Lead tools `dispatch(model, effort, slots)`, `status()`, `wait(request_id, timeout)`: same slots rules, no inbox, no `tier`.
-The file inbox above is the fallback.
-Tool names are `mcp__agents_inc__dispatch`, `__status`, `__wait` and must be loaded with `tool_search` first (query `agents_inc`).
+MCP transport (primary): `agents-inc run --model terra --lead <run-dir>` (astra, sol, terra only; CoS writes run.json first) gives the Lead tools `dispatch(model, effort, slots)`, `status()`, `wait(request_id, timeout)`, `resume(request_id, message)`, `answer(request_id, question_n, text)`: same slots rules, no inbox, no `tier`.
+The file inbox above is the fallback; it takes `{"kind": "resume", "request_id", "message"}` as `<id>-r<n>.request.json` and `{"kind": "answer", "request_id", "question_n", "text"}` (D54).
+A `needs-lead` result (MCP) or exit 10 from `--wait` carries a Worker question: answer it, then wait again.
+Tool names are `mcp__agents_inc__dispatch`, `__status`, `__wait`, `__resume`, `__answer` and must be loaded with `tool_search` first (query `agents_inc`).
+Without `--run-dir`, runs land in `<cwd>/.scratch/agents-inc-runs` when git ignores `.scratch`, so a delegate under acceptEdits can write its own run files.
 A Lead that answers "tool_search is unavailable" or "cannot access" without calling dispatch hit a Codex-side startup flake: rerun it once.
 A Worker report must be plain text, never wrapped in a code fence: handoff-lint skips fenced text, so the broker marks the result red (`report-noncompliant`).
 

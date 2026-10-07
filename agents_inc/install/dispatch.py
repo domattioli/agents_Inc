@@ -3,6 +3,7 @@
 Only the status line goes to stdout. Everything else lands in the run directory.
 """
 from __future__ import annotations
+import base64
 import contextlib
 import importlib.util
 import io
@@ -13,7 +14,9 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,9 +40,34 @@ def _load(name: str):
     return module
 
 
-def default_parent() -> Path:
+def default_parent(cwd: Path | None = None) -> Path:
+    """<cwd>/.scratch/agents-inc-runs when git ignores <cwd>/.scratch: a delegate under acceptEdits can write
+    there, never outside cwd. Else the session scratchpad, TMPDIR, or /tmp."""
+    if cwd is not None and (Path(cwd) / ".scratch").is_dir():
+        with contextlib.suppress(OSError):
+            res = subprocess.run(["git", "-C", str(cwd), "check-ignore", "-q", ".scratch"], capture_output=True)
+            if res.returncode == 0:
+                return Path(cwd) / ".scratch" / "agents-inc-runs"
     base = os.environ.get("CLAUDE_SCRATCHPAD") or os.environ.get("TMPDIR") or "/tmp"
     return Path(base) / "agents-inc-runs"
+
+
+HOME_REPO_RE = re.compile(r"agents-inc home repo:\s*(\S+)", re.IGNORECASE)
+
+
+def resolve_home_repo(home_repo: str | None, cwd: Path | None) -> str | None:
+    """D46 ruling 8: --home-repo, then AGENTS_INC_HOME_REPO, then the first `agents-inc home repo: <path>` line
+    in <cwd>/AGENTS.md (the path may start with ~)."""
+    if home_repo:
+        return home_repo
+    if os.environ.get("AGENTS_INC_HOME_REPO"):
+        return os.environ["AGENTS_INC_HOME_REPO"]
+    try:
+        text = (Path(cwd) / "AGENTS.md").read_text(encoding="utf-8") if cwd is not None else ""
+    except (OSError, UnicodeDecodeError):
+        return None
+    m = HOME_REPO_RE.search(text)
+    return str(Path(m.group(1).strip("`'\"")).expanduser()) if m else None
 
 
 def new_run_id(model: str) -> str:
@@ -114,10 +142,13 @@ def allow_paths(files_in_scope: str) -> list[str]:
     return out
 
 
-def claude_argv(model: str, permission_mode: str, resume: str | None = None) -> list[str]:
+def claude_argv(model: str, permission_mode: str, resume: str | None = None,
+                effort: str | None = None) -> list[str]:
     exe = shutil.which("claude") or "claude"
     argv = [exe, "-p", "--model", CLAUDE_MODELS[model], "--permission-mode", permission_mode,
             "--output-format", "json"]
+    if effort:
+        argv += ["--effort", effort]
     if resume:
         argv += ["--resume", resume]
     return argv
@@ -168,20 +199,26 @@ def claude_scratch_dir() -> str:
     return f"/private/tmp/claude-{os.getuid()}"
 
 
-def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = ()) -> str:
+def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = (), write_ok: tuple = (),
+                           read_ok: tuple = ()) -> str:
     """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain, and the
     CLAUDE_HOME_ALLOW subpaths; reads and writes denied under the D49 home deny list, ~/.claude.json*,
     and ~/.claude outside CLAUDE_HOME_ALLOW. deny_paths (the broker run directory, the Lead's isolated CODEX_HOME) are
-    unreadable and unwritable except the child's own tmpdir, even when they sit under a granted cwd."""
+    unreadable and unwritable except the child's own tmpdir, even when they sit under a granted cwd.
+    D54: write_ok (the ask_lead channel) is also readable and writable; read_ok files (the ask_lead server and its
+    config) are readable only."""
     h = _sb(home)
     claude_ok = [f"{h}/.claude/{name}" for name in CLAUDE_HOME_ALLOW]
     writable = [_sb(cwd), _sb(tmpdir), claude_scratch_dir(), f"{h}/Library/Keychains", "/dev"] + claude_ok
+    writable += [_sb(w) for w in write_ok]
     keep = " ".join(f'(require-not (subpath "{w}"))' for w in writable)
     deny = " ".join(f'(subpath "{h}/{name}")' for name in CLAUDE_WORKER_DENY)
     claude_read = claude_ok + [f"{h}/.claude/{name}" for name in CLAUDE_HOME_READ]
     claude_keep = " ".join(f'(require-not (subpath "{w}"))' for w in claude_read)
+    holes = "".join(f' (require-not (subpath "{_sb(p)}"))' for p in (tmpdir,) + tuple(write_ok))
+    holes += "".join(f' (require-not (literal "{_sb(p)}"))' for p in read_ok)
     broker_deny = "".join(
-        f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}") (require-not (subpath "{_sb(tmpdir)}"))))\n'
+        f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}"){holes}))\n'
         for d in deny_paths)
     claude_write_denies = " ".join(f'(subpath "{h}/.claude/{n}")' for n in CLAUDE_HOME_READ)
     return ("(version 1)\n(allow default)\n"
@@ -193,28 +230,64 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple
             f'(deny file-write* {claude_write_denies})\n')
 
 
-def _child_tmp(run_dir: Path) -> Path:
+def _child_tmp(run_dir: Path, resume_turn: bool = False) -> Path:
     """Broker-owned per-child temp dir; the Worker's only TMPDIR (never inherited /tmp)."""
     tmp = Path(run_dir) / "tmp"
+    if resume_turn and tmp.is_dir() and not tmp.is_symlink():
+        return tmp.resolve()  # a resumed turn reuses the child's TMPDIR
     tmp.mkdir(mode=0o700)
     return tmp.resolve()
 
 
-def launch(kind: str, model: str, effort: str, cwd: Path, prompt: str, run_dir: Path,
+# D54 ask_lead channel: <child>/ask is the only broker-side path a Worker may write; the server script and its
+# Claude config sit beside it, read-only to the Worker.
+ASK_DIR = "ask"
+WORKER_MCP = Path(__file__).resolve().parent / "worker_mcp.py"
+ASK_TOOL = "mcp__agents_inc__ask_lead"
+ASK_LEAD_NOTE = ("\nLEAD CHANNEL: to ask your Lead a question while you work, call the `ask_lead` tool of the `agents_inc` "
+                 "MCP server (Claude: `mcp__agents_inc__ask_lead`; Codex: first call `tool_search` with query "
+                 "\"agents_inc\", then `mcp__agents_inc__ask_lead`). It waits up to 30 minutes for the answer. "
+                 "The Lead cannot message you otherwise.\n")
+
+
+def _ask_channel(run_dir: Path, rid: str) -> dict:
+    """Create <child>/ask and refresh the server copy and its Claude config (rewritten on every turn, so a
+    Worker edit never survives into the next one). Return the paths the launch needs."""
+    from .runtime import MCP_TOOL_TIMEOUT_SEC
+    child = Path(run_dir)
+    ask = child / ASK_DIR
+    if ask.is_symlink():
+        raise RuntimeError("ask-channel-is-symlink")
+    ask.mkdir(mode=0o700, exist_ok=True)
+    script = child / "worker_mcp.py"
+    _replace_text(script, WORKER_MCP.read_text(encoding="utf-8"))
+    args = [str(script.resolve()), "--run-dir", str(ask.resolve()), "--request-id", rid]
+    config = child / "worker_mcp.json"
+    _replace_text(config, json.dumps({"mcpServers": {"agents_inc": {
+        "type": "stdio", "command": sys.executable, "args": args, "timeout": MCP_TOOL_TIMEOUT_SEC * 1000}}}, indent=1) + "\n")
+    return {"ask": ask.resolve(), "script": script.resolve(), "config": config.resolve(), "rid": rid}
+
+
+def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
            permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None) -> dict:
-    """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}."""
+    """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
+    or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54)."""
+    channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
     if kind == "claude":
-        argv = claude_argv(model, permission_mode, resume)
+        argv = claude_argv(model, permission_mode, resume, effort)
         extra = {}
+        if channel is not None:
+            argv += ["--mcp-config", str(channel["config"]), "--strict-mcp-config", "--allowedTools", ASK_TOOL]
         if _BROKER_SAFE_WRITES:
             if not sandbox_available():
                 raise RuntimeError("no-sandbox-backend")  # never run a broker Claude Worker unconfined
             env = worker_env(argv[0])
-            env["TMPDIR"] = str(_child_tmp(run_dir))
+            env["TMPDIR"] = str(_child_tmp(run_dir, resume_turn=bool(resume)))
             extra["env"] = env
-            profile = Path(run_dir) / "sandbox.sb"
-            _wtext(profile, claude_sandbox_profile(Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"],
-                                                   _BROKER_DENY))
+            profile = Path(run_dir) / ("sandbox.sb" if not resume else f"sandbox.{secrets.token_hex(3)}.sb")
+            _wtext(profile, claude_sandbox_profile(
+                Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"], _BROKER_DENY,
+                (channel["ask"],) if channel else (), (channel["script"], channel["config"]) if channel else ()))
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
         res = subprocess.run(argv, input=prompt, cwd=str(cwd), capture_output=True, text=True, **extra)
         text, session = res.stdout, None
@@ -232,13 +305,17 @@ def launch(kind: str, model: str, effort: str, cwd: Path, prompt: str, run_dir: 
     env = None
     if _BROKER_SAFE_WRITES:
         env = worker_env(str(receipt.codex_path or "/usr/bin/false"))
-        env["TMPDIR"] = str(_child_tmp(run_dir))
+        env["TMPDIR"] = str(_child_tmp(run_dir, resume_turn=bool(resume)))
     out, err = io.StringIO(), io.StringIO()
+    thread: dict = {}
+    worker = (channel["ask"], channel["rid"], channel["script"]) if channel else None
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env,
-                       extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES)
+                       extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES,
+                       thread_out=thread, resume_thread=resume, worker=worker)
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
-            "argv": ["run_codex", model, effort, str(cwd)], "session_id": None}
+            "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
+            "session_id": thread.get("thread_id") or resume}
 
 
 def _kind(model: str) -> str | None:
@@ -254,6 +331,7 @@ def _kind(model: str) -> str | None:
 _BROKER_SAFE_WRITES = False
 _BROKER_DENY: tuple = ()  # D51: broker run directory (+ isolated CODEX_HOME) denied to Claude Workers
 _LAUNCHES = 0  # Worker launches started by run(); the broker charges fan-out from this, not from disk
+_WORKER_ASK: str | None = None  # D54: request id of the broker turn being launched; the Worker's ask_lead files use it
 
 
 def _wtext(path: Path, text: str) -> None:
@@ -263,6 +341,20 @@ def _wtext(path: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
 
 
+def _replace_text(path: Path, text: str) -> None:
+    """Atomic overwrite that never writes through a planted link (the link itself is replaced)."""
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.broker-tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(str(tmp), str(path))
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(str(tmp))
+        raise
+
+
 def _write_json(path: Path, data: dict) -> None:
     if _BROKER_SAFE_WRITES:
         _atomic_write_json(path, data, overwrite=True)
@@ -270,7 +362,7 @@ def _write_json(path: Path, data: dict) -> None:
         path.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
 
 
-def _verify(spec: dict, run_dir: Path, out_path: Path) -> tuple[str, str, int]:
+def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt") -> tuple[str, str, int]:
     missing, log = lint_report(out_path)
     report = "COMPLIANT" if not missing else f"NON-COMPLIANT:{missing}"
     allow = list(spec["gates"]["allow"])
@@ -285,7 +377,7 @@ def _verify(spec: dict, run_dir: Path, out_path: Path) -> tuple[str, str, int]:
     src, slog = snapshot(*args, cwd=cwd)
     changed = [ln[8:] for ln in slog.splitlines() if ln.startswith("CHANGED ")]
     snap = "clean" if src == 0 else ("CHANGED:" + ",".join(changed) if changed else f"ERROR:rc={src}")
-    _wtext(run_dir / "verify.txt", f"report: {report}\n{log}\nsnapshot rc={src}\n{slog}")
+    _wtext(run_dir / name, f"report: {report}\n{log}\nsnapshot rc={src}\n{slog}")
     return report, snap, src
 
 
@@ -340,7 +432,7 @@ def _status(spec: dict, report: str, snap: str, out_path: Path) -> str:
 
 def _mirror(spec: dict, run_dir: Path, home_repo: str | None) -> None:
     """D46: copy run.json and prompt.md to <home>/specs/consumers/<repo>/runs/<run-id>/."""
-    home = home_repo or os.environ.get("AGENTS_INC_HOME_REPO")
+    home = resolve_home_repo(home_repo, Path(spec["cwd"]) if spec.get("cwd") else None)
     if not home:
         print("run spec not mirrored: no home repo", file=sys.stderr)
         return
@@ -351,8 +443,9 @@ def _mirror(spec: dict, run_dir: Path, home_repo: str | None) -> None:
             shutil.copyfile(run_dir / name, dest / name)
 
 
-def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: str | None) -> int:
-    report, snap, vrc = _verify(spec, run_dir, out_path)
+def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: str | None,
+            verify_name: str = "verify.txt") -> int:
+    report, snap, vrc = _verify(spec, run_dir, out_path, verify_name)
     fan_reason = _fan_out_check(spec, out_path)
     green, reason = _outcome(spec, report, vrc, result["rc"], fan_reason)
     spec["outcome"] = "green" if green else "red"
@@ -376,6 +469,12 @@ def run(args) -> int:
     if kind is None:
         print(f"dispatch: {model} not supported, use agent.sh")
         return EXIT_USAGE
+    # Claude without --effort keeps the claude CLI default (operator settings); record null, not a guess.
+    effort = args.effort or (None if kind == "claude" else "medium")
+    if kind == "claude" and effort is not None and effort not in _efforts_for(model):
+        print(f"dispatch: effort {effort} not allowed for {model}, use one of: {' '.join(_efforts_for(model))}",
+              file=sys.stderr)
+        return EXIT_USAGE
     slots_path = Path(args.slots).resolve()
     try:
         slots = json.loads(slots_path.read_text(encoding="utf-8"))
@@ -384,13 +483,12 @@ def run(args) -> int:
         return EXIT_USAGE
     cwd = Path(args.cwd or os.getcwd()).resolve()
     run_id = new_run_id(model)
-    run_dir = Path(args.run_dir or default_parent()).resolve() / run_id
+    run_dir = Path(args.run_dir or default_parent(cwd)).resolve() / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     if _BROKER_SAFE_WRITES:
         _wtext(run_dir / "slots.json", slots_path.read_text(encoding="utf-8"))
     else:
         shutil.copyfile(slots_path, run_dir / "slots.json")
-    effort = args.effort or "medium"
     spec = {"run_id": run_id, "kind": kind, "slots": str(slots_path), "model": model, "effort": effort,
             "cwd": str(cwd), "chain": ["CoS", model], "snapshot": str(run_dir / "snapshot.json"),
             "gates": {"tier": args.tier, "allow": allow_paths(str(slots.get("FILES_IN_SCOPE", "")))},
@@ -415,6 +513,8 @@ def run(args) -> int:
         print(f"dispatch {run_id} {model} snapshot failed rc={src}: {slog.strip()}")
         return EXIT_RED
     prompt = inject_snapshot(prompt, spec["snapshot"])
+    if _BROKER_SAFE_WRITES and _WORKER_ASK:
+        prompt += ASK_LEAD_NOTE
     spec["fan_out"] = parse_fan_out(prompt)
     prompt_path = run_dir / "prompt.md"
     _wtext(prompt_path, prompt)
@@ -439,29 +539,32 @@ def run(args) -> int:
 
 
 def resume(args) -> int:
-    run_dir = Path(args.run_dir or default_parent()).resolve() / args.resume
+    """Send one more turn to a finished delegate: Claude via its session id, Codex via its thread id (D54)."""
+    cwd = Path(getattr(args, "cwd", None) or os.getcwd()).resolve()
+    run_dir = Path(args.run_dir or default_parent(cwd)).resolve() / args.resume
     try:
         spec = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         print(f"dispatch: no run.json for {args.resume}", file=sys.stderr)
         return EXIT_USAGE
-    if spec.get("kind") != "claude" or not spec.get("session_id"):
-        print("resume unsupported for codex")
+    kind = spec.get("kind")
+    if kind not in ("claude", "codex") or not spec.get("session_id"):
+        print(f"dispatch: no session id recorded for {args.resume}; cannot resume", file=sys.stderr)
         return EXIT_USAGE
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
-    result = launch("claude", spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
+    result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
                     spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"])
     n = len(spec.get("resumes", [])) + 1
     out_path = run_dir / f"stdout.{n}.md"
-    out_path.write_text(result["stdout"], encoding="utf-8")
-    (run_dir / f"stderr.{n}.txt").write_text(result["stderr"], encoding="utf-8")
+    _wtext(out_path, result["stdout"])
+    _wtext(run_dir / f"stderr.{n}.txt", result["stderr"])
     spec.setdefault("resumes", []).append({"rc": result["rc"], "out": str(out_path)})
     spec["rc"] = result["rc"]
     if result.get("session_id"):
         spec["session_id"] = result["session_id"]
-    return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None))
+    return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None), f"verify.{n}.txt")
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +582,7 @@ REQUEST_FILE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.request\.json$
 SLOT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 # Slots a request may never set: the broker owns these through run.json.
 BROKER_OWNED_SLOTS = frozenset({"PERMISSION_MODE"})
-# Efforts for a model without `supported_efforts` in models.json (Claude: `claude -p` ignores effort).
+# Efforts for a model without `supported_efforts` in models.json (Claude: passed as `claude -p --effort`).
 DEFAULT_EFFORTS = ("low", "medium", "high", "max")
 INBOX = "inbox"  # the only Lead-writable path in a run directory (D51)
 LEAD_DONE = "lead.done"
@@ -565,6 +668,14 @@ def _load_run_manifest(run_dir: Path) -> dict:
 
 def _validate_request(inbox: Path, name: str, spec: dict) -> tuple[dict | None, str | None]:
     """Return (request, None) or (None, reason) for <inbox>/<name>. Never trusts paths inside the request."""
+    req, reason = _read_request(inbox, name)
+    if req is None:
+        return None, reason
+    return _validate_fields(req, spec, REQUEST_FILE_RE.match(name).group(1))
+
+
+def _read_request(inbox: Path, name: str) -> tuple[object, str | None]:
+    """Return (parsed JSON, None) or (None, reason) for <inbox>/<name>: regular file, size limit, valid JSON."""
     m = REQUEST_FILE_RE.match(name)
     if not m:
         return None, "bad-filename"
@@ -587,10 +698,9 @@ def _validate_request(inbox: Path, name: str, spec: dict) -> tuple[dict | None, 
     if len(raw) > REQUEST_MAX_BYTES:
         return None, "too-large"
     try:
-        req = json.loads(raw.decode("utf-8"))
+        return json.loads(raw.decode("utf-8")), None
     except (UnicodeDecodeError, ValueError):
         return None, "bad-json"
-    return _validate_fields(req, spec, m.group(1))
 
 
 def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, str | None]:
@@ -678,27 +788,16 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
     slots_path = wdir / "slots.json"
     _atomic_write_json(slots_path, slots)
     child_parent = wdir / "runs"
-    spec["workers_spawned"] += 1  # reserved before launch
-    _atomic_write_json(run_dir / "run.json", spec, overwrite=True)  # persist the reservation at once
+    with _SPEC_LOCK:
+        spec["workers_spawned"] += 1  # reserved before launch
+        _atomic_write_json(run_dir / "run.json", spec, overwrite=True)  # persist the reservation at once
     import argparse
     args = argparse.Namespace(slots=str(slots_path), model=req["model"], effort=req["effort"], cwd=spec["cwd"],
                               tier="grunt" if req["tier"] == "grunt" else None, run_dir=str(child_parent),
                               dry_run=False, resume=None, message=None, home_repo=home_repo)
     out = io.StringIO()
-    crash = None
-    global _BROKER_SAFE_WRITES, _BROKER_DENY
     launches_before = _LAUNCHES
-    with contextlib.redirect_stdout(out):
-        try:
-            _BROKER_SAFE_WRITES = True
-            codex_home = os.environ.get("CODEX_HOME")  # read, never logged
-            _BROKER_DENY = (Path(run_dir).resolve(),) + ((Path(codex_home).resolve(),) if codex_home else ())
-            rc = run(args)
-        except Exception as exc:  # one bad request never stops the broker
-            rc, crash = REQ_RED, f"dispatch-exception:{type(exc).__name__}"
-        finally:
-            _BROKER_SAFE_WRITES = False
-            _BROKER_DENY = ()
+    rc, crash = _in_worker_scope(run_dir, rid, out, lambda: run(args))
     child = None
     children = sorted(p for p in child_parent.iterdir() if p.is_dir() and not p.is_symlink()) if child_parent.is_dir() else []
     if children:
@@ -709,7 +808,8 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
             cspec = json.loads((child / "run.json").read_text(encoding="utf-8"))
     launched = _LAUNCHES > launches_before
     if not launched:
-        spec["workers_spawned"] -= 1  # never launched: release the reservation
+        with _SPEC_LOCK:
+            spec["workers_spawned"] -= 1  # never launched: release the reservation
     code = rc if rc in REQ_STATUS else REQ_RED
     return dict(base, status=REQ_STATUS[code], dispatch_exit_code=code,
                 child_run_id=cspec.get("run_id") or (child.name if child else None),
@@ -718,7 +818,18 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
                 _report_path=str(child / "stdout.md") if (child and launched) else None)
 
 
-def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str | None) -> None:
+def _kind_keys(req, keys: frozenset) -> bool:
+    """D54 request kinds: exactly keys, plus an optional schema_version 1."""
+    if not isinstance(req, dict) or set(req) - {"schema_version"} != keys:
+        return False
+    return "schema_version" not in req or (type(req["schema_version"]) is int and req["schema_version"] == 1)
+
+
+def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str | None, issued: set | None = None,
+                busy: bool = False):
+    """Handle one inbox file. Return None when handled, "busy" when a dispatch or resume must wait for the
+    running turn (answers never wait), or a Turn to start."""
+    issued = set() if issued is None else issued
     counts = spec["request_counts"]
     m = REQUEST_FILE_RE.match(name)
     rid = m.group(1) if m else None
@@ -727,22 +838,61 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
     if rid and (rid in seen or os.path.lexists(str(run_dir / f"{rid}.result.json"))):
         counts["duplicate"] += 1
         _set_aside(req_path, f"{name}.duplicate-{secrets.token_hex(3)}")
-        return
-    req, reason = _validate_request(inbox, name, spec)
+        return None
+    raw, reason = _read_request(inbox, name)
+    kind = raw.get("kind") if isinstance(raw, dict) else None
+    extra = {}
+    if kind == "answer":
+        if not _kind_keys(raw, ANSWER_KEYS):
+            reason = "bad-keys"
+        elif raw["request_id"] not in issued:
+            reason = "unknown-request"
+        else:
+            fields, reason = answer_question(run_dir, spec, raw["request_id"], raw["question_n"], raw["text"])
+            if reason is None:
+                seen.add(rid)
+                now = _now()
+                _write_request_result(run_dir, rid, dict(fields, answered_request_id=fields["request_id"],
+                                                         started_at=now, finished_at=now), "answered\n")
+                _set_aside(req_path, f"{name}.processed")
+                return None
+        req = None
+    elif busy and raw is not None:
+        return "busy"
+    elif kind == "resume":
+        req, plan = None, None
+        if not _kind_keys(raw, RESUME_KEYS):
+            reason = "bad-keys"
+        else:
+            plan, reason = plan_resume(run_dir, spec, raw["request_id"], raw["message"], issued.__contains__)
+        if plan is not None and plan["new_rid"] != rid:
+            plan, reason, extra = None, "bad-request-id", {"expected_request_id": plan["new_rid"]}
+        if plan is not None:
+            seen.add(rid)
+            issued.add(rid)
+            with _SPEC_LOCK:
+                spec.setdefault("resume_of", {})[rid] = plan["root"]
+            _set_aside(req_path, f"{name}.processed")
+            message = raw["message"]
+            return Turn(run_dir, rid, lambda: run_resume(run_dir, plan, message, spec, home_repo), spec,
+                        lambda: _atomic_write_json(run_dir / "run.json", spec, overwrite=True), (OSError, BrokerFatal))
+    else:
+        req, reason = (None, reason) if raw is None else _validate_fields(raw, spec, rid)
     if rid:
         seen.add(rid)
     if req is None:
         counts["refused"] += 1
         if rid:
-            _write_request_result(run_dir, rid, {"status": "refused", "dispatch_exit_code": REQ_REFUSED,
-                                                 "child_run_id": None, "outcome": None, "reason": reason,
-                                                 "started_at": _now(), "finished_at": _now()},
+            _write_request_result(run_dir, rid, dict({"status": "refused", "dispatch_exit_code": REQ_REFUSED,
+                                                      "child_run_id": None, "outcome": None, "reason": reason,
+                                                      "started_at": _now(), "finished_at": _now()}, **extra),
                                   f"refused: {reason}\n")
         _set_aside(req_path, f"{name}.rejected")
-        return
-    result, report_text = _run_validated(run_dir, rid, req, spec, home_repo)
-    _write_request_result(run_dir, rid, result, report_text)
+        return None
+    issued.add(rid)
     _set_aside(req_path, f"{name}.processed")
+    return Turn(run_dir, rid, lambda: _run_validated(run_dir, rid, req, spec, home_repo), spec,
+                lambda: _atomic_write_json(run_dir / "run.json", spec, overwrite=True), (OSError, BrokerFatal))
 
 
 def _run_validated(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: str | None) -> tuple[dict, str]:
@@ -757,8 +907,262 @@ def _run_validated(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: st
     if report_src:
         with contextlib.suppress(OSError):
             report_text = Path(report_src).read_text(encoding="utf-8")
-    spec["request_counts"][result["status"]] = spec["request_counts"].get(result["status"], 0) + 1
+    with _SPEC_LOCK:
+        spec["request_counts"][result["status"]] = spec["request_counts"].get(result["status"], 0) + 1
     return result, report_text
+
+
+def _in_worker_scope(run_dir: Path, rid: str, out, fn) -> tuple[int, str | None]:
+    """Run fn (a D47 run or resume) with the broker's Worker confinement on; return (rc, crash reason)."""
+    global _BROKER_SAFE_WRITES, _BROKER_DENY, _WORKER_ASK
+    with contextlib.redirect_stdout(out):
+        try:
+            _BROKER_SAFE_WRITES, _WORKER_ASK = True, rid
+            codex_home = os.environ.get("CODEX_HOME")  # read, never logged
+            _BROKER_DENY = (Path(run_dir).resolve(),) + ((Path(codex_home).resolve(),) if codex_home else ())
+            return fn(), None
+        except Exception as exc:  # one bad request never stops the broker
+            return REQ_RED, f"dispatch-exception:{type(exc).__name__}"
+        finally:
+            _BROKER_SAFE_WRITES, _WORKER_ASK = False, None
+            _BROKER_DENY = ()
+
+
+# ---------------------------------------------------------------------------
+# D54 delegate turns. A Worker turn (dispatch or resume) runs in a thread so the broker keeps serving while the
+# Worker waits on ask_lead: wait returns needs-lead with the screened question, answer writes the reply into the
+# Worker's channel. One turn at a time (the confinement state above is process-wide). A resume continues a
+# finished Worker in its own child run directory under a new id <root>-r<n>; it never charges fan-out.
+# ---------------------------------------------------------------------------
+_SPEC_LOCK = threading.RLock()  # run.json state is shared by the serve loop and the turn thread
+RESUME_KEYS = frozenset({"kind", "request_id", "message"})
+ANSWER_KEYS = frozenset({"kind", "request_id", "question_n", "text"})
+QUESTION_MAX_BYTES = 16 * 1024
+NEEDS_LEAD_EXIT = 10  # `dispatch --wait`: a Worker asked a question; answer it, then wait again
+
+
+def resume_cap(model: str) -> int:
+    """Operator ruling 2026-10-04: 1 resume for a Grunt Worker, 2 for Workhorse and above."""
+    return 1 if _load("dispatch_rungs").MODEL_RUNG.get(model) == "grunt" else 2
+
+
+class Turn:
+    """One Worker turn in a thread. fn returns (result fields, report text); the result is written when it ends.
+    fatal: exception types re-raised to the owner (the file broker stops on them); others become a red result."""
+
+    def __init__(self, run_dir: Path, rid: str, fn, spec: dict, save, fatal: tuple = ()):
+        self.run_dir, self.rid, self.fn, self.spec, self.save, self.fatal = run_dir, rid, fn, spec, save, fatal
+        self.error = None
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> "Turn":
+        self.thread.start()
+        return self
+
+    def alive(self) -> bool:
+        return self.thread.is_alive()
+
+    def _run(self) -> None:
+        try:
+            result, report = self.fn()
+        except self.fatal as exc:
+            self.error = exc
+            return
+        except Exception as exc:
+            reason = f"exception:{type(exc).__name__}"
+            result, report = {"status": "red", "dispatch_exit_code": REQ_RED, "child_run_id": None, "outcome": None,
+                              "reason": reason, "started_at": _now(), "finished_at": _now()}, f"red: {reason}\n"
+        try:
+            with _SPEC_LOCK:
+                _write_request_result(self.run_dir, self.rid, result, report)
+                self.save()
+        except Exception as exc:
+            self.error = exc
+
+
+def _root_of(spec: dict, rid: str) -> str:
+    return spec.get("resume_of", {}).get(rid, rid)
+
+
+def _child_dir(run_dir: Path, root: str) -> Path | None:
+    """The Worker's child run directory under workers/<root>/runs (broker-owned), or None."""
+    runs = Path(run_dir) / "workers" / root / "runs"
+    if not runs.is_dir() or runs.is_symlink():
+        return None
+    children = sorted(p for p in runs.iterdir() if p.is_dir() and not p.is_symlink())
+    return children[-1] if children else None
+
+
+def _read_small(path: Path, limit: int) -> bytes | None:
+    """Read at most limit+1 bytes from a regular file without following a link; None when absent or unreadable."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        import stat as _stat
+        if not _stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            return None
+        return fh.read(limit + 1)
+
+
+def screen_text(text: str, limit: int = QUESTION_MAX_BYTES) -> str:
+    """What the Lead may see of Worker text: at most limit bytes, and no environment value of 8 or more
+    characters, plain or encoded as base64 (standard or URL-safe, with or without padding), percent-encoding or
+    hex (each form is replaced by [redacted]; spec 018 FR-011)."""
+    text = text.encode("utf-8")[:limit].decode("utf-8", "ignore")
+    forms = set()
+    for value in {v for v in os.environ.values() if len(v) >= 8}:
+        raw = value.encode()
+        b64, url = base64.b64encode(raw).decode(), base64.urlsafe_b64encode(raw).decode()
+        forms.update((value, b64, b64.rstrip("="), url, url.rstrip("="), urllib.parse.quote(value, safe=""),
+                      raw.hex(), raw.hex().upper()))
+    for form in sorted(forms, key=len, reverse=True):
+        text = text.replace(form, "[redacted]")
+    return text
+
+
+def relay_question(run_dir: Path, spec: dict, rid: str) -> dict | None:
+    """Find the lowest unanswered question of turn rid in the Worker's channel, copy it screened to
+    <run-dir>/<rid>.question.<n>.json (once; counted in run.json `questions`), and return the needs-lead fields."""
+    child = _child_dir(run_dir, _root_of(spec, rid))
+    if child is None:
+        return None
+    ask, n = child / ASK_DIR, 1
+    while os.path.lexists(str(ask / f"{rid}.question.{n}.json")):
+        if not os.path.lexists(str(Path(run_dir) / f"{rid}.answer.{n}.json")):
+            break
+        n += 1
+    else:
+        return None
+    lead_copy = Path(run_dir) / f"{rid}.question.{n}.json"
+    if not lead_copy.is_file():
+        raw = _read_small(ask / f"{rid}.question.{n}.json", QUESTION_MAX_BYTES * 2)
+        try:
+            question = json.loads(raw.decode("utf-8"))["question"] if raw else None
+        except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+            question = None
+        text = screen_text(question) if isinstance(question, str) else "(question unreadable; answer or tell the Worker to stop)"
+        with _SPEC_LOCK:
+            try:
+                _atomic_write_json(lead_copy, {"request_id": rid, "question_n": n, "question": text, "relayed_at": _now()})
+            except FileExistsError:
+                pass
+            else:
+                spec["questions"] = spec.get("questions", 0) + 1
+    data = json.loads(lead_copy.read_text(encoding="utf-8"))
+    return {"status": "needs-lead", "request_id": rid, "question_n": n, "question": data.get("question", "")}
+
+
+def pending_question(run_dir: Path, rid: str) -> dict | None:
+    """The lowest relayed question of rid with no answer yet, as needs-lead fields; None when there is none."""
+    n = 1
+    while (Path(run_dir) / f"{rid}.question.{n}.json").is_file():
+        if not os.path.lexists(str(Path(run_dir) / f"{rid}.answer.{n}.json")):
+            raw = _read_small(Path(run_dir) / f"{rid}.question.{n}.json", QUESTION_MAX_BYTES * 2)
+            try:
+                question = json.loads(raw.decode("utf-8")).get("question", "") if raw else ""
+            except (ValueError, AttributeError, UnicodeDecodeError):
+                question = ""
+            return {"status": "needs-lead", "request_id": rid, "question_n": n, "question": question}
+        n += 1
+    return None
+
+
+def answer_question(run_dir: Path, spec: dict, rid, n, text) -> tuple[dict, str | None]:
+    """Write the Lead's answer into the Worker's channel. Return (fields, refusal reason or None)."""
+    if not isinstance(rid, str) or not REQUEST_ID_RE.match(rid):
+        return {}, "bad-request-id"
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1 or not isinstance(text, str):
+        return {}, "bad-arguments"
+    if len(text.encode("utf-8")) > REQUEST_MAX_BYTES:
+        return {}, "oversize"
+    if _reject_credential_seeking({"TEXT": text}):
+        return {}, "credential-seeking"
+    if not (Path(run_dir) / f"{rid}.question.{n}.json").is_file():
+        return {}, "unknown-question"
+    child = _child_dir(run_dir, _root_of(spec, rid))
+    if child is None:
+        return {}, "unknown-question"
+    now = _now()
+    try:
+        _write_new(Path(run_dir) / f"{rid}.answer.{n}.json", json.dumps({"request_id": rid, "question_n": n,
+                                                                          "answered_at": now}) + "\n")
+    except FileExistsError:
+        return {}, "already-answered"
+    try:
+        _write_new(child / ASK_DIR / f"{rid}.answer.{n}.json", json.dumps({"answer": text, "answered_at": now}) + "\n")
+    except OSError:
+        return {}, "already-answered"  # a planted file or link in the channel: the Worker reads nothing new
+    return {"status": "answered", "request_id": rid, "question_n": n}, None
+
+
+def plan_resume(run_dir: Path, spec: dict, rid, message, known) -> tuple[dict | None, str | None]:
+    """Check a resume request. known(rid) says whether this broker issued rid. Return (plan, None) with the
+    root id, new id, turn number, and child directory, or (None, reason)."""
+    if not isinstance(rid, str) or not REQUEST_ID_RE.match(rid):
+        return None, "bad-request-id"
+    if not isinstance(message, str) or not message.strip():
+        return None, "bad-message"
+    if len(json.dumps({"request_id": rid, "message": message}).encode("utf-8")) > REQUEST_MAX_BYTES:
+        return None, "oversize"
+    if _reject_credential_seeking({"MESSAGE": message}):
+        return None, "credential-seeking"
+    if not known(rid):
+        return None, "unknown-request"
+    result_path = Path(run_dir) / f"{rid}.result.json"
+    if not result_path.is_file() or result_path.is_symlink():
+        return None, "request-running"
+    try:
+        status = json.loads(result_path.read_text(encoding="utf-8")).get("status")
+    except (OSError, ValueError):
+        return None, "unknown-request"
+    if status not in ("green", "red"):
+        return None, "not-resumable"
+    root = _root_of(spec, rid)
+    child = _child_dir(run_dir, root)
+    try:
+        cspec = json.loads((child / "run.json").read_text(encoding="utf-8")) if child else None
+    except (OSError, ValueError):
+        cspec = None
+    if not cspec or not cspec.get("session_id"):
+        return None, "no-session"
+    turn = len(cspec.get("resumes", [])) + 1
+    if turn > resume_cap(cspec.get("model", "")):
+        return None, "resume-cap"
+    new_rid = f"{root}-r{turn}"
+    if not REQUEST_ID_RE.match(new_rid):
+        return None, "bad-request-id"
+    return {"root": root, "new_rid": new_rid, "turn": turn, "child": child, "parent": rid}, None
+
+
+def run_resume(run_dir: Path, plan: dict, message: str, spec: dict, home_repo: str | None) -> tuple[dict, str]:
+    """Run one resume turn on the Worker's child run directory; return (result fields, report text)."""
+    import argparse
+    child = plan["child"]
+    args = argparse.Namespace(resume=child.name, message=message, run_dir=str(child.parent), cwd=spec["cwd"],
+                              home_repo=home_repo)
+    started, out = _now(), io.StringIO()
+    rc, crash = _in_worker_scope(run_dir, plan["new_rid"], out, lambda: resume(args))
+    cspec = {}
+    with contextlib.suppress(OSError, ValueError):
+        cspec = json.loads((child / "run.json").read_text(encoding="utf-8"))
+    turns = cspec.get("resumes") or []
+    ran = len(turns) >= plan["turn"]
+    code = rc if rc in REQ_STATUS else REQ_RED
+    result = {"status": REQ_STATUS[code], "dispatch_exit_code": code, "child_run_id": child.name,
+              "outcome": cspec.get("outcome") if ran else None,
+              "reason": crash or (cspec.get("reason") if ran else None) or (None if code == REQ_GREEN else "dispatch-rc"),
+              "started_at": started, "finished_at": _now(), "status_line": out.getvalue().strip(),
+              "resumed_from": plan["root"], "turn": plan["turn"]}
+    report = f"{result['status']}: {result.get('reason') or 'no worker report'}\n"
+    if ran:
+        with contextlib.suppress(OSError):
+            report = (child / f"stdout.{plan['turn']}.md").read_text(encoding="utf-8")
+    with _SPEC_LOCK:
+        spec["request_counts"][result["status"]] = spec["request_counts"].get(result["status"], 0) + 1
+        spec["resumes"] = spec.get("resumes", 0) + 1
+    return result, report
 
 
 def _set_aside(path: Path, new_name: str) -> None:
@@ -775,6 +1179,11 @@ def init_broker_state(spec: dict, poll_interval: float | None = None, idle_timeo
     counts = spec.get("request_counts")
     spec["request_counts"] = {k: (counts or {}).get(k, 0) if isinstance(counts, dict) else 0
                               for k in ("green", "red", "usage-error", "refused", "duplicate")}
+    for key in ("resumes", "questions"):  # D54 counters
+        if type(spec.get(key)) is not int or spec[key] < 0:
+            spec[key] = 0
+    if not isinstance(spec.get("resume_of"), dict):
+        spec["resume_of"] = {}
     spec["broker"] = {"pid": os.getpid(), "started_at": _now(), "status": "serving", "transport": transport,
                       "poll_interval": poll_interval, "idle_timeout": idle_timeout}
 
@@ -801,16 +1210,43 @@ def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float =
         return BROKER_USAGE
     init_broker_state(spec, poll_interval, idle_timeout)
     seen: set = set()
+    issued: set = set()
+    turn = None
+
+    def save():
+        with _SPEC_LOCK:
+            _atomic_write_json(root / "run.json", spec, overwrite=True)
     try:
-        _atomic_write_json(root / "run.json", spec, overwrite=True)
+        save()
         last = clock()
         while True:
-            names = sorted(n for n in os.listdir(str(inbox)) if REQUEST_FILE_RE.match(n))
-            for name in names:
-                _handle_one(root, name, spec, seen, home_repo)
-                _atomic_write_json(root / "run.json", spec, overwrite=True)
+            if turn is not None and not turn.alive():
+                turn.thread.join()
+                if turn.error is not None:
+                    raise turn.error if isinstance(turn.error, (OSError, BrokerFatal)) else BrokerFatal(str(turn.error))
+                turn = None
+                save()
                 last = clock()
-            if names:
+            if turn is not None:  # a Worker is running: relay its question, never stop the broker under it
+                with contextlib.suppress(ValueError):
+                    if relay_question(root, spec, turn.rid) is not None:
+                        save()
+                last = clock()
+            names = sorted(n for n in os.listdir(str(inbox)) if REQUEST_FILE_RE.match(n))
+            progressed = False
+            for name in names:
+                got = _handle_one(root, name, spec, seen, home_repo, issued, busy=turn is not None)
+                if got == "busy":
+                    continue
+                progressed = True
+                if isinstance(got, Turn):
+                    turn = got.start()
+                save()
+                last = clock()
+            if progressed:
+                continue
+            if turn is not None:
+                turn.thread.join(poll_interval)  # wakes early when the turn ends
                 continue
             if os.path.lexists(str(inbox / LEAD_DONE)):
                 stop = "lead-done"
@@ -830,7 +1266,8 @@ def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float =
 def wait(run_dir: str | Path, request_id: str, timeout: float = 600.0, sleep=time.sleep,
          clock=time.monotonic) -> int:
     """Lead waiter: poll once per second for <run-dir>/<id>.result.json.
-    Exit 0 and print the path when found, 124 on timeout, 2 on a bad request id or timeout."""
+    Exit 0 and print the path when found, 10 and print the needs-lead JSON when the Worker asked a question the
+    Lead has not answered (D54), 124 on timeout, 2 on a bad request id or timeout."""
     if not isinstance(request_id, str) or not REQUEST_ID_RE.match(request_id) or timeout <= 0:
         print("dispatch --wait: bad request id or timeout", file=sys.stderr)
         return BROKER_USAGE
@@ -840,6 +1277,10 @@ def wait(run_dir: str | Path, request_id: str, timeout: float = 600.0, sleep=tim
         if path.is_file():
             print(path)
             return 0
+        asked = pending_question(Path(run_dir), request_id)
+        if asked is not None:
+            print(json.dumps(asked))
+            return NEEDS_LEAD_EXIT
         if clock() - start >= timeout:
             print(f"dispatch --wait: no result for {request_id} after {timeout:g} s", file=sys.stderr)
             return 124
