@@ -63,9 +63,10 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 
 ### DOI handling
 
-- `CITATION.cff` and the README badge carry DOI `10.5281/zenodo.22670100`.
-- It is not yet confirmed whether that is the concept DOI (all versions) or the 0.1.0 version DOI. `CITATION.cff` has a `TODO-operator` comment above the `doi` line for this.
-- The citation should carry the concept DOI, so it stays valid across versions. Zenodo mints a new version DOI for 0.2.0 when the GitHub release is published.
+- `10.5281/zenodo.22670100` is the concept DOI ("Cite all versions"). The operator confirmed it on 2026-10-07 from Zenodo record 23092581, the v0.1.0 version record.
+- Every release keeps that DOI in `CITATION.cff` and the README badge. Zenodo's GitHub integration adds each new GitHub release as a new version under the same concept, with its own version DOI. Version DOIs never go in the citation.
+- `.zenodo.json` carries no `doi` or concept field, because one would file the release outside the concept record.
+- `tests/test_release_metadata.py` enforces all three rules. The release workflow runs the suite before it builds, so a changed DOI stops the release.
 
 ## Operator steps (before the tag)
 
@@ -77,7 +78,7 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
    - Workflow: `release.yml`
    - Environment: `pypi`
 3. In the GitHub repository settings, create an environment named `pypi`. Adding a required reviewer gives one manual approval before each upload.
-4. Fill every `TODO-operator` in `CITATION.cff` (the ORCID and the DOI comment) and in `.zenodo.json` (the ORCID). The ORCID in `CITATION.cff` must be a full URL, for example `https://orcid.org/0000-0000-0000-0000`. Remove the DOI comment once the DOI is confirmed. The release workflow refuses to build while any `TODO-operator` remains.
+4. Fill every `TODO-operator` in `CITATION.cff` and `.zenodo.json`. The ORCID in `CITATION.cff` must be a full URL, for example `https://orcid.org/0000-0000-0000-0000`. The release workflow refuses to build while any `TODO-operator` remains. Done for 0.2.0 on 2026-10-07 (ORCID 0000-0002-7327-6337).
 
 ## CoS steps (cutting the release)
 
