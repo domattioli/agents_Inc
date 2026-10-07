@@ -19,6 +19,7 @@ All notable changes to this project are recorded here. The format follows
 - D53 — QUICKREF loads by hook on first dispatch.
 - D54 — delegate turns (`--resume` for Claude and Codex, broker `resume` tool) and a live `ask_lead` channel from a running Worker to its Lead.
 - D49.1 — luna accepts `--tools` and `--write` like the other Codex aliases.
+- Spec 018 wave 1 — MCP protocol hygiene for the broker and Worker servers: version negotiation (2025-06-18, 2024-11-05), `outputSchema` and `structuredContent` on broker tools, an explicit MCP timeout for Claude Workers, broker request ids that survive a restart, and redaction of encoded secret values.
 - LICENSE: PolyForm Small Business License 1.0.0 plus a licensor-added term that forbids AI/ML training use.
 - First PyPI package, `agents-inc` (import name `agents_inc`), built and published by a tag-triggered release workflow.
 - Citation metadata for 0.2.0 in `CITATION.cff` and `.zenodo.json`.
