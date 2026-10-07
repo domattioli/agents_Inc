@@ -87,7 +87,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(first.removeprefix("# "), POLYFORM_TITLE)
         self.assertEqual(text.count("NO AI/ML TRAINING"), 1)
         self.assertGreater(text.index("NO AI/ML TRAINING"), text.index("## Definitions"))
-        self.assertRegex(text, r"(?m)^For commercial use, or for AI/ML training rights, contact: \S+@\S+$")
+        # Operator ruling 2026-10-07: the licensing contact is the GitHub profile, never an email address.
+        self.assertRegex(text, r"(?m)^For commercial use, or for AI/ML training rights, contact: https://github\.com/domattioli$")
+        self.assertNotRegex(text, r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
     def test_package_data_covers_every_json(self):
         package_data = self.pyproject["tool"]["setuptools"]["package-data"]
