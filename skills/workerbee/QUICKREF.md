@@ -45,7 +45,7 @@ MUST lines that are easy to drop:
 - Dispatch work that touches an agents_Inc issue: fetch SKILL.md Step 11 first.
 - `poll.sh` reports state, never content. Do not pipe a delegate's log into context.
 
-Lint (mandatory, D41): `python3 skills/workerbee/scripts/check_dispatch_prompt.py <prompt_file> [--with-handoff-lint]`. Save the prompt to a file first. Reports: same script with `--profile report`, which checks report elements. Render prompts with `render_dispatch.py --slots <json>`; worked example in `slots.md`.
+Lint (mandatory, D41): `agents-inc dispatch` lints every prompt it renders; by hand, from any directory: `python3 ~/.claude/skills/workerbee/scripts/check_dispatch_prompt.py <prompt_file> [--with-handoff-lint]`. Save the prompt to a file first. Reports: same script with `--profile report`, which checks report elements. Render prompts with `agents-inc dispatch --slots <json> --model <alias> --dry-run` (or `~/.claude/skills/workerbee/scripts/render_dispatch.py --slots <json>`); worked example in `slots.md`.
 
 ## Hard stops
 

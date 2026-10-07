@@ -379,6 +379,14 @@ same description and prompt are already in flight from another session. Check
 that session before re-dispatching. For intentional fan-out, add the line
 `agents-inc: fan-out` to each prompt.
 
+**Quickref by hook (D53).** The owned `agent-nudge` `PreToolUse` hook also
+fires on `Bash` and `mcp__.*__DelegateAgent`. On the first dispatch-shaped
+call of a session (`Agent`/`Task`, the DelegateAgent tool, or a `Bash`
+command matching `agents-inc dispatch`, `gask.sh`, `mask.sh`, `oask.sh`,
+`agent.sh`, or `codex exec`), it adds `skills/workerbee/QUICKREF.md` to
+context once. Other `Bash` commands get no output. The full `SKILL.md` is
+still required for non-Claude rungs, prompts from scratch, and disputed gates.
+
 ### Step 3a: Poll every dispatch. Default on.
 
 A dispatch you are not polling is a dispatch that can hang silently. A
@@ -455,9 +463,12 @@ respawn"; the ceiling rarely binds.
 
 Exceptions, use a fresh delegate: the premise changed (Step 9 wins); an
 adversarial review needs a reviewer without the author's context; the
-backend cannot resume. Resume support: Codex yes (`ask.sh` thread id);
-Mistral partial (`mask.sh` keeps one global conversation, so parallel
-delegates share it; treat as no resume); Gemini and OpenRouter no. When a
+backend cannot resume. Resume support: Claude and Codex yes (`agents-inc
+dispatch --resume <run> --message <text>`; broker `resume` tool, cap 1
+Grunt, 2 above, D54); Mistral partial (`mask.sh` keeps one global
+conversation, so parallel delegates share it; treat as no resume);
+Gemini and OpenRouter no. A running broker Worker can only ask
+(`ask_lead`); the Lead answers, never pushes. When a
 transport reports no token count, the supervisor decides and states it.
 
 Every nested dispatch prompt carries the inheritance line from

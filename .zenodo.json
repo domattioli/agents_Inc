@@ -1,17 +1,30 @@
 {
   "title": "agents_Inc",
   "upload_type": "software",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Governed multi-agent dispatch and verification layer that pools Claude, Codex, Gemini, Mistral, and OpenRouter capacity.",
   "creators": [
     {
       "name": "Mattioli, Dominik",
       "orcid": "0000-0002-7327-6337"
     }
   ],
+  "notes": "Licensed under the PolyForm Small Business License 1.0.0 plus a licensor-added term that forbids AI/ML training use. The combined text is in the LICENSE file, and the licensor-added no-AI-training term in that file applies.",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/domattioli/agents_Inc",
+      "relation": "isSupplementTo",
+      "resource_type": "software"
+    }
+  ],
   "keywords": [
     "claude-code",
     "multi-agent",
     "model-pooling",
-    "governance"
+    "governance",
+    "codex",
+    "delegation",
+    "verification",
+    "llm"
   ]
 }

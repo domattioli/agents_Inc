@@ -4,6 +4,8 @@ Started by `agents-inc run --lead <run-dir>` as a child of the Codex process:
     python3 mcp_broker.py --run-dir <dir>
 It shares validation and processing with the file broker (dispatch._validate_fields, _run_validated).
 The run directory is broker-owned: no inbox, the Lead needs no write access. Standard library only.
+D54: a Worker turn runs in a thread, so dispatch, resume and wait return early with status needs-lead when the
+Worker calls ask_lead; the Lead replies with answer and then calls wait again. One Worker turn at a time.
 """
 from __future__ import annotations
 import argparse
@@ -12,6 +14,7 @@ import json
 import math
 import os
 import secrets
+import stat
 import sys
 import time
 from pathlib import Path
@@ -19,21 +22,43 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from agents_inc.install import dispatch as D  # noqa: E402
 
-PROTOCOL_VERSION = "2024-11-05"
+SUPPORTED_VERSIONS = ("2025-06-18", "2024-11-05")  # newest first; the first is the fallback
+STRUCTURED_VERSION = "2025-06-18"
 SERVER_INFO = {"name": "agents_inc", "version": "1"}
 LOG_NAME = "mcp.log"
 TOOLS = [
     {"name": "dispatch", "description": "Run one Worker through the credential-blind broker; blocks until done. "
-     "Returns the result JSON and the Worker report.",
+     "Returns the result JSON and the Worker report, or status needs-lead with a Worker question (reply with "
+     "answer, then call wait).",
      "inputSchema": {"type": "object", "required": ["model", "effort", "slots"], "properties": {
          "model": {"type": "string"}, "effort": {"type": "string"},
          "slots": {"type": "object", "additionalProperties": {"type": "string"}}}}},
     {"name": "status", "description": "Return run.json counters and the remaining fan-out.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "wait", "description": "Return the stored result for a request_id, polling up to timeout seconds.",
+    {"name": "wait", "description": "Return the stored result for a request_id, polling up to timeout seconds. "
+     "Returns status needs-lead early when the Worker asked a question.",
      "inputSchema": {"type": "object", "required": ["request_id"], "properties": {
          "request_id": {"type": "string"}, "timeout": {"type": "number"}}}},
+    {"name": "resume", "description": "Send a follow-up message to a finished Worker (green or red) as a new turn in "
+     "the same session. Returns the new request id <id>-r<n>, the result and the report. Cap: 1 resume for a "
+     "Grunt Worker, 2 otherwise.",
+     "inputSchema": {"type": "object", "required": ["request_id", "message"], "properties": {
+         "request_id": {"type": "string"}, "message": {"type": "string"}, "timeout": {"type": "number"}}}},
+    {"name": "answer", "description": "Answer question question_n that a running Worker asked through ask_lead.",
+     "inputSchema": {"type": "object", "required": ["request_id", "question_n", "text"], "properties": {
+         "request_id": {"type": "string"}, "question_n": {"type": "integer"}, "text": {"type": "string"}}}},
 ]
+_STATUS_KEYS = ["workers_spawned", "request_counts", "fan_out", "remaining_total", "worker_models"]
+OUTPUT_SCHEMAS = {  # listed only at 2025-06-18; a result body that has every required key also goes out as structuredContent
+    "dispatch": {"type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]},
+    "status": {"type": "object", "properties": {
+        "workers_spawned": {"type": "integer"}, "request_counts": {"type": "object"}, "fan_out": {"type": "object"},
+        "remaining_total": {"type": "integer"}, "worker_models": {"type": "array"}}, "required": _STATUS_KEYS},
+    "wait": {"type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]},
+    "resume": {"type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]},
+    "answer": {"type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]},
+}
+AWAIT_MAX_SEC = 3500.0  # under the Lead's MCP tool timeout (runtime.MCP_TOOL_TIMEOUT_SEC)
 
 
 def log_line(run_dir: Path, text: str) -> None:
@@ -54,8 +79,45 @@ class Broker:
     def __init__(self, run_dir: Path, home_repo: str | None = None):
         self.run_dir = run_dir
         self.home_repo = home_repo
-        self.issued: set = set()  # request ids this process issued; wait refuses any other
+        self.issued: set = set()  # cache of request ids known to this broker; the record is <run-dir>/issued/<rid>
+        self.version = None  # protocol version negotiated by the latest initialize
         self.spec = None  # loaded on the first tool call, so initialize and tools/list answer at once
+        self.turn = None  # D54: the running Worker turn, if any
+        self.poll = 0.2
+
+    def issue(self, rid: str) -> None:
+        """Record rid as issued: a durable <run-dir>/issued/<rid> file, never written through a link."""
+        if not isinstance(rid, str) or not D.REQUEST_ID_RE.match(rid):
+            raise OSError("bad request id")
+        d = self.run_dir / "issued"
+        try:
+            os.mkdir(d, 0o700)
+        except FileExistsError:
+            pass
+        st = os.lstat(d)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            raise OSError("issued is not a plain directory")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        os.close(os.open(str(d / rid), flags, 0o600))
+        self.issued.add(rid)
+
+    def known(self, rid) -> bool:
+        """True when this broker issued rid, now or in an earlier process (a plain record file)."""
+        if not isinstance(rid, str) or not D.REQUEST_ID_RE.match(rid):
+            return False
+        if rid in self.issued:
+            return True
+        try:
+            d = os.lstat(self.run_dir / "issued")
+            if stat.S_ISLNK(d.st_mode) or not stat.S_ISDIR(d.st_mode):
+                return False
+            f = os.lstat(self.run_dir / "issued" / rid)
+        except OSError:
+            return False
+        if stat.S_ISLNK(f.st_mode) or not stat.S_ISREG(f.st_mode):
+            return False
+        self.issued.add(rid)
+        return True
 
     def ensure(self) -> None:
         if self.spec is None:
@@ -64,7 +126,40 @@ class Broker:
             self.save()
 
     def save(self) -> None:
-        D._atomic_write_json(self.run_dir / "run.json", self.spec, overwrite=True)
+        with D._SPEC_LOCK:
+            D._atomic_write_json(self.run_dir / "run.json", self.spec, overwrite=True)
+
+    def busy(self) -> bool:
+        if self.turn is not None and not self.turn.alive():
+            self.turn.thread.join()
+            self.turn = None
+        return self.turn is not None
+
+    def start(self, rid: str, fn) -> None:
+        self.turn = D.Turn(self.run_dir, rid, fn, self.spec, self.save).start()
+
+    def _await(self, rid: str, timeout: float) -> tuple[dict, bool, str]:
+        """Poll for rid's result; return needs-lead early when its Worker asked a question."""
+        path = self.run_dir / f"{rid}.result.json"
+        end = time.monotonic() + min(float(timeout), AWAIT_MAX_SEC)
+        while not path.is_file() or path.is_symlink():
+            if self.turn is not None and self.turn.rid == rid:
+                asked = None
+                with contextlib.suppress(OSError, ValueError):
+                    asked = D.relay_question(self.run_dir, self.spec, rid)
+                if asked is not None:
+                    self.save()
+                    return asked, False, f"needs-lead:{asked['question_n']}"
+            if time.monotonic() >= end:
+                return {"status": "timeout", "request_id": rid}, True, "timeout"
+            time.sleep(self.poll)
+        self.busy()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        report = self.run_dir / f"{rid}.report.md"  # derived, never read from the result file
+        inside = os.path.realpath(report).startswith(os.path.realpath(self.run_dir) + os.sep)
+        data["report_path"] = str(report)
+        data["report"] = report.read_text(encoding="utf-8") if inside and report.is_file() else ""
+        return data, data.get("status") != "green", f"found:{data.get('status')}"
 
     def remaining(self) -> int:
         return max(0, self.spec["fan_out"]["total"] - self.spec["workers_spawned"])
@@ -79,7 +174,7 @@ class Broker:
     def tool_dispatch(self, args: dict) -> tuple[dict, bool, str]:
         self.ensure()
         rid = f"mcp-{int(time.time())}-{secrets.token_hex(3)}"
-        self.issued.add(rid)
+        self.issue(rid)
         model = args.get("model")
         req = {"schema_version": D.REQUEST_SCHEMA_VERSION, "request_id": rid, "model": model,
                "effort": args.get("effort"), "tier": D._load("dispatch_rungs").MODEL_RUNG.get(model)
@@ -96,11 +191,52 @@ class Broker:
                 "reason": reason, "started_at": now, "finished_at": now}, f"refused: {reason}\n")
             self.save()
             return {"status": "refused", "reason": reason, "request_id": rid}, True, f"refused:{reason}"
-        result, report = D._run_validated(self.run_dir, rid, req, self.spec, self.home_repo)
-        D._write_request_result(self.run_dir, rid, result, report)
+        if self.busy():
+            return self._refuse(rid, "worker-running")
+        self.start(rid, lambda: D._run_validated(self.run_dir, rid, req, self.spec, self.home_repo))
+        return self._await(rid, AWAIT_MAX_SEC)
+
+    def _refuse(self, rid: str, reason: str) -> tuple[dict, bool, str]:
+        with D._SPEC_LOCK:
+            self.spec["request_counts"]["refused"] += 1
+        now = D._now()
+        D._write_request_result(self.run_dir, rid, {
+            "status": "refused", "dispatch_exit_code": D.REQ_REFUSED, "child_run_id": None, "outcome": None,
+            "reason": reason, "started_at": now, "finished_at": now}, f"refused: {reason}\n")
         self.save()
-        out = dict(result, request_id=rid, report=report)
-        return out, result["status"] != "green", f"{result['status']}:{result.get('reason')}"
+        return {"status": "refused", "reason": reason, "request_id": rid}, True, f"refused:{reason}"
+
+    def tool_resume(self, args: dict) -> tuple[dict, bool, str]:
+        self.ensure()
+        rid, message, timeout = args.get("request_id"), args.get("message"), args.get("timeout", AWAIT_MAX_SEC)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout < 0:
+            return {"status": "usage-error", "reason": "bad-timeout"}, True, "usage-error"
+        reason = "worker-running" if self.busy() else None
+        plan = None
+        if reason is None:
+            plan, reason = D.plan_resume(self.run_dir, self.spec, rid, message, self.known)
+        if plan is None:
+            with D._SPEC_LOCK:
+                self.spec["request_counts"]["refused"] += 1
+            self.save()
+            return {"status": "refused", "reason": reason, "request_id": rid}, True, f"refused:{reason}"
+        new_rid = plan["new_rid"]
+        self.issue(new_rid)
+        with D._SPEC_LOCK:
+            self.spec["resume_of"][new_rid] = plan["root"]
+        self.save()
+        self.start(new_rid, lambda: D.run_resume(self.run_dir, plan, message, self.spec, self.home_repo))
+        return self._await(new_rid, timeout)
+
+    def tool_answer(self, args: dict) -> tuple[dict, bool, str]:
+        self.ensure()
+        rid = args.get("request_id")
+        if not isinstance(rid, str) or not self.known(rid):
+            return {"status": "refused", "reason": "unknown-request", "request_id": rid}, True, "refused:unknown-request"
+        data, reason = D.answer_question(self.run_dir, self.spec, rid, args.get("question_n"), args.get("text"))
+        if reason is not None:
+            return {"status": "refused", "reason": reason, "request_id": rid}, True, f"refused:{reason}"
+        return data, False, f"answered:{data['question_n']}"
 
     def tool_wait(self, args: dict) -> tuple[dict, bool, str]:
         rid, timeout = args.get("request_id"), args.get("timeout", 60)
@@ -108,20 +244,10 @@ class Broker:
                 or isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout)
                 or timeout < 0):
             return {"status": "usage-error", "reason": "bad-request-id-or-timeout"}, True, "usage-error"
-        if rid not in self.issued:
+        if not self.known(rid):
             return {"status": "refused", "reason": "unknown-request", "request_id": rid}, True, "refused:unknown-request"
-        path = self.run_dir / f"{rid}.result.json"
-        end = time.monotonic() + min(float(timeout), 3600.0)
-        while not path.is_file() or path.is_symlink():
-            if time.monotonic() >= end:
-                return {"status": "timeout", "request_id": rid}, True, "timeout"
-            time.sleep(0.5)
-        data = json.loads(path.read_text(encoding="utf-8"))
-        report = self.run_dir / f"{rid}.report.md"  # derived, never read from the result file
-        inside = os.path.realpath(report).startswith(os.path.realpath(self.run_dir) + os.sep)
-        data["report_path"] = str(report)
-        data["report"] = report.read_text(encoding="utf-8") if inside and report.is_file() else ""
-        return data, data.get("status") != "green", f"found:{data.get('status')}"
+        self.ensure()
+        return self._await(rid, timeout)
 
 
 def _frames(stdin):
@@ -156,17 +282,23 @@ def handle(broker: Broker, msg) -> dict | None:
     if "id" not in msg:
         return None
     if method == "initialize":
-        return _reply(mid, {"protocolVersion": PROTOCOL_VERSION, "capabilities": {"tools": {}}, "serverInfo": SERVER_INFO})
+        params = msg.get("params")
+        asked = params.get("protocolVersion") if isinstance(params, dict) else None
+        broker.version = asked if isinstance(asked, str) and asked in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
+        return _reply(mid, {"protocolVersion": broker.version, "capabilities": {"tools": {}}, "serverInfo": SERVER_INFO})
     if method == "ping":
         return _reply(mid, {})
     if method == "tools/list":
-        return _reply(mid, {"tools": TOOLS})
+        if broker.version != STRUCTURED_VERSION:
+            return _reply(mid, {"tools": TOOLS})
+        return _reply(mid, {"tools": [{**t, "outputSchema": OUTPUT_SCHEMAS[t["name"]]} for t in TOOLS]})
     if method == "tools/call":
         params = msg.get("params")
         name = params.get("name") if isinstance(params, dict) else None
         args = params.get("arguments") if isinstance(params, dict) else None
         args = {} if args is None else args
-        handler = {"dispatch": broker.tool_dispatch, "status": broker.tool_status, "wait": broker.tool_wait}.get(name)
+        handler = {"dispatch": broker.tool_dispatch, "status": broker.tool_status, "wait": broker.tool_wait,
+                   "resume": broker.tool_resume, "answer": broker.tool_answer}.get(name)
         if handler is None or not isinstance(args, dict):
             return _reply(mid, error={"code": -32602, "message": "unknown tool or bad arguments"})
         try:
@@ -174,7 +306,11 @@ def handle(broker: Broker, msg) -> dict | None:
         except Exception as exc:  # one bad call never stops the server
             data, is_error, note = {"status": "red", "reason": f"exception:{type(exc).__name__}"}, True, f"exception:{type(exc).__name__}"
         log_line(broker.run_dir, f"tool={name} {'error' if is_error else 'ok'} {note}")
-        return _reply(mid, {"content": [{"type": "text", "text": json.dumps(data, indent=1)}], "isError": is_error})
+        result = {"content": [{"type": "text", "text": json.dumps(data, indent=1)}], "isError": is_error}
+        if (broker.version == STRUCTURED_VERSION and isinstance(data, dict)
+                and all(k in data for k in OUTPUT_SCHEMAS[name]["required"])):
+            result["structuredContent"] = data  # only a body that conforms to the listed outputSchema
+        return _reply(mid, result)
     return _reply(mid, error={"code": -32601, "message": "method not found"})
 
 

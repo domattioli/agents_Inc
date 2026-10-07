@@ -109,17 +109,18 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(out.strip(), f"dispatch {run.name} haiku dry-run prompt={run / 'prompt.md'}")
         self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
 
-    def _launch(self, model, stdout=GOOD_REPORT):
+    def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
         def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
-            calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode)
-            argv = dispatch.claude_argv(model_, permission_mode) if kind == "claude" else ["run_codex", model_]
+            calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode,
+                         effort=effort)
+            argv = dispatch.claude_argv(model_, permission_mode, effort=effort) if kind == "claude" else ["run_codex", model_]
             return {"rc": 0, "stdout": stdout, "stderr": "", "argv": argv,
                     "session_id": "sess-1" if kind == "claude" else None}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
             rc, out, _ = self._main("--slots", str(self._slots()), "--model", model, "--cwd", str(self.repo),
-                                    "--run-dir", str(self.runs))
+                                    "--run-dir", str(self.runs), *extra)
         return rc, out, calls
 
     def _assert_launched(self, rc, out):
@@ -136,18 +137,30 @@ class DispatchCliTest(unittest.TestCase):
         rc, out, calls = self._launch("sol")
         spec = self._assert_launched(rc, out)
         self.assertEqual(calls["kind"], "codex")
+        self.assertEqual(calls["effort"], "medium")
         self.assertEqual(spec["argv"], ["run_codex", "sol"])
+        self.assertEqual(spec["effort"], "medium")
         self.assertIsNone(spec["session_id"])
 
     def test_launch_claude_mocked(self):
         rc, out, calls = self._launch("sonnet")
         spec = self._assert_launched(rc, out)
         self.assertEqual(calls["kind"], "claude")
+        self.assertIsNone(calls["effort"])
         argv = spec["argv"]
         self.assertEqual(argv[1:], ["-p", "--model", "claude-sonnet-5-5", "--permission-mode", "acceptEdits",
                                     "--output-format", "json"])
+        self.assertIsNone(spec["effort"])
+        self.assertNotIn("--effort", argv)
         self.assertEqual(spec["session_id"], "sess-1")
         self.assertIn("SUCCESS GATE", calls["prompt"].upper())
+
+    def test_launch_claude_explicit_effort(self):
+        rc, out, calls = self._launch("opus", extra=("--effort", "low"))
+        spec = self._assert_launched(rc, out)
+        self.assertEqual(calls["effort"], "low")
+        self.assertEqual(spec["effort"], "low")
+        self.assertEqual(spec["argv"][-2:], ["--effort", "low"])
 
     def test_fan_out_recorded_in_run_json(self):
         rc, out, _ = self._launch("sonnet")
@@ -236,7 +249,7 @@ class DispatchCliTest(unittest.TestCase):
             res = dispatch.launch("claude", "opus", "high", self.repo, "PROMPT", self.root, "plan")
         argv = run.call_args.args[0]
         self.assertEqual(argv[1:], ["-p", "--model", dispatch.CLAUDE_MODELS["opus"], "--permission-mode", "plan",
-                                    "--output-format", "json"])
+                                    "--output-format", "json", "--effort", "high"])
         self.assertEqual(run.call_args.kwargs["input"], "PROMPT")
         self.assertEqual(run.call_args.kwargs["cwd"], str(self.repo))
         self.assertEqual((res["stdout"], res["session_id"]), ("hi", "s9"))
@@ -247,12 +260,39 @@ class DispatchCliTest(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(out.strip(), f"dispatch: {slug} not supported, use agent.sh")
 
-    def test_resume_codex_exits_2(self):
+    def test_claude_bad_effort_exits_2(self):
+        for effort in ("ultra", "xhigh"):
+            rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--effort", effort,
+                                      "--cwd", str(self.repo), "--run-dir", str(self.runs))
+            self.assertEqual(rc, 2)
+            self.assertIn(f"effort {effort} not allowed for haiku", err)
+            self.assertFalse(self.runs.exists())
+
+    def test_resume_codex_without_thread_exits_2(self):
         self._launch("terra")
         run = self._run_dir()
-        rc, out, _ = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
+        rc, _, err = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
         self.assertEqual(rc, 2)
-        self.assertEqual(out.strip(), "resume unsupported for codex")
+        self.assertIn("no session id recorded", err)
+
+    def test_resume_codex_uses_thread_id(self):
+        self._launch("terra")
+        run = self._run_dir()
+        spec = json.loads((run / "run.json").read_text())
+        spec["session_id"] = "thread-abc"
+        (run / "run.json").write_text(json.dumps(spec))
+        seen = {}
+
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+            seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, {"kind": "codex", "resume": "thread-abc", "prompt": "go on", "effort": "medium"})
+        self.assertTrue((run / "stdout.1.md").is_file())
+        self.assertTrue((run / "verify.1.txt").is_file())
+        self.assertEqual(len(json.loads((run / "run.json").read_text())["resumes"]), 1)
 
     def test_resume_claude_uses_session(self):
         self._launch("haiku")
@@ -260,12 +300,12 @@ class DispatchCliTest(unittest.TestCase):
         seen = {}
 
         def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
-            seen.update(resume=resume, prompt=prompt)
+            seen.update(resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
             rc, out, _ = self._main("--resume", run.name, "--message", "go on", "--run-dir", str(self.runs))
         self.assertEqual(rc, 0, out)
-        self.assertEqual(seen, {"resume": "sess-1", "prompt": "go on"})
+        self.assertEqual(seen, {"resume": "sess-1", "prompt": "go on", "effort": None})
         self.assertTrue((run / "stdout.1.md").is_file())
 
     def test_allow_paths(self):
@@ -314,6 +354,12 @@ class DispatchCliTest(unittest.TestCase):
             "fable": "claude-fable-5-1", "opus": "claude-opus-5-5",
             "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-4-5-20251001"})
         self.assertEqual(dispatch.claude_argv("haiku", "plan")[3], "claude-haiku-4-5-20251001")
+
+    def test_claude_argv_effort(self):
+        self.assertEqual(dispatch.claude_argv("opus", "plan", effort="low")[-2:], ["--effort", "low"])
+        self.assertNotIn("--effort", dispatch.claude_argv("opus", "plan"))
+        self.assertEqual(dispatch.claude_argv("opus", "plan", "s1", "max")[-4:],
+                         ["--effort", "max", "--resume", "s1"])
 
 if __name__ == "__main__":
     unittest.main()

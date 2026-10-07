@@ -10,8 +10,16 @@ from pathlib import Path
 import json
 import sys
 
+def _aliases_from_routing() -> dict[str, str]:
+    """D52: alias -> slug from routing.json (the single source); alias is the text after the slug's last hyphen."""
+    path = Path(__file__).resolve().parents[1] / "routing.json"
+    tiers = json.loads(path.read_text(encoding="utf-8"))["tiers"]
+    slugs = [tier["codex"] for tier in tiers.values() if tier.get("codex")]
+    return {slug.rsplit("-", 1)[-1]: slug for slug in slugs}
+
+
 # Built-in DEFAULTS only; resolution goes through load_model_map().
-MODEL_ALIASES = {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"}
+MODEL_ALIASES = _aliases_from_routing()
 
 
 def _read_map(raw: str) -> dict[str, str]:
@@ -61,6 +69,8 @@ def resolve_executable(name: str, search_path: str | None = None) -> Path:
 
 # D49: Codex tool access by rung. Grunt (luna) and unknown aliases stay tool-free (fail closed).
 TOOL_RUNGS = {"astra": "Executive", "sol": "Orchestrator", "terra": "Workhorse"}
+# D49.1: luna gets the shell tool only on an explicit --tools; it stays off by default and never leads.
+TOOL_OPT_IN = ("luna",)
 HARD_DENY = (".ssh", ".config", ".claude", ".codex-bridge", ".local", ".aws", ".gnupg", ".netrc")
 PROFILE = "agents_inc_d49"
 TOOL_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
@@ -69,13 +79,15 @@ TOOL_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 
 def tools_for(model: str, no_tools: bool = False, tools: bool = False) -> bool:
-    """D49: on by default for astra, sol, terra; --no-tools wins; --tools on luna or a raw slug raises."""
+    """D49: on by default for astra, sol, terra; D49.1: luna only with --tools; --no-tools wins; a raw slug raises."""
     if no_tools:
         return False
     if model in TOOL_RUNGS:
         return True
+    if tools and model in TOOL_OPT_IN:
+        return True
     if tools:
-        raise ValueError(f"--tools is allowed only for astra, sol, terra; not {model!r}")
+        raise ValueError(f"--tools is allowed only for astra, sol, terra, luna; not {model!r}")
     return False
 
 
@@ -140,13 +152,63 @@ def lead_args(model: str, lead_dir: Path, broker: Path | None = None, codex_home
     server_args = [script, "--run-dir", str(Path(lead_dir).resolve())] + (["--home-repo", str(home_repo)] if home_repo else [])
     # Codex starts stdio MCP servers with a cleared env, so CODEX_HOME (the Worker deny) goes through the env table.
     env_table = ["-c", f"{prefix}.env={{CODEX_HOME={_toml_str(os.path.realpath(codex_home))}}}"] if codex_home else []
+    return _mcp_server_args(server_args) + env_table
+
+
+def _mcp_server_args(server_args: list[str]) -> list[str]:
+    prefix = "mcp_servers.agents_inc"
     return ["-c", f"{prefix}.command={json.dumps(sys.executable)}",
             "-c", f"{prefix}.args={json.dumps(server_args)}",
             "-c", f"{prefix}.tool_timeout_sec={MCP_TOOL_TIMEOUT_SEC}",
             "-c", f'{prefix}.default_tools_approval_mode="approve"',
             "-c", f"{prefix}.required=true",
             "-c", f'{prefix}.startup_readiness="catalog"',
-            "-c", f"{prefix}.startup_timeout_sec={MCP_STARTUP_TIMEOUT_SEC}"] + env_table
+            "-c", f"{prefix}.startup_timeout_sec={MCP_STARTUP_TIMEOUT_SEC}"]
+
+
+WORKER_MCP = Path(__file__).resolve().parent / "worker_mcp.py"
+
+
+def worker_args(channel_dir: Path, request_id: str, server: Path | None = None) -> list[str]:
+    """D54: -c overrides that start worker_mcp.py (one tool, ask_lead) as a broker Worker's `agents_inc` server.
+    The server knows only its channel directory and request id."""
+    return _mcp_server_args([str(server or WORKER_MCP), "--run-dir", str(Path(channel_dir).resolve()),
+                             "--request-id", request_id])
+
+
+THREAD_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+
+
+def _events(text: str):
+    for line in (text or "").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            yield event
+
+
+def parse_thread_id(text: str) -> str | None:
+    """D54: the thread id from `codex exec --json` stdout (first thread.started event). Other events and
+    non-JSON lines are skipped."""
+    for event in _events(text):
+        tid = event.get("thread_id")
+        if event.get("type") == "thread.started" and isinstance(tid, str) and THREAD_ID_RE.match(tid):
+            return tid
+    return None
+
+
+def _json_errors(text: str) -> list[str]:
+    """Error messages from `--json` events (error, turn.failed), as `ERROR:` lines for the rate-limit check."""
+    out = []
+    for event in _events(text):
+        if event.get("type") == "error":
+            out.append(f"ERROR: {event.get('message')}")
+        elif event.get("type") == "turn.failed":
+            err = event.get("error")
+            out.append(f"ERROR: {err.get('message') if isinstance(err, dict) else err}")
+    return out
 
 
 def lead_codex_home(slug: str) -> Path:
@@ -187,7 +249,10 @@ def lead_env(executable: Path, codex_home: Path, base: dict | None = None) -> di
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
                      model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False,
                      write_dir: Path | None = None, lead_dir: Path | None = None,
-                     extra_deny: tuple = (), lead_home: Path | None = None, home_repo: str | None = None) -> list[str]:
+                     extra_deny: tuple = (), lead_home: Path | None = None, home_repo: str | None = None,
+                     json_out: Path | None = None, worker: tuple | None = None) -> list[str]:
+    """json_out adds `--json -o <json_out>` (D54 session capture); worker=(channel_dir, request_id) adds the
+    ask_lead MCP server."""
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
@@ -196,31 +261,69 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
     if not executable.is_absolute():
         raise ValueError("Codex executable must be absolute")
     if write and not tools:
-        raise ValueError("--write needs --tools (rung astra, sol, or terra, without --no-tools)")
+        raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     common = ["--skip-git-repo-check", "-C", str(cwd), "-c", f"model_reasoning_effort={effort}",
               "-c", 'shell_environment_policy.inherit="none"', "-c", 'web_search="disabled"']
     if lead_dir is not None and (not tools or write or write_dir is not None):
         raise ValueError("--lead needs tools on and no --write or --run-dir")
+    if lead_dir is not None and worker is not None:
+        raise ValueError("a Lead gets the broker server, not the Worker ask_lead server")
     if not tools and extra_deny:
         # Broker Worker without a shell tool (luna): emit the deny profile too, so the D51 promise holds on every rung.
         # `-s` is dropped here only: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04);
         # the profile grants cwd read only and shell_tool stays off.
-        return ([str(executable), "exec", "-m", slug] + common + permission_args(cwd, False, extra_deny=extra_deny)
-                + ["-c", "features.shell_tool=false", "-"])
-    if not tools:
-        return [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + ["-c", "features.shell_tool=false", "-"]
-    # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
-    # The profile alone sets access: cwd "read", or "write" with --write; network stays off.
-    # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
-    return ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
-            + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny)
-            + (lead_args(model, lead_dir, None, lead_home, home_repo) if lead_dir is not None else []) + ["-"])
+        argv = ([str(executable), "exec", "-m", slug] + common + permission_args(cwd, False, extra_deny=extra_deny)
+                + ["-c", "features.shell_tool=false"])
+    elif not tools:
+        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + ["-c", "features.shell_tool=false"]
+    else:
+        # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
+        # The profile alone sets access: cwd "read", or "write" with --write; network stays off.
+        # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
+        argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
+                + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny)
+                + (lead_args(model, lead_dir, None, lead_home, home_repo) if lead_dir is not None else []))
+    if worker is not None:
+        argv += worker_args(*worker)
+    if json_out is not None:
+        argv += ["--json", "-o", str(json_out)]
+    return argv + ["-"]
+
+
+def build_codex_resume_argv(executable: Path, thread_id: str, message: str, model: str, effort: str, cwd: Path,
+                            supported_efforts: dict[str, list[str]], model_map: dict[str, str] | None = None,
+                            tools: bool = False, write: bool = False, write_dir: Path | None = None,
+                            extra_deny: tuple = (), json_out: Path | None = None,
+                            worker: tuple | None = None) -> list[str]:
+    """D54: `codex exec resume <thread_id> ... <message>` with the same model, effort, -c and permission flags as
+    the original run. `exec resume` takes no -C or -s: the caller runs it with cwd set, and `-s <mode>` becomes
+    `-c sandbox_mode=<mode>`. The message is the PROMPT positional; a leading space keeps a message that starts
+    with "-" from reading as a flag."""
+    if not isinstance(thread_id, str) or not THREAD_ID_RE.match(thread_id):
+        raise ValueError(f"bad Codex thread id: {thread_id!r}")
+    base = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
+                            None, extra_deny, None, None, json_out, worker)
+    rest, flags, i = base[2:-1], [], 0  # between [exe, "exec"] and the stdin marker "-"
+    while i < len(rest):
+        if rest[i] == "-C":
+            i += 2
+            continue
+        if rest[i] == "-s":
+            flags += ["-c", f'sandbox_mode="{rest[i + 1]}"']
+            i += 2
+            continue
+        flags.append(rest[i])
+        i += 1
+    return [base[0], "exec", "resume", thread_id] + flags + [(" " + message) if message.startswith("-") else message]
 
 
 def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]],
               no_tools: bool = False, write: bool = False, tools: bool = False, write_dir: Path | None = None,
               env: dict | None = None, lead_dir: Path | None = None, home_repo: str | None = None,
-              extra_deny: tuple = (), isolate_home: bool = False) -> int:
+              extra_deny: tuple = (), isolate_home: bool = False, thread_out: dict | None = None,
+              resume_thread: str | None = None, worker: tuple | None = None) -> int:
+    """thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
+    message, not the JSONL, to stdout. resume_thread: continue that thread with the prompt as the next turn."""
     if receipt.codex_path is None:
         raise FileNotFoundError("WB_CLI_NOT_FOUND: Codex not installed (receipt has no codex_path); install codex, then run agents-inc repair")
     executable = Path(receipt.codex_path)
@@ -242,12 +345,21 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         lead_args(model, lead_dir)  # fail before any launch
     tools = tools_for(model, no_tools, tools)
     if write and not tools:
-        raise ValueError("--write needs --tools (rung astra, sol, or terra, without --no-tools)")
+        raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     if write_dir is not None and not write:
         raise ValueError("--run-dir needs --write")
+    if resume_thread is not None and lead_dir is not None:
+        raise ValueError("--lead runs cannot be resumed")
+    json_mode = thread_out is not None or resume_thread is not None
     lead_home = lead_codex_home(slug) if (lead_dir is not None or isolate_home) else None
     cleanup_failed = False
+    out_dir = None
     try:
+        if json_mode:  # the -o file goes to the Worker TMPDIR under the broker, else a private temp dir
+            tmp_root = (env or {}).get("TMPDIR")
+            out_dir = Path(tempfile.mkdtemp(prefix="agents-inc-codex-out-",
+                                            dir=tmp_root if tmp_root and os.path.isdir(tmp_root) else None))
+        json_out = out_dir / "last_message.md" if out_dir is not None else None
         sys.stderr.write("agents-inc run: record " + json.dumps({"model": model, "slug": slug, "tools": "on" if tools else "off",
                          "sandbox": "workspace-write" if write else "read-only",
                          **({"transport": "mcp"} if lead_dir is not None else {}),
@@ -260,17 +372,38 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
             else:  # a broker-launched Worker keeps its scrubbed env; only CODEX_HOME is added
                 env = {**(os.environ if env is None else env), "CODEX_HOME": str(lead_home)}
             deny += (lead_home,)
+        prompt = prompt_stream.read()  # text, never the stream: StringIO has no fileno
+        extra = {}
+        if resume_thread is not None:
+            argv = build_codex_resume_argv(executable, resume_thread, prompt, model, effort, cwd, supported_efforts,
+                                           model_map, tools, write, write_dir, deny, json_out, worker)
+            prompt, extra = "", {"cwd": str(cwd)}  # the message rides the PROMPT positional; resume has no -C
+        else:
+            argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
+                                    lead_dir, deny, lead_home, home_repo, json_out, worker)
         result = subprocess.run(
-            build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir, lead_dir,
-                             deny, lead_home, home_repo),
-            input=prompt_stream.read(),  # text, never the stream: StringIO has no fileno
+            argv,
+            input=prompt,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=False,
             env=env,  # None inherits (CLI default); the D51 broker passes a scrubbed env
+            **extra,
         )
+        stdout, json_errors = result.stdout, []
+        if json_mode:
+            tid = parse_thread_id(result.stdout)
+            if thread_out is not None and tid:
+                thread_out["thread_id"] = tid
+            json_errors = _json_errors(result.stdout)
+            try:
+                stdout = json_out.read_text(encoding="utf-8")
+            except OSError:
+                stdout = ""
     finally:
+        if out_dir is not None:
+            shutil.rmtree(out_dir, ignore_errors=True)
         if lead_home is not None:
             auth = lead_home / "auth.json"
             if auth.exists() and not auth.is_symlink():  # Codex replaced the link with a real credential file
@@ -285,14 +418,16 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
                     sys.stderr.write(f"agents-inc run: isolated CODEX_HOME not removed: {lead_home}\n")
                     cleanup_failed = True
 
-    # Write captured output unchanged
-    sys.stdout.write(result.stdout)
+    # Write captured output unchanged (in --json mode: the last message, and the error events on stderr)
+    sys.stdout.write(stdout)
     sys.stdout.flush()
     sys.stderr.write(result.stderr)
+    if json_errors:
+        sys.stderr.write("\n".join(json_errors) + "\n")
     sys.stderr.flush()
 
     # Check for usage/rate limit errors only in ERROR lines
-    for line in result.stderr.split('\n'):
+    for line in result.stderr.split('\n') + json_errors:
         stripped = line.lstrip()
         if stripped.startswith('ERROR:'):
             # Case-insensitive regex match for rate limit patterns
@@ -316,7 +451,7 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
                 return 75
 
     # Check for empty output with success exit code
-    if result.returncode == 0 and not result.stdout.strip():
+    if result.returncode == 0 and not stdout.strip():
         sys.stderr.write(f"agents-inc run: codex {slug} returned an empty reply\n")
         sys.stderr.flush()
         return 1

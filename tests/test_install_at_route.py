@@ -5,6 +5,8 @@ Supervisor-owned acceptance tests. Fake HOME only; nothing touches the live mach
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -183,6 +185,54 @@ class AtRouteInstallTest(unittest.TestCase):
         report = check_install(self.paths)
         self.assertIn("WB_HOOK_DRIFT_UNCHECKED", report.warnings)
         self.assertNotIn("WB_HOOK_DRIFT", report.warnings)
+
+
+REAL_HOOK = Path(__file__).resolve().parents[1] / "skills/codex-bridge/scripts/at_route.sh"
+
+
+@unittest.skipUnless(shutil.which("jq"), "at_route.sh needs jq")
+class AtRouteCodexRouteTest(unittest.TestCase):
+    """D54: Codex aliases go through `agents-inc run --model <alias> --no-tools`, prompt on stdin; no bridge."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.log = self.root / "calls.txt"
+        self.fake = self.root / "agents-inc"
+        self.fake.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "' + str(self.log) + '"\n'
+                             'cat >> "' + str(self.log) + '"\necho "fake answer"\n')
+        self.fake.chmod(0o755)
+
+    def _route(self, *argv, stdin=""):
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.root),
+               "AT_ROUTE_AGENTS_INC": str(self.fake), "AT_ROUTE_LOG": str(self.root / "at_route.log"),
+               "AT_ROUTE_COLOR": "0"}
+        return subprocess.run(["bash", str(REAL_HOOK), *argv], input=stdin, capture_output=True, text=True,
+                              env=env, cwd=str(self.root), timeout=60)
+
+    def test_cli_mode_runs_agents_inc_with_stdin_prompt(self):
+        res = self._route("luna", "say hi")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("fake answer", res.stdout)
+        args, prompt = self.log.read_text().split("\n", 1)
+        self.assertEqual(args, f"run --model luna --no-tools --cwd {self.root}")
+        self.assertEqual(prompt, "say hi")
+
+    def test_hook_mode_uses_payload_cwd(self):
+        work = self.root / "work"
+        work.mkdir()
+        payload = json.dumps({"prompt": "@terra what is two plus two", "cwd": str(work)})
+        res = self._route(stdin=payload)
+        self.assertEqual(res.returncode, 2, res.stderr)  # block mode: the answer goes to stderr
+        self.assertIn("fake answer", res.stderr)
+        args, prompt = self.log.read_text().split("\n", 1)
+        self.assertEqual(args, f"run --model terra --no-tools --cwd {work}")
+        self.assertEqual(prompt, "what is two plus two")
+
+    def test_resolve_prints_pinned_slug(self):
+        res = self._route("--resolve", "luna")
+        self.assertEqual((res.returncode, res.stdout.strip()), (0, "gpt-5.6-luna"))
 
 
 if __name__ == "__main__":

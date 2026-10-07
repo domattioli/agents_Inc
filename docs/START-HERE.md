@@ -5,8 +5,13 @@
 From a source checkout: `python3 -m agents_inc.install.cli install --source "$PWD"`.
 Restart Claude or Codex after installation, then use the recorded absolute
 launcher: `~/.local/share/agents-inc/current/bin/agents-inc doctor`.
-This v1 path is direct, read-only Codex only; it does not manage the HTTP bridge
-or any daemon.
+Claude Code is the only required provider; Codex is optional (D50).
+Under `agents-inc run`, astra, sol and terra get Codex's shell tool, and luna
+gets it only with `--tools` (D49, D49.1). Tool commands cannot read your home
+directory, cannot reach the network, and write only with `--write`.
+`agents-inc dispatch` can also run a broker that lets a Codex Lead ask for
+Workers without seeing any credentials (D51). The installer does not manage the
+HTTP bridge or any daemon.
 
 - **Audience:** People who have not run the system before.
 - **Style:** Plain language; the other docs are compressed for experienced readers.

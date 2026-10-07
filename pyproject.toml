@@ -1,20 +1,55 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-inc"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Governed multi-agent dispatch and verification layer"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "LicenseRef-PolyForm-Small-Business-1.0.0-NoAI-Training"
+license-files = ["LICENSE"]
+authors = [{ name = "Dominik Mattioli" }]
+keywords = [
+    "claude-code",
+    "codex",
+    "multi-agent",
+    "model-pooling",
+    "delegation",
+    "governance",
+    "verification",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/domattioli/agents_Inc"
+Repository = "https://github.com/domattioli/agents_Inc"
+Issues = "https://github.com/domattioli/agents_Inc/issues"
+Changelog = "https://github.com/domattioli/agents_Inc/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agents-inc = "agents_inc.install.cli:main"
 
+[tool.setuptools.dynamic]
+version = { attr = "agents_inc.__version__" }
+
 [tool.setuptools.packages.find]
 include = ["workerbees*", "agents_inc*"]
 
+# "*" applies to every package the find step returns, so JSON files in any
+# agents_inc subpackage ship too. The agents_inc line is kept explicit.
 [tool.setuptools.package-data]
+"*" = ["*.json"]
 agents_inc = ["*.json"]
