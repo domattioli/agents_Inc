@@ -6,7 +6,7 @@ type: software
 authors:
   - family-names: "Mattioli"
     given-names: "Dominik"
-    orcid: "TODO-operator"
+    orcid: "https://orcid.org/0000-0002-7327-6337"
 version: 0.2.0
 date-released: 2026-10-04
 # TODO-operator: confirm this is the concept DOI, not the 0.1.0 version DOI
