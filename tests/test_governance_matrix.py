@@ -17,6 +17,13 @@ from agents_inc.control import Control, ControlError
 from agents_inc.policy import PolicyError
 from agents_inc.ledger import load as load_ledger
 from codex_testkit import CODEX_EXECUTABLE
+from unittest import mock as _mock
+
+def _snapshot_env(tc):
+    """Snapshot os.environ; cleanup restores prior values (incl. a pre-set WORKERBEES_GOVERNANCE), not just deletes."""
+    guard = _mock.patch.dict(os.environ)
+    guard.start()
+    tc.addCleanup(guard.stop)
 
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -59,13 +66,12 @@ class GateAFlagMatrix(unittest.TestCase):
     """A: FLAG MATRIX. 3 modes x 2 fixtures. Status must be identical across modes."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws_off = Path(tempfile.mkdtemp())
         self.ws_shadow = Path(tempfile.mkdtemp())
         self.ws_enforce = Path(tempfile.mkdtemp())
 
     def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws_off), ignore_errors=True)
         shutil.rmtree(str(self.ws_shadow), ignore_errors=True)
         shutil.rmtree(str(self.ws_enforce), ignore_errors=True)
@@ -262,13 +268,12 @@ class GateBSeededFaults(unittest.TestCase):
     """B: SEEDED FAULTS. Feed forged claims; status never 'verified' in any mode."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws_off = Path(tempfile.mkdtemp())
         self.ws_shadow = Path(tempfile.mkdtemp())
         self.ws_enforce = Path(tempfile.mkdtemp())
 
     def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws_off), ignore_errors=True)
         shutil.rmtree(str(self.ws_shadow), ignore_errors=True)
         shutil.rmtree(str(self.ws_enforce), ignore_errors=True)
@@ -357,11 +362,10 @@ class GateCZeroCallDenials(unittest.TestCase):
     """C: ZERO-CALL DENIALS. Real policy denial -> no runner calls, decision recorded, zero ledger nodes."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
     def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws), ignore_errors=True)
 
     def test_c1_classify_exceeded_denial(self):
@@ -431,11 +435,10 @@ class GateDFaultInjection(unittest.TestCase):
     """D: AUDIT FAULT INJECTION. Control failure -> denied. Ledger failure -> still works."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
     def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws), ignore_errors=True)
 
     def test_d1_control_write_fails_blocks_dispatch(self):
@@ -529,11 +532,10 @@ class GateEInvalidMode(unittest.TestCase):
     """E: INVALID MODE. Unsupported WORKERBEES_GOVERNANCE raises ValueError."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
     def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
         shutil.rmtree(str(self.ws), ignore_errors=True)
 
     def test_e1_brief_invalid_mode_raises(self):

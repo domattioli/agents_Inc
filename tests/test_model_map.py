@@ -12,7 +12,9 @@ from agents_inc.install.paths import InstallPaths
 from agents_inc.install.receipt import InstallReceipt
 from agents_inc.install.runtime import MODEL_ALIASES, build_codex_argv, load_model_map
 
-EFF = {"gpt-5.6-luna": ["medium"], "gpt-9-new": ["medium"], "gpt-env": ["medium"]}
+# Pinned luna slug comes from routing.json so a pin bump does not need a test edit.
+LUNA = json.loads((Path(__file__).resolve().parents[1] / "agents_inc/routing.json").read_text())["tiers"]["grunt"]["codex"]
+EFF = {LUNA: ["medium"], "gpt-9-new": ["medium"], "gpt-env": ["medium"]}
 
 
 class ModelMapTest(unittest.TestCase):
@@ -26,12 +28,12 @@ class ModelMapTest(unittest.TestCase):
     def test_defaults(self):
         self.assertEqual(load_model_map(self.roster, {}), MODEL_ALIASES)
         argv = build_codex_argv(Path("/x/codex"), "luna", "medium", Path("/w"), EFF, load_model_map(self.roster, {}))
-        self.assertEqual(argv[3], "gpt-5.6-luna")
+        self.assertEqual(argv[3], LUNA)
 
     def test_roster_adds_slug(self):
         self.roster.write_text(json.dumps({"models": {"nova": "gpt-9-new"}}))
         m = load_model_map(self.roster, {})
-        self.assertEqual(m["nova"], "gpt-9-new"); self.assertEqual(m["luna"], "gpt-5.6-luna")
+        self.assertEqual(m["nova"], "gpt-9-new"); self.assertEqual(m["luna"], LUNA)
         self.assertEqual(build_codex_argv(Path("/x/codex"), "nova", "medium", Path("/w"), EFF, m)[3], "gpt-9-new")
 
     def test_env_beats_roster_json_and_path(self):
