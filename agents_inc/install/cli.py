@@ -132,7 +132,7 @@ def main(argv=None):
     p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
-    p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump",)); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?")
+    p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump",)); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?"); p.add_argument("--unpin", action="store_true")
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
@@ -144,7 +144,7 @@ def main(argv=None):
             return dispatch.run(args)
         if args.command == "models":
             from . import models_cmd  # works from a source checkout, before the receipt check
-            return models_cmd.run(args.verb, args.alias, args.slug)
+            return models_cmd.run(args.verb, args.alias, args.slug, unpin=args.unpin)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
         if args.command == "ledger":
             from .. import host_ledger  # lazy: hook events must not depend on the ledger import

@@ -76,10 +76,10 @@ checkin=0
 
 kind="claude"
 case "$alias_name" in
-  haiku)  model="claude-haiku-4-5-20251001" ;;
-  sonnet) model="claude-sonnet-5" ;;
-  opus)   model="claude-opus-5-5" ;;
-  fable)  model="claude-fable-5-1" ;;
+  haiku)  model="haiku" ;;
+  sonnet) model="sonnet" ;;
+  opus)   model="opus" ;;
+  fable)  model="fable" ;;
   astra|sol|terra|luna) model="$(codex_slug "$alias_name")" || exit 0; kind="codex" ;;
   gemini) model="gemini-3.8-flash"; kind="gemini" ;;
   mistral) model="codestral-latest"; kind="mistral" ;;
