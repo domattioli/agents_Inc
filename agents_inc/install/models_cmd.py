@@ -39,11 +39,28 @@ def _refuse(message: str) -> int:
 
 
 def bump(alias: str | None, slug: str | None, routing: Path = ROUTING, models_json: Path = MODELS,
-         models: list[dict] | None = None, aliases: dict[str, str] | None = None) -> int:
+         models: list[dict] | None = None, aliases: dict[str, str] | None = None,
+         settings: Path | None = None, unpin: bool = False) -> int:
+    """An explicit slug also records a manual pin (settings "pinned") so model_sync never auto-promotes it;
+    unpin=True only removes the pin. A bump to the catalog's newest (no slug) does not pin."""
+    from agents_inc import model_sync
+    settings = model_sync.DEFAULT_SETTINGS if settings is None else settings
     aliases = MODEL_ALIASES if aliases is None else aliases
-    models = catalog.load() if models is None else models
     if alias not in aliases:
         return _refuse(f"unknown Codex alias: {alias}")
+    if unpin:
+        try:
+            model_sync.set_pinned(settings, alias, False)
+        except ValueError as exc:
+            return _refuse(str(exc))
+        print(settings)
+        return 0
+    if slug:
+        try:
+            model_sync.check_settings_writable(settings)  # refuse before touching routing/models
+        except ValueError as exc:
+            return _refuse(str(exc))
+    models = catalog.load() if models is None else models
     pin = aliases[alias]
     target = slug or catalog.drift(pin, models)
     if not target:
@@ -81,12 +98,15 @@ def bump(alias: str | None, slug: str | None, routing: Path = ROUTING, models_js
     Path(models_json).write_text(_dump(data) + "\n", encoding="utf-8")
     print(routing)
     print(models_json)
+    if slug:
+        model_sync.set_pinned(settings, alias, True)
+        print(settings)
     return 0
 
 
-def run(verb: str | None, alias: str | None = None, slug: str | None = None) -> int:
+def run(verb: str | None, alias: str | None = None, slug: str | None = None, unpin: bool = False) -> int:
     if verb == "bump":
-        return bump(alias, slug)
+        return bump(alias, slug, unpin=unpin)
     for line in listing():
         print(line)
     return 0

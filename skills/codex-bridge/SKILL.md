@@ -240,10 +240,10 @@ The alias match is case-insensitive:
 
 | Alias | Backend | Model ID |
 |---|---|---|
-| haiku | `claude -p` | `claude-haiku-4-5-20251001` |
-| sonnet | `claude -p` | `claude-sonnet-5` |
-| opus | `claude -p` | `claude-opus-5-5` |
-| fable | `claude -p` | `claude-fable-5-1` |
+| haiku | `claude -p` | latest (alias) |
+| sonnet | `claude -p` | latest (alias) |
+| opus | `claude -p` | latest (alias) |
+| fable | `claude -p` | latest (alias) |
 | astra | `agent.sh submit --backend codex --wait` | `gpt-6-astra` |
 | sol | same | `gpt-5.6-sol` |
 | terra | same | `gpt-5.6-terra` |

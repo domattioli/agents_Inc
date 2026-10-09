@@ -401,6 +401,28 @@
       "status": "available",
       "egress": "none",
       "train_on_input": null
+    },
+    "gpt-6-luna": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "grunt",
+      "tasks_good": ["extract", "summarize", "draft", "code-write", "code-review", "classify"],
+      "tasks_bad": [],
+      "ctx_hint": 128000,
+      "cost_class": "mid",
+      "status": "available",
+      "supported_efforts": ["low", "medium", "high", "max"]
+    },
+    "gpt-6.1-sol": {
+      "vendor": "openai",
+      "provider": "codex",
+      "tier": "orchestrator",
+      "tasks_good": ["code-write"],
+      "tasks_bad": [],
+      "ctx_hint": 128000,
+      "cost_class": "mid",
+      "status": "unprobed",
+      "supported_efforts": ["low", "medium", "high", "max", "ultra"]
     }
   }
 }
