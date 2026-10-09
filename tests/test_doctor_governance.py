@@ -7,6 +7,13 @@ from agents_inc.registry import Registry
 from agents_inc.gateway import Gateway
 from agents_inc.router import Route
 from codex_testkit import CODEX_EXECUTABLE
+from unittest import mock as _mock
+
+def _snapshot_env(tc):
+    """Snapshot os.environ; cleanup restores prior values (incl. a pre-set WORKERBEES_GOVERNANCE), not just deletes."""
+    guard = _mock.patch.dict(os.environ)
+    guard.start()
+    tc.addCleanup(guard.stop)
 
 
 def counter_runner(cmd, stdin_text, timeout=300, cwd=None, **kwargs):
@@ -25,12 +32,10 @@ class DoctorGovernanceOffModeTest(unittest.TestCase):
     """Off mode: byte-identical to original behavior."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         counter_runner.calls = 0
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_off_mode_probe_unchanged(self):
         """Off mode probe_cli returns ok status, ledger node written by doctor."""
@@ -65,12 +70,10 @@ class DoctorGovernanceShadowModeTest(unittest.TestCase):
     """Shadow mode: decision recorded, probe runs."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         gateway_pong_runner.calls = 0
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_shadow_mode_probe_runs_decision_recorded(self):
         """Shadow mode: probe runs, decision recorded in control.sqlite."""
@@ -96,12 +99,10 @@ class DoctorGovernanceEnforceModeTest(unittest.TestCase):
     """Enforce mode allowed: probe runs, gateway handles ledger, no duplicates."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         gateway_pong_runner.calls = 0
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_enforce_allowed_probe_runs_one_node(self):
         """Enforce allowed: probe runs, exactly one node per probe, parent_id=None."""
@@ -154,12 +155,10 @@ class DoctorGovernanceEnforceDeniedTest(unittest.TestCase):
     """Enforce denied: real policy denial via NO_EDGE."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         counter_runner.calls = 0
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_enforce_denied_no_edge_real_policy(self):
         """Enforce denied: real policy denial when edge is missing."""
@@ -200,11 +199,9 @@ class DoctorNoBootstrapRecursionTest(unittest.TestCase):
     """No bootstrap recursion: doctor.available() never called from gateway path."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_no_available_call_in_enforce_mode(self):
         """Enforce mode probe_cli never calls doctor.available()."""
@@ -244,11 +241,9 @@ class DoctorGovernanceModeValidationTest(unittest.TestCase):
     """Invalid mode raises ValueError."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_invalid_mode_raises_valueerror(self):
         """Invalid governance_mode raises ValueError."""
@@ -269,11 +264,9 @@ class DoctorGovernanceModeEnvTest(unittest.TestCase):
     """governance_mode=None defaults to env var or 'off'."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_mode_from_environ(self):
         """governance_mode=None defaults to WORKERBEES_GOVERNANCE env var."""
@@ -291,11 +284,9 @@ class DoctorAvailableGovernanceWiringTest(unittest.TestCase):
     """T1: doctor.available() forwards governance params to run() without exception."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_available_with_governance_params(self):
         """T1: doctor.available() accepts and forwards governance params."""
@@ -315,11 +306,9 @@ class DoctorAvailableRegressionB1Test(unittest.TestCase):
     """T2: Regression for B1 — doctor.available() with env WORKERBEES_GOVERNANCE=enforce, no gateway param."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_available_env_enforce_no_gateway_param(self):
         """T2: doctor.available() reads WORKERBEES_GOVERNANCE from env, should not raise AttributeError."""
@@ -339,11 +328,9 @@ class DoctorProbePickModelNoneGuardTest(unittest.TestCase):
     """T3: B3 guard — pick_model returns None should not crash gateway.dispatch."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_probe_cli_route_none_guard(self):
         """T3: probe_cli returns WB_NO_ELIGIBLE_ROUTE when pick_model returns None."""
@@ -367,12 +354,10 @@ class DoctorProbePickModelNoneCallCounterTest(unittest.TestCase):
     """T3 variant: track calls to runner when pick_model returns None."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         self.call_count = 0
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_probe_cli_route_none_no_runner_calls(self):
         """T3: when pick_model returns None, runner should not be called."""
@@ -397,14 +382,12 @@ class DoctorAvailablePipelineE2ETest(unittest.TestCase):
     """T4: End-to-end pipeline.brief() with enforce mode, no explicit available arg."""
 
     def setUp(self):
+        _snapshot_env(self)
         self.ws = Path(tempfile.mkdtemp())
         # Create minimal source file
         self.src = self.ws / "test_source.md"
         self.src.write_text("[p1] Claim here: evidence.\n\n[p2] Another claim: more evidence.")
 
-    def tearDown(self):
-        if "WORKERBEES_GOVERNANCE" in os.environ:
-            del os.environ["WORKERBEES_GOVERNANCE"]
 
     def test_pipeline_brief_enforce_mode_no_available_arg(self):
         """T4: pipeline.brief() in enforce mode without available= param."""
