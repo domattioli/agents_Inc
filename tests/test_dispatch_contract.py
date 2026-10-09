@@ -121,11 +121,16 @@ class TestSharedRungTable(unittest.TestCase):
         import json
         import dispatch_rungs
         models = json.loads((ROOT / "agents_inc" / "models.json").read_text())["models"]
+        tiers = json.loads((ROOT / "agents_inc" / "routing.json").read_text())["tiers"]
         self.assertEqual(len(dispatch_rungs.MODEL_RUNG), 8)
         for alias, rung in dispatch_rungs.MODEL_RUNG.items():
             hits = [k for k in models if k == alias or k.endswith("-" + alias)]
-            self.assertEqual(len(hits), 1, alias)
-            self.assertEqual(models[hits[0]]["tier"], rung, alias)
+            # model_sync keeps superseded codex entries (e.g. gpt-5.6-sol beside gpt-6.1-sol),
+            # so several hits are legal; exactly one must be the slug routing.json pins in this rung.
+            pinned = [k for k in hits if k in tiers.get(rung, {}).values()]
+            self.assertEqual(len(pinned), 1, (alias, hits))
+            for slug in hits:  # superseded entries must not drift to another tier
+                self.assertEqual(models[slug]["tier"], rung, (alias, slug))
             self.assertIn(rung, dispatch_rungs.FAN_OUT_BY_RUNG)
 
 

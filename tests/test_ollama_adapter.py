@@ -175,10 +175,19 @@ class TestReady(unittest.TestCase):
         self.assertEqual(reason, "WB_LOCAL_MODEL_NOT_ALLOWED")
 
     def test_model_in_allowlist(self):
-        """Model in allowlist is checked."""
-        ready_ok, reason = ollama.ready("qwen2.5-coder:7b")
-        # ready() checks if model is in allowlist (yes) and then tries HTTP
-        # Without mocking HTTP, it will fail with HTTP error, but that's after allowlist check
+        """Allowlisted model passes the allowlist gate and is then checked against /api/tags (mocked; no live ollama)."""
+        def conn_listing(names):
+            resp = MagicMock(status=200)
+            resp.read.return_value = json.dumps({"models": [{"name": n} for n in names]}).encode()
+            conn = MagicMock()
+            conn.getresponse.return_value = resp
+            return conn
+        with patch("agents_inc.adapters.ollama.http.client.HTTPConnection",
+                   return_value=conn_listing(["qwen2.5-coder:7b"])) as http:
+            self.assertEqual(ollama.ready("qwen2.5-coder:7b"), (True, ""))
+        http.return_value.request.assert_called_once_with("GET", "/api/tags")
+        with patch("agents_inc.adapters.ollama.http.client.HTTPConnection", return_value=conn_listing(["other:1b"])):
+            self.assertEqual(ollama.ready("qwen2.5-coder:7b"), (False, "WB_LOCAL_MODEL_NOT_READY"))
 
 
 class TestEstimateTokens(unittest.TestCase):
@@ -261,11 +270,12 @@ class TestPolicyOllama(unittest.TestCase):
 
     def test_ollama_with_local_auth_passes(self):
         """ollama + confidential + local_authorized -> OK."""
-        workspace = Path("/tmp/ws")
-        with patch("agents_inc.policy.is_local_authorized", return_value=True):
-            route = router.Route("ollama", "qwen2.5-coder:7b", "grunt", "http")
-            # Should not raise
-            policy.check_dispatch(route, workspace, True)
+        with tempfile.TemporaryDirectory() as raw:
+            workspace = Path(raw)
+            with patch("agents_inc.policy.is_local_authorized", return_value=True) as authorized:
+                route = router.Route("ollama", "qwen2.5-coder:7b", "grunt", "http")
+                self.assertIsNone(policy.check_dispatch(route, workspace, True))
+            authorized.assert_called_once_with(workspace)  # the pass came from the auth check, not a skipped branch
 
 
 class TestBuildCmd(unittest.TestCase):

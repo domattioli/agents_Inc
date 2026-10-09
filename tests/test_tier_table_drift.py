@@ -77,7 +77,9 @@ class GeneratedBlockTest(_Tmp):
         self.assertEqual(text.count(END), 1)
         block = text.split(BEGIN, 1)[1].split(END, 1)[0]
         ids = list(models())
-        self.assertEqual(len(ids), 39)  # at plan time; update with models.json
+        self.assertTrue(ids)
+        # Both directions, no hardcoded count: no stale id in the block, no models.json id missing from it.
+        self.assertEqual(set(re.findall(r"`([^`]+)`", block)), set(ids))
         for model_id in ids:
             self.assertIn(f"`{model_id}`", block, model_id)
 

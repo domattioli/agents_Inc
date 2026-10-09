@@ -52,7 +52,9 @@ class BridgeThreadIdTest(unittest.TestCase):
     TOKEN = "test-token"
 
     def setUp(self) -> None:
-        os.environ["CODEX_BRIDGE_TOKEN"] = self.TOKEN
+        token_env = mock.patch.dict(os.environ, {"CODEX_BRIDGE_TOKEN": self.TOKEN})
+        token_env.start()
+        self.addCleanup(token_env.stop)  # restores any prior token
         self.server = bridge.CodexBridgeServer(
             ("127.0.0.1", 0),
             bridge.CodexBridgeHandler,
