@@ -11,6 +11,7 @@ from unittest import mock
 from agents_inc.install import catalog, cli
 from agents_inc.install.doctor import check_install
 from agents_inc.install.paths import InstallPaths
+from agents_inc.install.runtime import MODEL_ALIASES
 
 CATALOG_DIR = Path(__file__).parent / "fixtures/catalog"
 
@@ -37,7 +38,14 @@ class DoctorWarningsTest(unittest.TestCase):
         (scripts / "at_route.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
         self.home = raw / "home"; (self.home / ".claude").mkdir(parents=True)
         self.paths = InstallPaths.for_home(self.home)
-        self.models = catalog.load(CATALOG_DIR / "models_cache.json")
+        # Fixture cache plus a sol slug newer than any plausible pin, so drift is provable whatever routing.json pins.
+        cache = json.loads((CATALOG_DIR / "models_cache.json").read_text())
+        cache["models"].append({"slug": "gpt-99-sol", "visibility": "list", "supported_in_api": True, "priority": 0,
+                                "supported_reasoning_levels": [{"effort": "low", "description": "x"}]})
+        self.codex_home = raw / "codex_home"; self.codex_home.mkdir()
+        (self.codex_home / "models_cache.json").write_text(json.dumps(cache))
+        self.models = catalog.load(self.codex_home / "models_cache.json")
+        self.drift = f"MODEL_DRIFT sol: pinned {MODEL_ALIASES['sol']}, newest gpt-99-sol"
         args = argparse.Namespace(source=str(self.source), adopt_existing_workerbee=False, without_codex=True, no_host_wiring=False)
         with mock.patch.object(cli, "_paths", return_value=self.paths):
             self.assertEqual(cli.install(args), 0)
@@ -48,7 +56,7 @@ class DoctorWarningsTest(unittest.TestCase):
         report = check_install(self.paths, models=self.models)
         self.assertEqual(report.codes, ())
         self.assertTrue(report.ready)
-        self.assertIn("MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", report.warnings)
+        self.assertIn(self.drift, report.warnings)
 
     def test_no_cache_means_no_drift_warning(self):
         report = check_install(self.paths, catalog_path=self.home / "missing.json")
@@ -56,13 +64,13 @@ class DoctorWarningsTest(unittest.TestCase):
 
     def test_cli_text_puts_ready_first_and_warnings_after(self):
         out = io.StringIO()
-        env = {"CODEX_HOME": str(CATALOG_DIR)}
+        env = {"CODEX_HOME": str(self.codex_home)}
         with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out):
             code = cli.main(["doctor"])
         lines = out.getvalue().splitlines()
         self.assertEqual(code, 0)
         self.assertEqual(lines[0], "READY")
-        self.assertIn("WARNING: MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", lines[1:])
+        self.assertIn("WARNING: " + self.drift, lines[1:])
 
     def test_cli_json_shape_unchanged(self):
         out = io.StringIO()

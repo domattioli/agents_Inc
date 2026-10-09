@@ -161,11 +161,11 @@ which model ids sit on each rung; edit `agents_inc/models.json` or
 | executive | claude | `fable` | `fable` |
 | executive | codex | `gpt-6-astra` | `gpt-6-astra` |
 | orchestrator | claude | `opus` | `opus` |
-| orchestrator | codex | `gpt-5.6-sol` | `gpt-5.6-sol` |
+| orchestrator | codex | `gpt-6.1-sol` | `gpt-5.6-sol`, `gpt-6.1-sol` |
 | workhorse | claude | `sonnet` | `sonnet` |
 | workhorse | codex | `gpt-5.6-terra` | `gpt-5.6-terra` |
 | grunt | claude | `haiku` | `haiku` |
-| grunt | codex | `gpt-5.6-luna` | `gpt-5.4-mini`, `gpt-5.6-luna` |
+| grunt | codex | `gpt-6-luna` | `gpt-5.4-mini`, `gpt-5.6-luna`, `gpt-6-luna` |
 | grunt | gemini | `gemini-flash-lite-latest` | `gemini-2.5-flash`, `gemini-flash-lite`, `gemini-flash-lite-latest` |
 | grunt | mistral | `mistral-small-latest` | `mistral-small-latest` |
 | grunt | ollama | `qwen2.5-coder:3b` | `qwen2.5-coder:3b`, `qwen2.5-coder:7b`, `qwen3:8b` |

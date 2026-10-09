@@ -385,7 +385,7 @@ class TestProbeOpenRouter:
         assert "openrouter" in caps_data
         assert caps_data["openrouter"]["cap"] == 50  # daily_requests_limit from fixture
 
-    def test_probe_openrouter_never_prints_key(self, hermetic, tmp_path, capsys):
+    def test_probe_openrouter_never_prints_key(self, hermetic, tmp_path, capsys, monkeypatch):
         """probe_openrouter never prints API key to stdout/stderr."""
         from agents_inc import free_caps
         import os
@@ -394,7 +394,7 @@ class TestProbeOpenRouter:
         codex_dir.mkdir()
 
         # Set fake API key
-        os.environ["OPEN_ROUTER_API_KEY"] = "sk-or-FAKE-SENTINEL-1234567890"
+        monkeypatch.setenv("OPEN_ROUTER_API_KEY", "sk-or-FAKE-SENTINEL-1234567890")  # restored after the test
 
         fixture_path = Path(__file__).parent / "fixtures" / "012" / "openrouter_key_limits.json"
         free_caps.probe_openrouter(from_file=str(fixture_path))
