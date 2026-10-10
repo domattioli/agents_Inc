@@ -284,6 +284,28 @@ class DispatchCliTest(unittest.TestCase):
         self.assertTrue((dest / "run.json").is_file())
         self.assertTrue((dest / "prompt.md").is_file())
 
+    def test_codex_write_slot(self):
+        self.assertTrue(dispatch.codex_write({"CODEX_WRITE": "yes"}))
+        self.assertTrue(dispatch.codex_write({"CODEX_WRITE": " True "}))
+        self.assertFalse(dispatch.codex_write({}))
+        self.assertFalse(dispatch.codex_write({"CODEX_WRITE": "no"}))
+
+    def test_launch_codex_passes_write_to_run_codex(self):
+        seen = []
+
+        def fake_run_codex(*a, **kw):
+            seen.append((kw.get("tools"), kw.get("write")))
+            self.assertEqual(kw.get("extra_read"), (self.runs / "snapshot.json",))
+            return 0
+        receipt = mock.Mock(codex_path="/bin/true")
+        with mock.patch("agents_inc.install.runtime.run_codex", side_effect=fake_run_codex), \
+                mock.patch("agents_inc.install.cli._paths") as paths, \
+                mock.patch("agents_inc.install.cli._efforts", return_value={}), \
+                mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt):
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs)
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
+        self.assertEqual(seen, [(False, False), (True, True)])
+
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
         self.assertIsNone(dispatch.parse_workers_spawned("no count here"))
