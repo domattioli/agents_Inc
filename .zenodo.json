@@ -1,7 +1,7 @@
 {
   "title": "agents_Inc",
   "upload_type": "software",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Governed multi-agent dispatch and verification layer that pools Claude, Codex, Gemini, Mistral, and OpenRouter capacity.",
   "creators": [
     {
