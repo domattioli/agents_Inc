@@ -203,8 +203,13 @@ def _denied_skill_args(home: Path | None = None) -> list[str]:
     """D57: user skills that resolve into ~/.local (sandbox-denied) make the Lead stop on a blocked read; turn them off."""
     home = Path(home or Path.home())
     denied = Path(os.path.realpath(home / ".local"))
-    paths = sorted(str(f) for f in (home / ".agents" / "skills").glob("*/SKILL.md")
-                   if Path(os.path.realpath(f)).is_relative_to(denied))
+    root, paths = home / ".agents" / "skills", []
+    for top, dirs, files in os.walk(root, followlinks=True):  # skill links are symlinked dirs; rglob skips them
+        if len(Path(top).relative_to(root).parts) >= 4:
+            dirs[:] = []
+        if "SKILL.md" in files and Path(os.path.realpath(Path(top) / "SKILL.md")).is_relative_to(denied):
+            paths.append(str(Path(top) / "SKILL.md"))
+    paths.sort()
     if not paths:
         return []
     items = ", ".join(f"{{path={_toml_str(f)}, enabled=false}}" for f in paths)
@@ -323,6 +328,8 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         raise ValueError(f"unsupported effort {effort!r} for {slug}")
     if not executable.is_absolute():
         raise ValueError("Codex executable must be absolute")
+    if lead_dir is not None and write and Path(os.path.realpath(lead_dir)).is_relative_to(Path(os.path.realpath(cwd))):
+        raise ValueError("--lead --write needs the run directory outside cwd (D57)")
     if write and not tools:
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     if network and (not tools or lead_dir is not None):

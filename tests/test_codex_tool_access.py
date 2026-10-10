@@ -401,3 +401,23 @@ class DeniedSkillArgsTest(unittest.TestCase):
             self.assertIn("workerbee/SKILL.md", args[1]); self.assertIn("enabled=false", args[1])
             self.assertNotIn("other", args[1])
             self.assertEqual(runtime._denied_skill_args(home / "none"), [])
+
+
+class LeadBuilderContainmentTest(unittest.TestCase):
+    def test_builder_refuses_lead_write_inside_cwd(self):
+        import tempfile
+        from agents_inc.install import runtime
+        with tempfile.TemporaryDirectory() as raw:
+            cwd = Path(raw); lead = cwd / "broker"; lead.mkdir()
+            with self.assertRaisesRegex(ValueError, "outside cwd"):
+                runtime.build_codex_argv(Path("/bin/codex"), "terra", "low", cwd, {runtime.MODEL_ALIASES["terra"]: ["low"]}, tools=True, write=True, lead_dir=lead)
+
+    def test_nested_skill_into_local_is_disabled(self):
+        import tempfile
+        from agents_inc.install import runtime
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            real = home / ".local/x"; real.mkdir(parents=True); (real / "SKILL.md").write_text("x")
+            nest = home / ".agents/skills/bundle/skills"; nest.mkdir(parents=True)
+            (nest / "foo").symlink_to(real)
+            self.assertIn("bundle/skills/foo/SKILL.md", runtime._denied_skill_args(home)[1])
