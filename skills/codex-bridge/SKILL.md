@@ -247,7 +247,7 @@ The alias match is case-insensitive:
 | astra | `agent.sh submit --backend codex --wait` | `gpt-6-astra` |
 | sol | same | `gpt-5.6-sol` |
 | terra | same | `gpt-5.6-terra` |
-| luna | same | `gpt-5.6-luna` |
+| luna | same | `gpt-6-luna` |
 
 Each call has a 120-second limit, enforced with `perl` `alarm` so that GNU `timeout` is not needed. If a call fails, the hook prints the exit code and the stderr output, and asks the main model to answer the question itself. The hook always exits 0, so it never blocks a prompt. Each call adds one line to `~/.codex-bridge/at_route.log` with the UTC timestamp, alias, exit code and elapsed seconds.
 

@@ -96,6 +96,15 @@ class RungArgvTest(unittest.TestCase):
                                                  Path("/w"), EFF, MAP, True, True, network=True)
         self.assertIn(key, resume)
 
+    def test_tool_tmp_writable_and_exported(self):
+        # #66: tool commands get a writable TMPDIR; zsh heredocs use TMPPREFIX.
+        argv = build_codex_argv(EXE, "sol", "medium", Path("/w"), EFF, MAP, True, False, tool_tmp=Path("/t/x"))
+        self.assertIn('shell_environment_policy.set.TMPDIR="/t/x"', argv)
+        self.assertIn('shell_environment_policy.set.TMPPREFIX="/t/x/zsh"', argv)
+        self.assertIn(f'{runtime._toml_key("/t/x")}="write"', argv[-2])
+        self.assertIn('"/w"="read"', argv[-2])
+        self.assertFalse(any("TMPDIR" in a for a in _argv("sol", tools=True)))
+
 
 class ProfileTest(unittest.TestCase):
     def test_deny_list_and_grants(self):

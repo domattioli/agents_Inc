@@ -301,7 +301,8 @@ class DispatchCliTest(unittest.TestCase):
 
         def fake_run_codex(*a, **kw):
             seen.append((kw.get("tools"), kw.get("write"), kw.get("network")))
-            self.assertEqual(kw.get("extra_read"), (self.runs / "snapshot.json",))
+            self.assertEqual(kw.get("extra_read"),
+                             (self.runs / "pre_dispatch_snapshot.py", self.runs / "snapshot.json"))
             return 0
         receipt = mock.Mock(codex_path="/bin/true")
         with mock.patch("agents_inc.install.runtime.run_codex", side_effect=fake_run_codex), \

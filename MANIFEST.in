@@ -45,3 +45,8 @@ recursive-include skills/workerbee *
 recursive-include skills/codex-bridge *
 include docs/governance/SCHEMA-3NF.md
 global-exclude __pycache__ *.py[cod]
+# The release-ignore block prunes tests/ and demo/ at the root only; the shipped skills carry their own.
+prune skills/workerbee/tests
+prune skills/codex-bridge/tests
+prune skills/codex-bridge/mcp/tests
+prune skills/codex-bridge/scripts/demo

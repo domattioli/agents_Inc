@@ -6,12 +6,25 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-10
+
+Codex delegates can opt into network access and now run heredocs and their own snapshot check inside the sandbox. Versioned as a patch by operator ruling, although it adds an opt-in flag (Constitution VIII-A would make it 0.4.0).
+
 ### Added
 
+- Update notice: the session-start hook and `agents-inc doctor` say when PyPI has a newer agents-inc, with the update command. At most one request to pypi.org a day, 2 s timeout, silent on failure; opt out with `AGENTS_INC_NO_UPDATE_CHECK=1`.
+- `agents-inc report bug|feature`: drafts a GitHub issue for agents_Inc with version, doctor codes, OS and Codex version; home paths redacted, likely secrets refused. Prints only; `--submit` files it through the caller's `gh` login.
 - Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
+
+### Changed
+
+- `docs/governance/DELEGATION-MODEL.md` 2.0.0 uses the D46 roles (CEO, CoS, Lead, Worker) in place of Exec and Super; reviewed by sol.
 
 ### Fixed
 
+- Codex tool commands get a private writable temp dir (`TMPDIR`, `TMPPREFIX`), so heredocs work; a dispatched Codex delegate gets a copy of `pre_dispatch_snapshot.py` in its run directory (named in the prompt as `SNAPSHOT VERIFIER`) and can run its own FAILURE GATE check (#66). Tool commands use an empty global git config, and the snapshot records ignored paths at capture, so a sandboxed verify matches the supervisor's.
+- DelegateAgent MCP server used `gpt-5.6-luna` after the pin moved; it now reads the luna slug from `routing.json`.
+- Skill tests and the codex-bridge demo no longer ship in the sdist and wheel.
 - `pre_dispatch_snapshot.py verify --allow <file>` no longer reports `CHANGED <dir>/` when the allowed file sits in a new directory (#66).
 
 ## [0.3.0] — 2026-10-10

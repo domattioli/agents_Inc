@@ -338,7 +338,9 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                        thread_out=thread, resume_thread=resume, worker=worker,
                        tools=codex_write, write=codex_write, network=codex_write and codex_network,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
-                       extra_read=() if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",))
+                       # the verifier copy too, so the delegate can run its own FAILURE GATE check (#66)
+                       extra_read=(Path(run_dir) / "pre_dispatch_snapshot.py",) + (
+                           () if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",)))
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume}
@@ -553,6 +555,10 @@ def run(args) -> int:
         print(f"dispatch {run_id} {model} snapshot failed rc={src}: {slog.strip()}")
         return EXIT_RED
     prompt = inject_snapshot(prompt, spec["snapshot"])
+    # #66: the installed scripts sit under ~/.local, which the Codex sandbox denies; ship a copy beside the snapshot
+    verifier = run_dir / "pre_dispatch_snapshot.py"
+    _wtext(verifier, (SCRIPTS / "pre_dispatch_snapshot.py").read_text(encoding="utf-8"))
+    prompt = prompt.rstrip("\n") + f"\nSNAPSHOT VERIFIER: `python3 {verifier} verify {spec['snapshot']}` (use this copy)\n"
     if _BROKER_SAFE_WRITES and _WORKER_ASK:
         prompt += ASK_LEAD_NOTE
     spec["fan_out"] = parse_fan_out(prompt)

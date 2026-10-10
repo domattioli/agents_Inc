@@ -119,7 +119,8 @@ def _toml_key(path) -> str:
 
 
 def permission_profile(cwd: Path, write: bool, home: Path | None = None,
-                       write_dir: Path | None = None, extra_deny: tuple = (), extra_read: tuple = ()) -> dict[str, str]:
+                       write_dir: Path | None = None, extra_deny: tuple = (), extra_read: tuple = (),
+                       extra_write: tuple = ()) -> dict[str, str]:
     """Filesystem grants for tool commands. Anything absent (all of HOME except cwd) is unreadable.
     D51: with write_dir (the Lead's run directory), write goes to write_dir/inbox only; write_dir and cwd stay
     read, so run.json, workers/ and results are broker-owned. Without it, --write grants cwd (legacy)."""
@@ -153,16 +154,20 @@ def permission_profile(cwd: Path, write: bool, home: Path | None = None,
         grants[f'"{os.path.realpath(home)}/{name}"'] = "none"
     for path in extra_read:  # e.g. the dispatch snapshot outside cwd; files only
         grants[_toml_key(path)] = "read"
+    for path in extra_write:  # the per-run tool temp dir (#66)
+        grants[_toml_key(path)] = "write"
     for path in extra_deny:  # e.g. the isolated Lead CODEX_HOME
         grants[_toml_key(path)] = "none"
     return grants
 
 
 def permission_args(cwd: Path, write: bool, home: Path | None = None, write_dir: Path | None = None,
-                    extra_deny: tuple = (), extra_read: tuple = (), network: bool = False) -> list[str]:
+                    extra_deny: tuple = (), extra_read: tuple = (), network: bool = False,
+                    extra_write: tuple = ()) -> list[str]:
     """network (#66): opt-in outbound access for tool commands; off unless asked."""
     body = ", ".join(f"{k}={chr(34)}{v}{chr(34)}"
-                     for k, v in permission_profile(cwd, write, home, write_dir, extra_deny, extra_read).items())
+                     for k, v in permission_profile(cwd, write, home, write_dir, extra_deny, extra_read,
+                                                    extra_write).items())
     return (["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}.filesystem={{{body}}}"]
             + (["-c", f"permissions.{PROFILE}.network={{enabled=true}}"] if network else []))
 
@@ -295,9 +300,10 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
                      write_dir: Path | None = None, lead_dir: Path | None = None,
                      extra_deny: tuple = (), lead_home: Path | None = None, home_repo: str | None = None,
                      json_out: Path | None = None, worker: tuple | None = None, extra_read: tuple = (),
-                     network: bool = False) -> list[str]:
+                     network: bool = False, tool_tmp: Path | None = None) -> list[str]:
     """json_out adds `--json -o <json_out>` (D54 session capture); worker=(channel_dir, request_id) adds the
-    ask_lead MCP server. network (#66) turns on outbound access for tool commands."""
+    ask_lead MCP server. network (#66) turns on outbound access for tool commands. tool_tmp (#66): a writable
+    temp dir for tool commands, set as TMPDIR and as the zsh here-document prefix (TMPPREFIX)."""
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
@@ -327,9 +333,15 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
         # The profile alone sets access: cwd "read", or "write" with --write; network stays off unless --network.
         # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
-        argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
+        tmp_env = ([] if tool_tmp is None else
+                   ["-c", f"shell_environment_policy.set.TMPDIR={_toml_str(str(tool_tmp))}",
+                    "-c", f"shell_environment_policy.set.TMPPREFIX={_toml_str(str(Path(tool_tmp) / 'zsh'))}"])
+        # ~/.gitconfig is unreadable in the profile and git aborts on it; tool commands get an empty global config
+        argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"',
+                                                              "-c", 'shell_environment_policy.set.GIT_CONFIG_GLOBAL="/dev/null"']
+                + tmp_env
                 + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny, extra_read=extra_read,
-                                  network=network)
+                                  network=network, extra_write=() if tool_tmp is None else (tool_tmp,))
                 + (lead_args(model, lead_dir, None, lead_home, home_repo) if lead_dir is not None else []))
     if worker is not None:
         argv += worker_args(*worker)
@@ -342,7 +354,8 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
                             supported_efforts: dict[str, list[str]], model_map: dict[str, str] | None = None,
                             tools: bool = False, write: bool = False, write_dir: Path | None = None,
                             extra_deny: tuple = (), json_out: Path | None = None,
-                            worker: tuple | None = None, extra_read: tuple = (), network: bool = False) -> list[str]:
+                            worker: tuple | None = None, extra_read: tuple = (), network: bool = False,
+                            tool_tmp: Path | None = None) -> list[str]:
     """D54: `codex exec resume <thread_id> ... <message>` with the same model, effort, -c and permission flags as
     the original run. `exec resume` takes no -C or -s: the caller runs it with cwd set, and `-s <mode>` becomes
     `-c sandbox_mode=<mode>`. The message is the PROMPT positional; a leading space keeps a message that starts
@@ -350,7 +363,8 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
     if not isinstance(thread_id, str) or not THREAD_ID_RE.match(thread_id):
         raise ValueError(f"bad Codex thread id: {thread_id!r}")
     base = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
-                            None, extra_deny, None, None, json_out, worker, extra_read=extra_read, network=network)
+                            None, extra_deny, None, None, json_out, worker, extra_read=extra_read, network=network,
+                            tool_tmp=tool_tmp)
     rest, flags, i = base[2:-1], [], 0  # between [exe, "exec"] and the stdin marker "-"
     while i < len(rest):
         if rest[i] == "-C":
@@ -404,8 +418,12 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
     json_mode = thread_out is not None or resume_thread is not None
     lead_home = lead_codex_home(slug) if (lead_dir is not None or isolate_home) else None
     cleanup_failed = False
-    out_dir = None
+    out_dir = tool_tmp = None
     try:
+        if tools:  # #66: tool commands get their own writable temp dir (heredocs, scratch files)
+            tmp_root = (env or {}).get("TMPDIR")
+            tool_tmp = Path(tempfile.mkdtemp(prefix="agents-inc-tool-tmp-",
+                                             dir=tmp_root if tmp_root and os.path.isdir(tmp_root) else None))
         if json_mode:  # the -o file goes to the Worker TMPDIR under the broker, else a private temp dir
             tmp_root = (env or {}).get("TMPDIR")
             out_dir = Path(tempfile.mkdtemp(prefix="agents-inc-codex-out-",
@@ -429,12 +447,12 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         if resume_thread is not None:
             argv = build_codex_resume_argv(executable, resume_thread, prompt, model, effort, cwd, supported_efforts,
                                            model_map, tools, write, write_dir, deny, json_out, worker,
-                                           extra_read=extra_read, network=network)
+                                           extra_read=extra_read, network=network, tool_tmp=tool_tmp)
             prompt, extra = "", {"cwd": str(cwd)}  # the message rides the PROMPT positional; resume has no -C
         else:
             argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
                                     lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read,
-                                    network=network)
+                                    network=network, tool_tmp=tool_tmp)
         result = subprocess.run(
             argv,
             input=prompt,
@@ -456,8 +474,12 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
             except OSError:
                 stdout = ""
     finally:
-        if out_dir is not None:
-            shutil.rmtree(out_dir, ignore_errors=True)
+        for d in (out_dir, tool_tmp):
+            if d is not None:
+                try:
+                    shutil.rmtree(d, ignore_errors=True)
+                except OSError:
+                    pass
         if lead_home is not None:
             auth = lead_home / "auth.json"
             if auth.exists() and not auth.is_symlink():  # Codex replaced the link with a real credential file
