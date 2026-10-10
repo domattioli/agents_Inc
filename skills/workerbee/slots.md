@@ -73,7 +73,7 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | SUCCESS_GATE | 2 | commands in backticks with the expected output |
 | FAILURE_GATE | 3 | commands in backticks or conditions that make the task RED |
 | PRE_EXISTING_CHANGES | 7 | `<snapshot>` placeholder: the dispatch wrapper (`agents_inc/install/dispatch.py`) fills it with the snapshot path after capture; hand-written prompts put the path from `pre_dispatch_snapshot.py capture <out.json>` plus the verify command `pre_dispatch_snapshot.py verify <out.json> --allow <path>...` |
-| ALLOWLIST | 7 | models the delegate may spawn, or `none — do all work yourself` |
+| ALLOWLIST | 7 | models the delegate may spawn, or `none — do all work yourself`. With a FAN_OUT total above 0, a Codex delegate (astra, sol, terra) runs as a broker Lead with the rung-allowed models from this list (D57) |
 | FAN_OUT | D48 | `width <n>, total <n>, depth <n>`; optional: the renderer fills the rung default from a `RUNG` or `MODEL` slot, else Orchestrator (`width 3, total 6, depth 2`); Workhorse `2, 4, 1`; Grunt `0, 0, 0` |
 | CLASSIFICATION | 8 | public, internal, or confidential, with the reason |
 | EFFORT | 9 | intended effort level, and whether the transport can set it |
