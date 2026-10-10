@@ -105,6 +105,9 @@ def verify(snap_path: str, allow: list[str]) -> int:
     new = set(_git("status", "--porcelain").splitlines())
     for line in old ^ new:
         for p in _porcelain_paths(line):
+            # `?? dir/` collapses a new untracked directory; its files are checked one by one below
+            if line.startswith("??") and p.endswith("/"):
+                continue
             if not _allowed(p, allow):
                 changed.add(p)
     # untracked files hidden inside a pre-existing untracked directory line

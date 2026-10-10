@@ -284,9 +284,15 @@ def codex_write(slots: dict) -> bool:
     return (slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE) in CODEX_WRITE_MODES
 
 
+def codex_network(slots: dict) -> bool:
+    """#66: slot CODEX_NETWORK: yes (or true) gives a Codex delegate's tool commands outbound network access.
+    Off by default. It needs tools, so it takes effect only with codex_write."""
+    return str(slots.get("CODEX_NETWORK", "")).strip().lower() in ("yes", "true")
+
+
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
            permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None,
-           codex_write: bool = False) -> dict:
+           codex_write: bool = False, codex_network: bool = False) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
     or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54)."""
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
@@ -330,7 +336,7 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
         rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env,
                        extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES,
                        thread_out=thread, resume_thread=resume, worker=worker,
-                       tools=codex_write, write=codex_write,
+                       tools=codex_write, write=codex_write, network=codex_write and codex_network,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
                        extra_read=() if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",))
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
@@ -526,6 +532,7 @@ def run(args) -> int:
             "gates": {"tier": args.tier, "allow": allow_paths(str(slots.get("FILES_IN_SCOPE", "")))},
             "permission_mode": slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE,
             "codex_write": codex_write(slots),
+            "codex_network": codex_network(slots),
             "rc": None, "outcome": None, "session_id": None}
     rc, prompt, err = render(slots_path, model)
     lint = run_dir / "lint.txt"
@@ -565,7 +572,8 @@ def run(args) -> int:
     global _LAUNCHES
     _LAUNCHES += 1
     result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
-                    **({"codex_write": True} if spec["codex_write"] else {}))
+                    **({"codex_write": True} if spec["codex_write"] else {}),
+                    **({"codex_network": True} if spec["codex_network"] else {}))
     out_path = run_dir / "stdout.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])
@@ -591,7 +599,8 @@ def resume(args) -> int:
         return EXIT_USAGE
     result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
                     spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
-                    **({"codex_write": True} if spec.get("codex_write") is True else {}))
+                    **({"codex_write": True} if spec.get("codex_write") is True else {}),
+                    **({"codex_network": True} if spec.get("codex_network") is True else {}))
     n = len(spec.get("resumes", [])) + 1
     out_path = run_dir / f"stdout.{n}.md"
     _wtext(out_path, result["stdout"])

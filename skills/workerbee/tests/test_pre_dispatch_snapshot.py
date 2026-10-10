@@ -70,6 +70,25 @@ class SnapshotPathTests(unittest.TestCase):
         r = _run(self.repo, "verify", self.snap)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_allowed_file_in_new_directory_verifies_clean(self):
+        self._commit("f")
+        self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)
+        (self.repo / "new").mkdir()
+        (self.repo / "new" / "out.md").write_text("x\n", encoding="utf-8")
+        r = _run(self.repo, "verify", self.snap, "--allow", "new/out.md")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_unallowed_file_in_new_directory_detected(self):
+        self._commit("f")
+        self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)
+        (self.repo / "new").mkdir()
+        (self.repo / "new" / "out.md").write_text("x\n", encoding="utf-8")
+        (self.repo / "new" / "stray.md").write_text("x\n", encoding="utf-8")
+        r = _run(self.repo, "verify", self.snap, "--allow", "new/out.md")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("CHANGED new/stray.md", r.stdout)
+        self.assertNotIn("CHANGED new/\n", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

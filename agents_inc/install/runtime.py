@@ -159,10 +159,12 @@ def permission_profile(cwd: Path, write: bool, home: Path | None = None,
 
 
 def permission_args(cwd: Path, write: bool, home: Path | None = None, write_dir: Path | None = None,
-                    extra_deny: tuple = (), extra_read: tuple = ()) -> list[str]:
+                    extra_deny: tuple = (), extra_read: tuple = (), network: bool = False) -> list[str]:
+    """network (#66): opt-in outbound access for tool commands; off unless asked."""
     body = ", ".join(f"{k}={chr(34)}{v}{chr(34)}"
                      for k, v in permission_profile(cwd, write, home, write_dir, extra_deny, extra_read).items())
-    return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}.filesystem={{{body}}}"]
+    return (["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}.filesystem={{{body}}}"]
+            + (["-c", f"permissions.{PROFILE}.network={{enabled=true}}"] if network else []))
 
 
 MCP_BROKER = Path(__file__).resolve().parent / "mcp_broker.py"
@@ -292,9 +294,10 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
                      model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False,
                      write_dir: Path | None = None, lead_dir: Path | None = None,
                      extra_deny: tuple = (), lead_home: Path | None = None, home_repo: str | None = None,
-                     json_out: Path | None = None, worker: tuple | None = None, extra_read: tuple = ()) -> list[str]:
+                     json_out: Path | None = None, worker: tuple | None = None, extra_read: tuple = (),
+                     network: bool = False) -> list[str]:
     """json_out adds `--json -o <json_out>` (D54 session capture); worker=(channel_dir, request_id) adds the
-    ask_lead MCP server."""
+    ask_lead MCP server. network (#66) turns on outbound access for tool commands."""
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
     if not slug:
         raise ValueError(f"unknown Codex model alias: {model}")
@@ -304,6 +307,8 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         raise ValueError("Codex executable must be absolute")
     if write and not tools:
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
+    if network and (not tools or lead_dir is not None):
+        raise ValueError("--network needs tools on and no --lead")
     common = ["--skip-git-repo-check", "-C", str(cwd), "-c", f"model_reasoning_effort={effort}",
               "-c", 'shell_environment_policy.inherit="none"', "-c", 'web_search="disabled"']
     if lead_dir is not None and (not tools or write or write_dir is not None):
@@ -320,10 +325,11 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + ["-c", "features.shell_tool=false"]
     else:
         # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
-        # The profile alone sets access: cwd "read", or "write" with --write; network stays off.
+        # The profile alone sets access: cwd "read", or "write" with --write; network stays off unless --network.
         # inherit="none" leaves PATH empty; give tool commands system paths only (no /opt/homebrew, no user paths).
         argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
-                + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny, extra_read=extra_read)
+                + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny, extra_read=extra_read,
+                                  network=network)
                 + (lead_args(model, lead_dir, None, lead_home, home_repo) if lead_dir is not None else []))
     if worker is not None:
         argv += worker_args(*worker)
@@ -336,7 +342,7 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
                             supported_efforts: dict[str, list[str]], model_map: dict[str, str] | None = None,
                             tools: bool = False, write: bool = False, write_dir: Path | None = None,
                             extra_deny: tuple = (), json_out: Path | None = None,
-                            worker: tuple | None = None, extra_read: tuple = ()) -> list[str]:
+                            worker: tuple | None = None, extra_read: tuple = (), network: bool = False) -> list[str]:
     """D54: `codex exec resume <thread_id> ... <message>` with the same model, effort, -c and permission flags as
     the original run. `exec resume` takes no -C or -s: the caller runs it with cwd set, and `-s <mode>` becomes
     `-c sandbox_mode=<mode>`. The message is the PROMPT positional; a leading space keeps a message that starts
@@ -344,7 +350,7 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
     if not isinstance(thread_id, str) or not THREAD_ID_RE.match(thread_id):
         raise ValueError(f"bad Codex thread id: {thread_id!r}")
     base = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
-                            None, extra_deny, None, None, json_out, worker, extra_read=extra_read)
+                            None, extra_deny, None, None, json_out, worker, extra_read=extra_read, network=network)
     rest, flags, i = base[2:-1], [], 0  # between [exe, "exec"] and the stdin marker "-"
     while i < len(rest):
         if rest[i] == "-C":
@@ -363,7 +369,8 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
               no_tools: bool = False, write: bool = False, tools: bool = False, write_dir: Path | None = None,
               env: dict | None = None, lead_dir: Path | None = None, home_repo: str | None = None,
               extra_deny: tuple = (), isolate_home: bool = False, thread_out: dict | None = None,
-              resume_thread: str | None = None, worker: tuple | None = None, extra_read: tuple = ()) -> int:
+              resume_thread: str | None = None, worker: tuple | None = None, extra_read: tuple = (),
+              network: bool = False) -> int:
     """thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
     message, not the JSONL, to stdout. resume_thread: continue that thread with the prompt as the next turn."""
     if receipt.codex_path is None:
@@ -390,6 +397,8 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     if write_dir is not None and not write:
         raise ValueError("--run-dir needs --write")
+    if network and (not tools or lead_dir is not None):
+        raise ValueError("--network needs tools on and no --lead")
     if resume_thread is not None and lead_dir is not None:
         raise ValueError("--lead runs cannot be resumed")
     json_mode = thread_out is not None or resume_thread is not None
@@ -404,6 +413,7 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         json_out = out_dir / "last_message.md" if out_dir is not None else None
         sys.stderr.write("agents-inc run: record " + json.dumps({"model": model, "slug": slug, "tools": "on" if tools else "off",
                          "sandbox": "workspace-write" if write else "read-only",
+                         **({"network": "on"} if network else {}),
                          **({"transport": "mcp"} if lead_dir is not None else {}),
                          **({"codex_home": "isolated"} if lead_home is not None else {})}) + "\n")
         deny = tuple(extra_deny)
@@ -419,11 +429,12 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         if resume_thread is not None:
             argv = build_codex_resume_argv(executable, resume_thread, prompt, model, effort, cwd, supported_efforts,
                                            model_map, tools, write, write_dir, deny, json_out, worker,
-                                           extra_read=extra_read)
+                                           extra_read=extra_read, network=network)
             prompt, extra = "", {"cwd": str(cwd)}  # the message rides the PROMPT positional; resume has no -C
         else:
             argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
-                                    lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read)
+                                    lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read,
+                                    network=network)
         result = subprocess.run(
             argv,
             input=prompt,

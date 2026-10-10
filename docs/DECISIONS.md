@@ -608,3 +608,7 @@ The wheel now carries `skills/workerbee`, `skills/codex-bridge` (no `tests/`), a
 `agents-inc models bump` stays a checkout command: on a pip install it would rewrite files in `site-packages`. Bench fixtures stay out of the wheel.
 This supersedes the "What a pip install gives you" text in `docs/RELEASING.md` for 0.2.0, which said `skills/` was not shipped and that an install needed a checkout. No version bump is part of this change.
 Reason: a pip or uvx user could not run `agents-inc install` or `dispatch` without cloning the repo.
+
+## D56 — Codex network opt-in (2026-10-10, status: accepted)
+
+D49 kept network off for Codex tool commands. A review that must resolve DOIs then failed DNS three times (#66). Network stays off by default. The slot `CODEX_NETWORK: yes` under `agents-inc dispatch`, or `agents-inc run --network`, adds `permissions.agents_inc_d49.network={enabled=true}` to the Codex permission profile. It needs tools on and is refused for a Lead. The filesystem profile and the deny list do not change. The run record shows `"network": "on"`. Origin: operator 2026-10-10, issue #66.
