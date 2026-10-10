@@ -154,7 +154,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
     p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
-    p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
+    p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--network", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
     p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
     p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
@@ -192,7 +192,7 @@ def main(argv=None):
             if args.model in CLAUDE_MODELS:
                 print(f"Claude aliases go through: agents-inc dispatch --model {args.model} --effort {args.effort} --cwd {args.cwd}", file=sys.stderr)
                 return 2
-            return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo)
+            return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo, network=args.network)
         if args.command == "uninstall":
             retained = uninstall(paths, receipt)
             if retained: print("WB_CONFIG_CONFLICT: retained modified artifacts", file=sys.stderr); return 1

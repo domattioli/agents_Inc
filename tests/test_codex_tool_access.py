@@ -83,6 +83,19 @@ class RungArgvTest(unittest.TestCase):
         self.assertNotIn("-s", argv)
         self.assertIn('"/w"="write"', argv[-2])
 
+    def test_network_opt_in(self):
+        # #66: network is off unless asked; it needs tools and refuses a Lead.
+        key = f"permissions.{PROFILE}.network={{enabled=true}}"
+        self.assertFalse(any("network" in a for a in _argv("sol", tools=True, write=True)))
+        argv = build_codex_argv(EXE, "sol", "medium", Path("/w"), EFF, MAP, True, True, network=True)
+        self.assertIn(key, argv)
+        self.assertEqual(argv[-1], "-")
+        with self.assertRaisesRegex(ValueError, "--network needs tools"):
+            build_codex_argv(EXE, "sol", "medium", Path("/w"), EFF, MAP, False, network=True)
+        resume = runtime.build_codex_resume_argv(EXE, "019a0000-0000-7000-8000-000000000000", "m", "sol", "medium",
+                                                 Path("/w"), EFF, MAP, True, True, network=True)
+        self.assertIn(key, resume)
+
 
 class ProfileTest(unittest.TestCase):
     def test_deny_list_and_grants(self):

@@ -6,6 +6,14 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
+
+### Fixed
+
+- `pre_dispatch_snapshot.py verify --allow <file>` no longer reports `CHANGED <dir>/` when the allowed file sits in a new directory (#66).
+
 ## [0.3.0] — 2026-10-10
 
 Codex delegates now work like Claude subagents, installs need only pip, and every dispatch carries a reporting chain and a ledger row.

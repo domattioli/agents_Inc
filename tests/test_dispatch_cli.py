@@ -292,13 +292,15 @@ class DispatchCliTest(unittest.TestCase):
         self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "plan"}))
         self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "default"}))
         self.assertFalse(dispatch.codex_write({"CODEX_WRITE": "no"}))
+        self.assertFalse(dispatch.codex_network({}))
+        self.assertTrue(dispatch.codex_network({"CODEX_NETWORK": " Yes "}))
         self.assertTrue(dispatch.codex_write({"CODEX_WRITE": " True ", "PERMISSION_MODE": "plan"}))
 
     def test_launch_codex_passes_write_to_run_codex(self):
         seen = []
 
         def fake_run_codex(*a, **kw):
-            seen.append((kw.get("tools"), kw.get("write")))
+            seen.append((kw.get("tools"), kw.get("write"), kw.get("network")))
             self.assertEqual(kw.get("extra_read"), (self.runs / "snapshot.json",))
             return 0
         receipt = mock.Mock(codex_path="/bin/true")
@@ -308,7 +310,9 @@ class DispatchCliTest(unittest.TestCase):
                 mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt):
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs)
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
-        self.assertEqual(seen, [(False, False), (True, True)])
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True, codex_network=True)
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_network=True)
+        self.assertEqual(seen, [(False, False, False), (True, True, False), (True, True, True), (False, False, False)])
 
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
