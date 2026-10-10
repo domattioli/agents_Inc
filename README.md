@@ -7,7 +7,7 @@
 <p align="center">
 <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-orange">
 <a href="https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/domattioli/agents_Inc/actions/workflows/tests.yml/badge.svg"></a>
-<a href="https://pypi.org/project/agents-inc/"><img alt="PyPI" src="https://img.shields.io/pypi/v/agents-inc"></a>
+<a href="https://pypi.org/project/agents-inc/"><img alt="PyPI" src="https://img.shields.io/pypi/v/agents-inc?cacheSeconds=3600"></a>
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue">
 <a href="https://github.com/domattioli/agents_Inc/blob/main/LICENSE"><img alt="License: PolyForm Small Business 1.0.0 + no AI training" src="https://img.shields.io/badge/license-PolyForm%20Small%20Business%201.0.0%20%2B%20no%20AI%20training-lightgrey"></a>
 <a href="https://github.com/domattioli/agents_Inc/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/domattioli/agents_Inc"></a>
