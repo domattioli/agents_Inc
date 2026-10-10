@@ -8,6 +8,7 @@ from .adapters.base import run_worker
 from .keys import ENV_PATH, available_providers, REQUIRED
 from .router import _TABLE, _CATALOG
 from . import ledger
+from .datafiles import repo_file
 
 _OR_PROMPT = "Reply with exactly two lines: PONG\\nPOSITIVE\\nClassify this text as POSITIVE or NEGATIVE: I enjoyed the clear answer."
 
@@ -144,7 +145,7 @@ def quota_paused(workspace: Path) -> list[str]:
 
 def probe_openrouter_models(workspace: Path, runner=subprocess.run) -> dict:
     """Probe every cataloged OpenRouter route. Cache facts; never edit catalog."""
-    script = Path(__file__).parents[1] / "skills/codex-bridge/scripts/oask.sh"
+    script = repo_file("skills/codex-bridge/scripts/oask.sh")
     results = {}
     for model, profile in _CATALOG.items():
         if profile.get("provider") != "openrouter":

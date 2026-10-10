@@ -15,6 +15,7 @@ The renderer uses the first `text` code block below as the template.
 
 ```text
 ROLE: {{ROLE}}
+REPORTING CHAIN: {{DELEGATE}} reports to {{SUPERVISOR}}; {{SUPERVISOR}} reports to {{EXECUTIVE}}; {{EXECUTIVE}} reports to the operator
 TASK: {{TASK}}
 CONSTRAINTS: {{CONSTRAINTS}}
 OUT OF SCOPE: {{OUT_OF_SCOPE}}
@@ -39,6 +40,7 @@ Worked example (read-only scout, every slot filled; render appends header.md bel
 
 ```text
 ROLE: Grunt scout (haiku, Agent tool), dispatched by Supervisor (opus) in /path/to/repo.
+REPORTING CHAIN: haiku reports to sonnet; sonnet reports to fable; fable reports to the operator
 TASK: Read-only scout. 1. Read agents_inc/policy.py. 2. List every function name that contains the word route, with file:line. 3. Return the list; write nothing.
 CONSTRAINTS: read-only; no file writes; no network; at most 10 tool calls. Stop-on-block: if a hook or permission classifier blocks a tool call, stop and hand back to the dispatcher; never switch tool to route around it.
 OUT OF SCOPE: editing any file; judging routing design; running unittest suites.
@@ -77,8 +79,14 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | EFFORT | 9 | intended effort level, and whether the transport can set it |
 | SECOND_OPINION | 10 | why this rung, or `not applicable` with the reason |
 | PLAN_CONTRACT | 11 | plan deliverable rules, or `not applicable — deliverable is not a plan.` |
+| CODEX_WRITE | optional | a Codex delegate matches a Claude subagent by default: tools on and write access to `--cwd` whenever PERMISSION_MODE allows edits (`acceptEdits`, the default, or `bypassPermissions`); read-only under `plan` or `default`. `no` opts out, `yes` forces it on. Built-in `image_gen` saves under `~/.codex/generated_images` (readable); the delegate copies the file into cwd. Claude delegates ignore it |
+| EXECUTIVE | optional | model alias or role word for the top seat of the REPORTING CHAIN line; precedence: explicit slot, then setting `chain.executive`, then the executive-rung alias of the delegate's vendor (equal to SUPERVISOR when that alias is the delegate or the supervisor) |
+| SUPERVISOR | optional | seat the delegate reports to; precedence: explicit slot, then setting `chain.supervisor`, then the alias one rung above the delegate on the grunt, workhorse, orchestrator, executive ladder for the same vendor, else `CoS` for an executive delegate |
+| DELEGATE | optional | the delegate's alias; precedence: explicit slot, then the `--model` flag, then the `MODEL` slot, then the first model alias named in `ROLE`, else the word `delegate` |
 | NOTES | optional | default `none`; a path must sit under the dispatch scratchpad, never the repo or home |
 | STYLE | optional | empty by default; see below |
+
+The REPORTING CHAIN line is rendered from the three optional slots and always has the fixed form shown in the template. The settings file is `~/.config/agents-inc/settings.json`, key `chain` (`supervisor`, `executive`); set it with `agents-inc models chain supervisor=opus executive=fable`, never by hand. The renderer prints one `chain:` line on stderr that shows what it derived. `check_dispatch_prompt.py` fails a chain whose seat ranks above the seat it reports to.
 
 D51 broker: a Lead sends these slots inline as `slots` in `<run-dir>/inbox/<id>.request.json`
 (write `.tmp`, then rename; keys schema_version, request_id, model, effort, tier, slots; never PERMISSION_MODE or credential paths).

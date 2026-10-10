@@ -188,6 +188,8 @@ def _report_locked(provider: str, model: str, outcome: str, retry_after: float |
         record["status"] = "ok"
         record["failure_streak"] = 0
         record["cooldown_until"] = None
+        record["last_error"] = None
+        record["last_checked"] = now.isoformat()
     elif outcome in ("rate_limited", "overloaded"):
         streak = record.get("failure_streak", 0) + 1
         record["failure_streak"] = streak

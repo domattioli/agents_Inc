@@ -73,7 +73,7 @@ class BrokerTest(unittest.TestCase):
         return final
 
     def _fake_launch(self, rc=0, report=GOOD_REPORT):
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             self.launches.append({"model": model, "cwd": str(cwd), "permission_mode": permission_mode})
             return {"rc": rc, "stdout": report, "stderr": "", "argv": ["claude"], "session_id": "s"}
         return fake
@@ -408,7 +408,7 @@ class BrokerTest(unittest.TestCase):
         self._request("s1")
         real = dispatch.render
         with mock.patch.object(dispatch, "render",
-                               side_effect=lambda p: (lambda r: (r[0], r[1].replace("SCOPE BOILERPLATE:", "SCOPE:"), r[2]))(real(p))):
+                               side_effect=lambda p, *a: (lambda r: (r[0], r[1].replace("SCOPE BOILERPLATE:", "SCOPE:"), r[2]))(real(p, *a))):
             self._serve()
         res = self._result("s1")
         self.assertEqual((res["dispatch_exit_code"], res["outcome"]), (3, "refused-scope"))

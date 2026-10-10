@@ -19,8 +19,10 @@ import time
 import urllib.parse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = REPO_ROOT / "skills" / "workerbee" / "scripts"
+from agents_inc.datafiles import repo_file, repo_root
+
+REPO_ROOT = repo_root()
+SCRIPTS = repo_file("skills/workerbee/scripts")
 
 CODEX_SLUGS = ("astra", "sol", "terra", "luna")
 # Exact Claude model ids passed to `claude -p --model`. Keep this the only table.
@@ -74,12 +76,12 @@ def new_run_id(model: str) -> str:
     return f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{model}-{secrets.token_hex(3)}"
 
 
-def render(slots_path: Path) -> tuple[int, str, str]:
+def render(slots_path: Path, model: str | None = None) -> tuple[int, str, str]:
     """Render via render_dispatch.main() in-process; return (rc, prompt, stderr)."""
     module = _load("render_dispatch")
     out, err = io.StringIO(), io.StringIO()
     saved = sys.argv
-    sys.argv = ["render_dispatch.py", "--slots", str(slots_path)]
+    sys.argv = ["render_dispatch.py", "--slots", str(slots_path)] + (["--model", model] if model else [])
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = module.main()
@@ -268,8 +270,23 @@ def _ask_channel(run_dir: Path, rid: str) -> dict:
     return {"ask": ask.resolve(), "script": script.resolve(), "config": config.resolve(), "rid": rid}
 
 
+CODEX_WRITE_MODES = ("acceptEdits", "bypassPermissions")
+
+
+def codex_write(slots: dict) -> bool:
+    """A Codex delegate gets what a Claude subagent gets: tools and write access to cwd whenever PERMISSION_MODE
+    (default acceptEdits) lets a Claude delegate edit. Slot CODEX_WRITE: no (or false) opts out; yes forces it on."""
+    explicit = str(slots.get("CODEX_WRITE", "")).strip().lower()
+    if explicit in ("yes", "true"):
+        return True
+    if explicit in ("no", "false"):
+        return False
+    return (slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE) in CODEX_WRITE_MODES
+
+
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
-           permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None) -> dict:
+           permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None,
+           codex_write: bool = False) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
     or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54)."""
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
@@ -312,7 +329,10 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env,
                        extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES,
-                       thread_out=thread, resume_thread=resume, worker=worker)
+                       thread_out=thread, resume_thread=resume, worker=worker,
+                       tools=codex_write, write=codex_write,
+                       # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
+                       extra_read=() if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",))
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume}
@@ -381,7 +401,7 @@ def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt")
     return report, snap, src
 
 
-WORKERS_SPAWNED_RE = re.compile(r"^\W*workers spawned:\s*(\d+)\W*$", re.IGNORECASE | re.MULTILINE)
+WORKERS_SPAWNED_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*(\d+)\W*$", re.IGNORECASE | re.MULTILINE)
 
 
 def parse_workers_spawned(text: str) -> int | None:
@@ -458,6 +478,18 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
     return EXIT_OK if green else EXIT_RED
 
 
+def _record_ledger_node(spec: dict, slots: dict) -> None:
+    """Add a `dispatched` ledger node for this run (id = run id). A failure goes to run.json, never the outcome."""
+    try:
+        from .. import host_ledger  # lazy, like cli.py
+        from .cli import _paths
+        task = slots.get("TASK") if isinstance(slots, dict) else None
+        if not host_ledger.record_dispatch_run(_paths().state, spec, task if isinstance(task, str) else None):
+            spec["ledger_error"] = "ledger write failed"
+    except Exception as exc:
+        spec["ledger_error"] = f"{type(exc).__name__}: {exc}"
+
+
 def run(args) -> int:
     if getattr(args, "resume", None):
         return resume(args)
@@ -493,8 +525,9 @@ def run(args) -> int:
             "cwd": str(cwd), "chain": ["CoS", model], "snapshot": str(run_dir / "snapshot.json"),
             "gates": {"tier": args.tier, "allow": allow_paths(str(slots.get("FILES_IN_SCOPE", "")))},
             "permission_mode": slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE,
+            "codex_write": codex_write(slots),
             "rc": None, "outcome": None, "session_id": None}
-    rc, prompt, err = render(slots_path)
+    rc, prompt, err = render(slots_path, model)
     lint = run_dir / "lint.txt"
     if rc != 0:
         _wtext(lint, f"render rc={rc}\n{err}")
@@ -528,9 +561,11 @@ def run(args) -> int:
         spec["outcome"] = "dry-run"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} dry-run prompt={prompt_path}")
         return EXIT_OK
+    _record_ledger_node(spec, slots)
     global _LAUNCHES
     _LAUNCHES += 1
-    result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"])
+    result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
+                    **({"codex_write": True} if spec["codex_write"] else {}))
     out_path = run_dir / "stdout.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])
@@ -555,7 +590,8 @@ def resume(args) -> int:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
     result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
-                    spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"])
+                    spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
+                    **({"codex_write": True} if spec.get("codex_write") is True else {}))
     n = len(spec.get("resumes", [])) + 1
     out_path = run_dir / f"stdout.{n}.md"
     _wtext(out_path, result["stdout"])

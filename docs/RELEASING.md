@@ -1,54 +1,29 @@
 # Releasing agents_Inc
 
-This runbook covers release 0.2.0: a GitHub tag and release, a Zenodo archive, and the first PyPI upload of the `agents-inc` package (import name `agents_inc`). Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
+This runbook covers release 0.3.0: a GitHub tag and release, a Zenodo archive, and the PyPI upload of the `agents-inc` package (import name `agents_inc`). 0.2.0 was the first PyPI upload; 0.3.0 is the first release that installs from pip alone, with no `--source` checkout. Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
 
 ## Decisions
 
 ### What a pip install gives you
 
-- The wheel ships two packages, `agents_inc` and `workerbees`, plus every `*.json` file under `agents_inc/`.
-- `skills/` and `docs/governance/SCHEMA-3NF.md` are not in the wheel for 0.2.0.
-- A `pip install agents-inc` or `uvx agents-inc` gives the `agents-inc` command and the library.
-- `agents-inc install --source <checkout>` still needs a git checkout, because the installer copies `skills/workerbee`, `skills/codex-bridge`, and the schema doc from that checkout (`agents_inc/install/bundle.py:16` and `:19`).
+- The wheel ships `agents_inc`, `workerbees`, every `*.json` file under `agents_inc/`, and, from 0.3.0, the skill and doc files the installer needs.
+- `setuptools` maps `agents_inc._skills` to `skills/` and `agents_inc._docs` to `docs/governance/`. Only `skills/workerbee`, `skills/codex-bridge` (without their `tests/`), and `SCHEMA-3NF.md` are packaged.
+- `agents_inc/datafiles.py` finds these files. In a checkout it uses the checkout. In a pip install it reads the packaged copy.
+- `agents-inc install` and `agents-inc repair` work without `--source`. `doctor` then compares the installed hook with the packaged one.
 
-These lookups resolve paths relative to a source checkout. In a plain pip install they point into `site-packages`, where the files they want do not exist (line numbers from commit ed35b0b):
+What `datafiles` resolves:
 
-| Call site | Looks for | Effect in a pip install |
-|---|---|---|
-| `agents_inc/schema.py:6` | `docs/governance/SCHEMA-3NF.md` | The 3NF store raises `FileNotFoundError` on first use |
-| `agents_inc/doctor.py:147` | `skills/codex-bridge/scripts/oask.sh` | The OpenRouter health probe cannot find its wrapper |
-| `agents_inc/install/dispatch.py:19` | `skills/workerbee/scripts/` via `REPO_ROOT` | `agents-inc dispatch` cannot render or lint prompts |
-| `agents_inc/install/models_cmd.py:10` | `routing.json` and `models.json` beside the package | Reads work; `models bump` would rewrite files inside `site-packages` |
-| `agents_inc/bench.py:10` | top-level `fixtures/` | The bench cannot load its fixtures |
-| `agents_inc/install/mcp_broker.py:19` | adds the checkout root to `sys.path` | Harmless; the package is already importable |
+- the schema doc, `docs/governance/SCHEMA-3NF.md` (`agents_inc/schema.py`)
+- the OpenRouter wrapper, `skills/codex-bridge/scripts/oask.sh` (`agents_inc/doctor.py`)
+- the prompt scripts, `skills/workerbee/scripts/` (`agents_inc/install/dispatch.py`)
+- the install bundle sources (`agents_inc/install/cli.py`)
 
-The smallest follow-up loader change fixes the schema doc only. It is written here as text and is not applied. It also needs a committed copy of the doc at `agents_inc/data/SCHEMA-3NF.md` and a test that the copy matches `docs/governance/SCHEMA-3NF.md`.
+Two items still need a checkout:
 
-```diff
---- a/agents_inc/schema.py
-+++ b/agents_inc/schema.py
-@@ -1,7 +1,11 @@
- import re
- import sqlite3
-+from importlib import resources
- from pathlib import Path
+- `agents-inc models bump` (`agents_inc/install/models_cmd.py`) rewrites `routing.json` and `models.json` beside the package. Run it from a checkout only.
+- The bench (`agents_inc/bench.py`) needs the top-level `fixtures/` directory, which is not in the wheel.
 
- SCHEMA_VERSION = "2026-09-05.1"
- SCHEMA_DOC = Path(__file__).parent.parent / "docs" / "governance" / "SCHEMA-3NF.md"
-+if not SCHEMA_DOC.is_file():
-+    # pip or uvx install: no checkout beside the package, so use the packaged copy.
-+    SCHEMA_DOC = Path(str(resources.files("agents_inc") / "data" / "SCHEMA-3NF.md"))
-
---- a/pyproject.toml
-+++ b/pyproject.toml
-@@ -53,3 +53,4 @@
- [tool.setuptools.package-data]
- "*" = ["*.json"]
- agents_inc = ["*.json"]
-+"agents_inc.data" = ["*.md"]
-```
-
-Shipping `skills/` in the wheel, so that `agents-inc install` works without a checkout, is a larger change and is not planned for 0.2.0.
+D55 in `docs/DECISIONS.md` records this.
 
 ### License identifiers
 
@@ -85,24 +60,24 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 1. Pre-tag gate. Both commands must pass:
    - `grep -c TODO-operator CITATION.cff .zenodo.json` prints 0 for both files.
    - `python3 -m unittest discover -s tests -p 'test_*.py'` ends with `OK`.
-2. Decide the D54 line in `CHANGELOG.md`: keep it only if D54 merged before the tag, otherwise delete it.
+2. Check that `CHANGELOG.md` has a dated `[0.3.0]` section and that `agents_inc.__version__` is `0.3.0`.
 3. Merge `development` into `main` by pull request.
-4. On `main`, create the tag: `git tag -a v0.2.0 -m "agents_Inc 0.2.0"`.
-5. Push the tag: `git push origin v0.2.0`.
+4. On `main`, create the tag: `git tag -a v0.3.0 -m "agents_Inc 0.3.0"`.
+5. Push the tag: `git push origin v0.3.0`.
 6. Watch the `release` workflow in the Actions tab. The `publish` job waits for the `pypi` environment approval if a reviewer was set.
-7. Confirm that https://pypi.org/project/agents-inc/0.2.0/ exists and that the GitHub release lists the wheel and the sdist.
-8. Confirm that Zenodo minted a DOI for 0.2.0.
-9. Paste the DOI badge into `README.md` (item 3 of the last section).
+7. Confirm that https://pypi.org/project/agents-inc/0.3.0/ exists and that the GitHub release lists the wheel and the sdist.
+8. Confirm that Zenodo minted a version DOI for 0.3.0 under the concept DOI.
+9. Confirm that the `README.md` DOI badge still shows the concept DOI `10.5281/zenodo.22670100`. Version DOIs never go in the README.
 
 ## Rollback
 
-- PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.2.1.
-- GitHub: delete the release with `gh release delete v0.2.0`, then delete the tag with `git push origin :refs/tags/v0.2.0` and `git tag -d v0.2.0`.
-- Zenodo: published records cannot be deleted. Leave the 0.2.0 record and publish 0.2.1 with the fix.
+- PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.3.1.
+- GitHub: delete the release with `gh release delete v0.3.0`, then delete the tag with `git push origin :refs/tags/v0.3.0` and `git tag -d v0.3.0`.
+- Zenodo: published records cannot be deleted. Leave the 0.3.0 record and publish 0.3.1 with the fix.
 
 ## README EDIT PLAN
 
-These edits go in after the release or in the release pull request. Another session owns `README.md` and `docs/`, so this file only lists them. Line numbers come from commit ed35b0b.
+Applied in the 0.3.0 docs pass, which rewrote `README.md` to 150 lines or fewer. Kept as a record; line numbers come from commit ed35b0b and no longer match. Item 1 and item 7 predate D55: from 0.3.0, `agents-inc install` needs no `--source` checkout.
 
 1. Install from PyPI. `README.md` line 427, under "### Install and configure providers".
    - Current: `Run the project from the repository root. Its Python code uses the standard library. No Python package-install step exists.`
@@ -120,7 +95,7 @@ These edits go in after the release or in the release pull request. Another sess
 
 4. Version line. `README.md` line 312, under "## 5. Project status".
    - Current: `**Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md).`
-   - Proposed: `**Version 0.2.0. Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md). Changes per release are in [CHANGELOG.md](CHANGELOG.md).`
+   - Proposed: `**Version 0.3.0. Pre-MVP and under active development.** The build plan and cut line live in [docs/PLAN-MVP.md](docs/PLAN-MVP.md). Changes per release are in [CHANGELOG.md](CHANGELOG.md).`
 
 5. License section. `README.md` line 547.
    - Current: `No LICENSE file exists yet.`

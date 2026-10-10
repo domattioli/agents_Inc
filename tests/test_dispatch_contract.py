@@ -121,11 +121,16 @@ class TestSharedRungTable(unittest.TestCase):
         import json
         import dispatch_rungs
         models = json.loads((ROOT / "agents_inc" / "models.json").read_text())["models"]
+        tiers = json.loads((ROOT / "agents_inc" / "routing.json").read_text())["tiers"]
         self.assertEqual(len(dispatch_rungs.MODEL_RUNG), 8)
         for alias, rung in dispatch_rungs.MODEL_RUNG.items():
             hits = [k for k in models if k == alias or k.endswith("-" + alias)]
-            self.assertEqual(len(hits), 1, alias)
-            self.assertEqual(models[hits[0]]["tier"], rung, alias)
+            # model_sync keeps superseded codex entries (e.g. gpt-5.6-sol beside gpt-6.1-sol),
+            # so several hits are legal; exactly one must be the slug routing.json pins in this rung.
+            pinned = [k for k in hits if k in tiers.get(rung, {}).values()]
+            self.assertEqual(len(pinned), 1, (alias, hits))
+            for slug in hits:  # superseded entries must not drift to another tier
+                self.assertEqual(models[slug]["tier"], rung, (alias, slug))
             self.assertIn(rung, dispatch_rungs.FAN_OUT_BY_RUNG)
 
 
@@ -233,5 +238,53 @@ class TestFanOutAndReport(unittest.TestCase):
         self.assertEqual(cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\n"), [])
         self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "WORKERS SPAWNED: unknown\n"))
         self.assertIn("workers-spawned", cdp.check_report(self.REPORT))
+        self.assertEqual(cdp.check_report(self.REPORT + "[verified] WORKERS SPAWNED: 0.\n"), [])
+        self.assertEqual(cdp.check_report(self.REPORT + "- WORKERS SPAWNED: 0\n"), [])
+        self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "[verified] WORKERS SPAWNED: unknown\n"))
         self.assertIn("workers-spawned",
                       cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\nWORKERS SPAWNED: 1\n"))
+
+
+class TestReportingChain(unittest.TestCase):
+    """REPORTING CHAIN lint rule (spec 020 FR-003/FR-004)."""
+
+    def _p(self, chain: str | None) -> str:
+        return COMPLIANT_PROMPT + (f"REPORTING CHAIN: {chain}\n" if chain else "")
+
+    def test_inverted_chain_flagged_and_exits_1(self):
+        text = self._p("fable reports to sonnet; sonnet reports to the operator")
+        self.assertIn("reporting-chain-inverted", cdp.check(text))
+        import subprocess, tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".txt") as fh:
+            fh.write(text)
+            fh.flush()
+            res = subprocess.run([sys.executable, str(ROOT / "skills/workerbee/scripts/check_dispatch_prompt.py"),
+                                  fh.name], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("reporting-chain-inverted", res.stdout)
+
+    def test_rendered_fixed_form_passes(self):
+        text = self._p("haiku reports to sonnet; sonnet reports to fable; fable reports to the operator")
+        self.assertEqual(cdp.check(text), [])
+
+    def test_no_chain_line_passes(self):
+        self.assertEqual(cdp.check(self._p(None)), [])
+
+    def test_same_party_clause_passes(self):
+        self.assertEqual(cdp.check(self._p("haiku reports to opus; opus reports to opus; opus reports to the operator")), [])
+
+    def test_unknown_names_pass(self):
+        self.assertEqual(cdp.check(self._p("zork reports to blarg; blarg reports to the operator")), [])
+
+    def test_role_words_rank(self):
+        self.assertIn("reporting-chain-inverted", cdp.check(self._p("supervisor reports to workhorse")))
+        self.assertEqual(cdp.check(self._p("CoS reports to executive; executive reports to the operator")), [])
+
+    def test_alias_vendor_agrees_with_dispatch(self):
+        from agents_inc.install import dispatch
+        import dispatch_rungs
+        claude = {a for a, v in dispatch_rungs.ALIAS_VENDOR.items() if v == "claude"}
+        codex = {a for a, v in dispatch_rungs.ALIAS_VENDOR.items() if v == "codex"}
+        self.assertEqual(claude, set(dispatch.CLAUDE_MODELS))
+        self.assertEqual(codex, set(dispatch.CODEX_SLUGS))
+        self.assertEqual(set(dispatch_rungs.ALIAS_VENDOR), set(dispatch_rungs.MODEL_RUNG))

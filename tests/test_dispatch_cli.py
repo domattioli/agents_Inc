@@ -109,12 +109,28 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(out.strip(), f"dispatch {run.name} haiku dry-run prompt={run / 'prompt.md'}")
         self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
 
+    def _chain_line(self, model):
+        rc, out, _ = self._main("--slots", str(self._slots()), "--model", model, "--cwd", str(self.repo),
+                                "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 0, out)
+        run = self._run_dir()
+        self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
+        return [ln for ln in (run / "prompt.md").read_text().splitlines() if ln.startswith("REPORTING CHAIN:")]
+
+    def test_dry_run_derives_claude_chain(self):
+        self.assertEqual(self._chain_line("haiku"), [
+            "REPORTING CHAIN: haiku reports to sonnet; sonnet reports to fable; fable reports to the operator"])
+
+    def test_dry_run_derives_codex_chain(self):
+        self.assertEqual(self._chain_line("luna"), [
+            "REPORTING CHAIN: luna reports to terra; terra reports to astra; astra reports to the operator"])
+
     def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
-        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode,
-                         effort=effort)
+                         effort=effort, codex_write=codex_write)
             argv = dispatch.claude_argv(model_, permission_mode, effort=effort) if kind == "claude" else ["run_codex", model_]
             return {"rc": 0, "stdout": stdout, "stderr": "", "argv": argv,
                     "session_id": "sess-1" if kind == "claude" else None}
@@ -133,12 +149,43 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         return json.loads((run / "run.json").read_text())
 
+    def _ledger_rows(self):
+        path = self.root / ".local/state/agents-inc/host-ledger/.workerbees/ledger.jsonl"
+        if not path.is_file():
+            return []
+        return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+
+    def test_launched_run_leaves_one_dispatched_ledger_row(self):
+        rc, out, _ = self._launch("sonnet")
+        spec = self._assert_launched(rc, out)
+        rows = self._ledger_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["id"], rows[0]["status"], rows[0]["source"], rows[0]["model"]),
+                         (spec["run_id"], "dispatched", "dispatch", "sonnet"))
+        self.assertNotIn("ledger_error", spec)
+
+    def test_ledger_write_failure_does_not_change_outcome(self):
+        with mock.patch("agents_inc.host_ledger.record_dispatch_run", return_value=False):
+            rc, out, _ = self._launch("sonnet")
+        spec = self._assert_launched(rc, out)
+        self.assertEqual(spec["ledger_error"], "ledger write failed")
+
+    def test_dry_run_and_refusals_leave_no_ledger_row(self):
+        self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                   "--run-dir", str(self.runs), "--dry-run")
+        with mock.patch.object(dispatch, "lint_prompt", return_value=([12], "")):
+            self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                       "--run-dir", str(self.runs))
+        self.assertEqual(self._ledger_rows(), [])
+
     def test_launch_codex_mocked(self):
         rc, out, calls = self._launch("sol")
         spec = self._assert_launched(rc, out)
         self.assertEqual(calls["kind"], "codex")
         self.assertEqual(calls["effort"], "medium")
         self.assertEqual(spec["argv"], ["run_codex", "sol"])
+        self.assertTrue(calls["codex_write"])  # default acceptEdits: writes like a Claude subagent
+        self.assertTrue(spec["codex_write"])
         self.assertEqual(spec["effort"], "medium")
         self.assertIsNone(spec["session_id"])
 
@@ -239,9 +286,34 @@ class DispatchCliTest(unittest.TestCase):
         self.assertTrue((dest / "run.json").is_file())
         self.assertTrue((dest / "prompt.md").is_file())
 
+    def test_codex_write_slot(self):
+        self.assertTrue(dispatch.codex_write({}))  # default acceptEdits: same as a Claude subagent
+        self.assertTrue(dispatch.codex_write({"PERMISSION_MODE": "bypassPermissions"}))
+        self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "plan"}))
+        self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "default"}))
+        self.assertFalse(dispatch.codex_write({"CODEX_WRITE": "no"}))
+        self.assertTrue(dispatch.codex_write({"CODEX_WRITE": " True ", "PERMISSION_MODE": "plan"}))
+
+    def test_launch_codex_passes_write_to_run_codex(self):
+        seen = []
+
+        def fake_run_codex(*a, **kw):
+            seen.append((kw.get("tools"), kw.get("write")))
+            self.assertEqual(kw.get("extra_read"), (self.runs / "snapshot.json",))
+            return 0
+        receipt = mock.Mock(codex_path="/bin/true")
+        with mock.patch("agents_inc.install.runtime.run_codex", side_effect=fake_run_codex), \
+                mock.patch("agents_inc.install.cli._paths") as paths, \
+                mock.patch("agents_inc.install.cli._efforts", return_value={}), \
+                mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt):
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs)
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
+        self.assertEqual(seen, [(False, False), (True, True)])
+
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
         self.assertIsNone(dispatch.parse_workers_spawned("no count here"))
+        self.assertEqual(dispatch.parse_workers_spawned("[verified] WORKERS SPAWNED: 2.\n"), 2)
 
     def test_claude_launch_builds_command_and_parses_json(self):
         fake = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "hi", "session_id": "s9"}), stderr="")
@@ -283,7 +355,7 @@ class DispatchCliTest(unittest.TestCase):
         (run / "run.json").write_text(json.dumps(spec))
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
@@ -299,7 +371,7 @@ class DispatchCliTest(unittest.TestCase):
         run = self._run_dir()
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             seen.update(resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):

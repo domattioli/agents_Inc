@@ -260,5 +260,50 @@ class IntegrationTest(_Home):
         self.assertEqual([r["id"] for r in self.rows()], ["toolu_A1"])
 
 
+class DispatchRunNodeTest(_Home):
+    SPEC = {"run_id": "20261009T000000Z-haiku-abc123", "kind": "claude", "model": "haiku",
+            "effort": "medium", "cwd": "/x"}
+
+    def test_record_dispatch_run_writes_one_node_row(self):
+        self.assertTrue(host_ledger.record_dispatch_run(self.paths.state, self.SPEC, "Read-only scout.\nmore"))
+        rows = self.rows()
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row["id"], row["run_id"], row["status"], row["source"]),
+                         (self.SPEC["run_id"], self.SPEC["run_id"], "dispatched", "dispatch"))
+        self.assertEqual((row["model"], row["provider"], row["tier"], row["task"], row["effort"], row["cwd"]),
+                         ("haiku", "claude", "grunt", "Read-only scout.", "medium", "/x"))
+        self.assertEqual(ledger.lint(ledger.load(self.host_ws())), [])
+
+    def test_task_capped_and_failure_does_not_raise(self):
+        row = host_ledger.dispatch_run_row(self.SPEC, "y" * 300)
+        self.assertEqual(len(row["task"]), 80)
+        self.paths.state.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.state.write_text("not a directory")
+        self.assertFalse(host_ledger.record_dispatch_run(self.paths.state, self.SPEC, "t"))
+
+    def test_append_by_run_id_closes_node(self):
+        host_ledger.record_dispatch_run(self.paths.state, self.SPEC, "t")
+        rc, out, _ = self.run_cli("pending")
+        self.assertIn(self.SPEC["run_id"], out)
+        rc, _, err = self.run_cli("append", "--run-id", self.SPEC["run_id"], "--verdict", "pass")
+        self.assertEqual(rc, 0, err)
+        rc, out, _ = self.run_cli("pending")
+        self.assertNotIn(self.SPEC["run_id"], out)
+        last = self.rows()[-1]
+        self.assertEqual((last["id"], last["run_id"], last["verdict"]), (self.SPEC["run_id"], self.SPEC["run_id"], "pass"))
+
+    def test_append_with_neither_id_returns_2(self):
+        rc, _, err = self.run_cli("append", "--verdict", "pass")
+        self.assertEqual(rc, 2)
+        self.assertIn("--node-id or --run-id", err)
+        self.assertEqual(self.rows(), [])
+
+    def test_append_node_and_run_id_still_works(self):
+        rc, _, err = self.run_cli("append", "--node-id", "X", "--run-id", "Y", "--verdict", "fail")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.rows()[-1]["run_id"], "Y")
+
+
 if __name__ == "__main__":
     unittest.main()

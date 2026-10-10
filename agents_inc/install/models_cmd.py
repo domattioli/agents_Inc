@@ -39,11 +39,28 @@ def _refuse(message: str) -> int:
 
 
 def bump(alias: str | None, slug: str | None, routing: Path = ROUTING, models_json: Path = MODELS,
-         models: list[dict] | None = None, aliases: dict[str, str] | None = None) -> int:
+         models: list[dict] | None = None, aliases: dict[str, str] | None = None,
+         settings: Path | None = None, unpin: bool = False) -> int:
+    """An explicit slug also records a manual pin (settings "pinned") so model_sync never auto-promotes it;
+    unpin=True only removes the pin. A bump to the catalog's newest (no slug) does not pin."""
+    from agents_inc import model_sync
+    settings = model_sync.DEFAULT_SETTINGS if settings is None else settings
     aliases = MODEL_ALIASES if aliases is None else aliases
-    models = catalog.load() if models is None else models
     if alias not in aliases:
         return _refuse(f"unknown Codex alias: {alias}")
+    if unpin:
+        try:
+            model_sync.set_pinned(settings, alias, False)
+        except ValueError as exc:
+            return _refuse(str(exc))
+        print(settings)
+        return 0
+    if slug:
+        try:
+            model_sync.check_settings_writable(settings)  # refuse before touching routing/models
+        except ValueError as exc:
+            return _refuse(str(exc))
+    models = catalog.load() if models is None else models
     pin = aliases[alias]
     target = slug or catalog.drift(pin, models)
     if not target:
@@ -81,12 +98,61 @@ def bump(alias: str | None, slug: str | None, routing: Path = ROUTING, models_js
     Path(models_json).write_text(_dump(data) + "\n", encoding="utf-8")
     print(routing)
     print(models_json)
+    if slug:
+        model_sync.set_pinned(settings, alias, True)
+        print(settings)
     return 0
 
 
-def run(verb: str | None, alias: str | None = None, slug: str | None = None) -> int:
+CHAIN_KEYS = ("supervisor", "executive")
+CHAIN_WORDS = ("CoS", "operator")
+
+
+def chain(pairs: list[str] | None = None, clear: bool = False, settings: Path | str | None = None) -> int:
+    """List or set the default REPORTING CHAIN seats (settings key `chain`). Values: model aliases, CoS, operator."""
+    from agents_inc import model_sync
+    from . import dispatch
+    rungs = dispatch._load("dispatch_rungs")
+    settings = model_sync.DEFAULT_SETTINGS if settings is None else settings
+    if clear and pairs:
+        return _refuse("chain --clear takes no key=alias pairs")
+    updates = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in CHAIN_KEYS:
+            return _refuse(f"expected supervisor=<alias> or executive=<alias>, got {pair!r}")
+        if value not in rungs.MODEL_RUNG and value not in CHAIN_WORDS:
+            return _refuse(f"unknown chain value {value!r}; use one of {', '.join(sorted(rungs.MODEL_RUNG))}, CoS, operator")
+        updates[key] = value
+    try:
+        if clear and Path(settings).exists():
+            model_sync._update_settings(settings, lambda data: data.pop("chain", None))
+        elif updates:
+            def change(data):
+                cfg = data.get("chain") if isinstance(data.get("chain"), dict) else {}
+                cfg.update(updates)
+                data["chain"] = cfg
+            model_sync._update_settings(settings, change)
+        data = model_sync._read_settings(settings)
+    except ValueError as exc:
+        return _refuse(str(exc))
+    cfg = data.get("chain") if isinstance(data.get("chain"), dict) else {}
+    for vendor in ("claude", "codex"):
+        aliases = [a for rung in rungs.LADDER for a, r in rungs.MODEL_RUNG.items()
+                   if r == rung and rungs.ALIAS_VENDOR[a] == vendor]
+        print(f"{vendor} ladder " + " < ".join(aliases))
+    for key in CHAIN_KEYS:
+        value = cfg.get(key)
+        print(f"{key} {value} setting" if value else f"{key} ladder ladder")
+    return 0
+
+
+def run(verb: str | None, alias: str | None = None, slug: str | None = None, unpin: bool = False,
+        extra: list[str] | None = None, clear: bool = False) -> int:
+    if verb == "chain":
+        return chain([a for a in (alias, slug, *(extra or [])) if a], clear=clear)
     if verb == "bump":
-        return bump(alias, slug)
+        return bump(alias, slug, unpin=unpin)
     for line in listing():
         print(line)
     return 0

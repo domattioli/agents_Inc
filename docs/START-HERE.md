@@ -1,17 +1,82 @@
 # Start here
 
-## Cross-project direct Codex install (pre-MVP)
+## Install (0.3.0)
 
-From a source checkout: `python3 -m agents_inc.install.cli install --source "$PWD"`.
-Restart Claude or Codex after installation, then use the recorded absolute
-launcher: `~/.local/share/agents-inc/current/bin/agents-inc doctor`.
+```bash
+pip install agents-inc
+agents-inc install
+agents-inc doctor      # the first line prints READY when the install works
+```
+
+The skills and the schema ship inside the package, so `install` and `repair`
+need no git checkout (D55). To install from a checkout instead, run
+`python3 -m agents_inc.install.cli install --source "$PWD"` from it.
+Restart Claude or Codex after installation. The recorded absolute launcher is
+`~/.local/share/agents-inc/current/bin/agents-inc`.
 Claude Code is the only required provider; Codex is optional (D50).
+`agents-inc install` does not stop when the `codex` CLI is missing. It prints
+one `NOTE:` line per skipped provider. `--without-codex` (install and repair)
+skips Codex on purpose and silences that note.
 Under `agents-inc run`, astra, sol and terra get Codex's shell tool, and luna
 gets it only with `--tools` (D49, D49.1). Tool commands cannot read your home
 directory, cannot reach the network, and write only with `--write`.
+Under `agents-inc dispatch`, a Codex delegate can write to its working
+directory by default, the same as a Claude subagent. The slot `CODEX_WRITE: no`
+makes it read-only.
 `agents-inc dispatch` can also run a broker that lets a Codex Lead ask for
 Workers without seeing any credentials (D51). The installer does not manage the
 HTTP bridge or any daemon.
+
+### Requirements
+
+- Python 3.10 or later. The test suite also runs on Python 3.14.
+- Bash 3.2 or later. The scripts support macOS system Bash.
+- Claude Code CLI, signed in through an Anthropic subscription.
+- `jq`, used by the hook scripts and the `@alias` router.
+- Optional: Codex CLI, signed in through a ChatGPT/OpenAI account. The Codex
+  aliases (astra, sol, terra, luna) map to slugs that depend on your account;
+  `~/.config/agents-inc/roster.json` overrides the pins in
+  `agents_inc/routing.json`.
+- Optional: Gemini, Mistral, or OpenRouter API keys. A missing optional key
+  skips that provider. It does not block the system.
+
+### Setup decision tree
+
+```
+Do you have Claude Code CLI installed + authenticated?
+├─ NO → Install via https://claude.ai/code (Anthropic account required)
+│       └─ After install, continue below at "Do you have Codex..."
+├─ YES → Do you have Codex CLI installed + authenticated? (optional)
+│        ├─ NO → Install via https://openai.com/codex, or skip Codex with --without-codex
+│        └─ YES → Do you want to use free-tier providers (Gemini, Mistral, OpenRouter)?
+│                 ├─ NO → Ready. Demo without keys, from a checkout:
+│                 │       PYTHONPATH=. python3 tools/governance_demo.py --fake
+│                 └─ YES → Configure each one (Enter skips it):
+│                         ├─ python3 -m workerbees.keys gemini
+│                         ├─ python3 -m workerbees.keys mistral
+│                         └─ python3 -m workerbees.keys openrouter
+```
+
+- **Key storage:** each command opens the provider's key page and asks for a
+  hidden paste. Keys go to `~/.config/workerbees/.env` with mode `0600`. The
+  agent never receives the raw key.
+- **Skipped keys:** a skipped key is not an error. It removes that provider
+  from the pool. Optional providers get only Grunt-class `extract` and
+  `summarize` work.
+- **Skill dependencies:** [`skills.requirements.txt`](../skills.requirements.txt)
+  pins the version and source of each skill, like `requirements.txt` for pip.
+  From a checkout, `bash scripts/install_skills.sh` syncs and verifies them;
+  `--dry-run` shows what would change.
+
+### Your first dispatch
+
+Tell the session what to do and which models to use, for example
+"Fix the parser. opus, haiku." The higher model manages the lower one. The
+session then runs `agents-inc dispatch`. Every dispatch prompt names its
+reporting chain in a `REPORTING CHAIN` line; `agents-inc models chain
+supervisor=opus` changes the default supervisor. Each launched dispatch also
+writes one row to the ledger. Details: `HOW-IT-WORKS.md`, section
+"Asking for work".
 
 - **Audience:** People who have not run the system before.
 - **Style:** Plain language; the other docs are compressed for experienced readers.

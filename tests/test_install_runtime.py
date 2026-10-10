@@ -14,7 +14,9 @@ from agents_inc.install.runtime import MODEL_ALIASES, build_codex_argv, resolve_
 
 class RuntimeTest(unittest.TestCase):
     def test_aliases_and_isolated_argv(self):
-        self.assertEqual(MODEL_ALIASES, {"astra": "gpt-6-astra", "sol": "gpt-5.6-sol", "terra": "gpt-5.6-terra", "luna": "gpt-5.6-luna"})
+        tiers = json.loads((Path(__file__).parents[1] / "agents_inc/routing.json").read_text())["tiers"]
+        persona_tier = {"astra": "executive", "sol": "orchestrator", "terra": "workhorse", "luna": "grunt"}
+        self.assertEqual(MODEL_ALIASES, {alias: tiers[tier]["codex"] for alias, tier in persona_tier.items()})
         argv = build_codex_argv(Path("/opt/Codex CLI/codex"), "astra", "medium", Path("/work here"), {"gpt-6-astra": ["medium"]})
         self.assertEqual(argv[:4], ["/opt/Codex CLI/codex", "exec", "-m", "gpt-6-astra"])
         self.assertIn("read-only", argv)
@@ -31,6 +33,24 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(resolve_executable("codex", str(exe.parent)), exe.resolve())
         with self.assertRaises(FileNotFoundError):
             resolve_executable("codex", "")
+
+    def _fake(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True); path.write_text("#!/bin/sh\n"); path.chmod(0o755)
+        return path
+
+    def test_resolution_skips_temp_dir_and_shim_entries(self):
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw); real = self._fake(tmp / "real" / "codex")
+            patch = mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp / "t"))
+            self._fake(tmp / "t" / "codex-dir" / "codex"); self._fake(tmp / "x-shims" / "abc" / "codex")
+            with patch:
+                self.assertEqual(resolve_executable("codex", f"{tmp / 't' / 'codex-dir'}:{tmp / 'real'}"), real.resolve())
+                self.assertEqual(resolve_executable("codex", f"{tmp / 'x-shims' / 'abc'}:{tmp / 'real'}"), real.resolve())
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    got = resolve_executable("codex", str(tmp / "x-shims" / "abc"))
+                self.assertEqual(got, (tmp / "x-shims" / "abc" / "codex").resolve())
+                self.assertIn("WARN", err.getvalue())
 
     def test_unsupported_effort_fails_before_execution(self):
         with self.assertRaises(ValueError):

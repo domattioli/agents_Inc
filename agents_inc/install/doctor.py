@@ -8,11 +8,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 from . import catalog
+from .. import datafiles
 from .bundle import stage_bundle, verify_bundle
 from .host_wiring import AT_ROUTE, wiring_problems
 from .paths import InstallPaths
 from .receipt import InstallReceipt
-from .runtime import MODEL_ALIASES, build_codex_argv
+from .runtime import MODEL_ALIASES, build_codex_argv, is_temp_or_shim_path
 
 @dataclass(frozen=True)
 class DoctorReport:
@@ -28,7 +29,9 @@ def _hook_drift(paths: InstallPaths) -> list[str]:
     try:
         if not installed.is_file(): return []  # release ships no hook: nothing to drift
         record = paths.state / "source-checkout"
-        source = Path(record.read_text().strip()) / AT_ROUTE if record.is_file() else None
+        text = record.read_text().strip() if record.is_file() else None
+        if text == "packaged": source = datafiles.repo_file(AT_ROUTE)  # pip install: compare with the packaged hook
+        else: source = Path(text) / AT_ROUTE if text else None
         if source is None or not source.is_file(): return ["WB_HOOK_DRIFT_UNCHECKED"]
         return ["WB_HOOK_DRIFT"] if source.read_bytes() != installed.read_bytes() else []
     except OSError: return ["WB_HOOK_DRIFT_UNCHECKED"]
@@ -68,6 +71,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     if not paths.current.is_symlink() or paths.current.resolve() != release.resolve(): codes.append("WB_RELEASE_UNTRUSTED")
     if receipt.codex_path is None: warnings.append("WB_CLI_NOT_FOUND")  # installed without codex: warning only
     elif not receipt.codex_path.is_file() or not os.access(receipt.codex_path, os.X_OK): codes.append("WB_CLI_NOT_FOUND")
+    elif is_temp_or_shim_path(receipt.codex_path): warnings.append("WB_CLI_TEMP_PATH")
     for root in (paths.claude_skills, paths.codex_skills):
         for name in ("workerbee", "codex-bridge"):
             if not (root / name).is_symlink(): codes.append("WB_SKILL_MISSING")

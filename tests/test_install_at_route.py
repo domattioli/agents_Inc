@@ -232,7 +232,8 @@ class AtRouteCodexRouteTest(unittest.TestCase):
 
     def test_resolve_prints_pinned_slug(self):
         res = self._route("--resolve", "luna")
-        self.assertEqual((res.returncode, res.stdout.strip()), (0, "gpt-5.6-luna"))
+        pin = json.loads((REAL_HOOK.parents[3] / "agents_inc/routing.json").read_text())["tiers"]["grunt"]["codex"]
+        self.assertEqual((res.returncode, res.stdout.strip()), (0, pin))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ from unittest import mock
 from agents_inc.install import catalog, cli
 from agents_inc.install.doctor import check_install
 from agents_inc.install.paths import InstallPaths
+from agents_inc.install.receipt import InstallReceipt
+from agents_inc.install.runtime import MODEL_ALIASES
 
 CATALOG_DIR = Path(__file__).parent / "fixtures/catalog"
 
@@ -37,7 +39,14 @@ class DoctorWarningsTest(unittest.TestCase):
         (scripts / "at_route.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
         self.home = raw / "home"; (self.home / ".claude").mkdir(parents=True)
         self.paths = InstallPaths.for_home(self.home)
-        self.models = catalog.load(CATALOG_DIR / "models_cache.json")
+        # Fixture cache plus a sol slug newer than any plausible pin, so drift is provable whatever routing.json pins.
+        cache = json.loads((CATALOG_DIR / "models_cache.json").read_text())
+        cache["models"].append({"slug": "gpt-99-sol", "visibility": "list", "supported_in_api": True, "priority": 0,
+                                "supported_reasoning_levels": [{"effort": "low", "description": "x"}]})
+        self.codex_home = raw / "codex_home"; self.codex_home.mkdir()
+        (self.codex_home / "models_cache.json").write_text(json.dumps(cache))
+        self.models = catalog.load(self.codex_home / "models_cache.json")
+        self.drift = f"MODEL_DRIFT sol: pinned {MODEL_ALIASES['sol']}, newest gpt-99-sol"
         args = argparse.Namespace(source=str(self.source), adopt_existing_workerbee=False, without_codex=True, no_host_wiring=False)
         with mock.patch.object(cli, "_paths", return_value=self.paths):
             self.assertEqual(cli.install(args), 0)
@@ -48,7 +57,18 @@ class DoctorWarningsTest(unittest.TestCase):
         report = check_install(self.paths, models=self.models)
         self.assertEqual(report.codes, ())
         self.assertTrue(report.ready)
-        self.assertIn("MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", report.warnings)
+        self.assertIn(self.drift, report.warnings)
+
+    def test_temp_path_codex_is_warning_not_code(self):
+        tmp = Path(self.tmp.name)
+        codex = tmp / "bin" / "codex"; codex.parent.mkdir(); codex.write_text("#!/bin/sh\n"); codex.chmod(0o755)
+        real = InstallReceipt.load(self.paths.receipt)
+        stub = mock.Mock(release_hash=real.release_hash, codex_path=codex)
+        with mock.patch("agents_inc.install.doctor.InstallReceipt.load", return_value=stub), \
+             mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp)):
+            report = check_install(self.paths, models=[])
+        self.assertIn("WB_CLI_TEMP_PATH", report.warnings)
+        self.assertTrue(report.ready); self.assertEqual(report.codes, ())
 
     def test_no_cache_means_no_drift_warning(self):
         report = check_install(self.paths, catalog_path=self.home / "missing.json")
@@ -56,13 +76,13 @@ class DoctorWarningsTest(unittest.TestCase):
 
     def test_cli_text_puts_ready_first_and_warnings_after(self):
         out = io.StringIO()
-        env = {"CODEX_HOME": str(CATALOG_DIR)}
+        env = {"CODEX_HOME": str(self.codex_home)}
         with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out):
             code = cli.main(["doctor"])
         lines = out.getvalue().splitlines()
         self.assertEqual(code, 0)
         self.assertEqual(lines[0], "READY")
-        self.assertIn("WARNING: MODEL_DRIFT sol: pinned gpt-5.6-sol, newest gpt-6.1-sol", lines[1:])
+        self.assertIn("WARNING: " + self.drift, lines[1:])
 
     def test_cli_json_shape_unchanged(self):
         out = io.StringIO()
@@ -88,6 +108,22 @@ class DoctorWarningsTest(unittest.TestCase):
         (self.source / "agents_inc" / "extra.txt").write_text("new")
         check_install(self.paths, models=self.models)
         self.assertEqual(sorted(p.name for p in self.paths.releases.iterdir()), before)
+
+    def _warnings_with_packaged_hook(self, text):
+        (self.paths.state / "source-checkout").write_text("packaged\n")
+        pkg = Path(self.tmp.name) / "pkg_at_route.sh"; pkg.write_text(text)
+        from agents_inc.install import doctor
+        with mock.patch.object(doctor.datafiles, "repo_file", return_value=pkg):
+            return check_install(self.paths, models=self.models).warnings
+
+    def test_packaged_record_matching_hook_has_no_drift_or_stale(self):
+        warnings = self._warnings_with_packaged_hook("#!/usr/bin/env bash\nexit 0\n")
+        self.assertFalse([w for w in warnings if w.startswith("WB_HOOK_DRIFT")])
+        self.assertNotIn("INSTALL_STALE", warnings)
+
+    def test_packaged_record_changed_hook_warns_drift(self):
+        warnings = self._warnings_with_packaged_hook("# changed\n")
+        self.assertIn("WB_HOOK_DRIFT", warnings)
 
 
 if __name__ == "__main__":
