@@ -1,54 +1,29 @@
 # Releasing agents_Inc
 
-This runbook covers release 0.2.0: a GitHub tag and release, a Zenodo archive, and the first PyPI upload of the `agents-inc` package (import name `agents_inc`). Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
+This runbook covers release 0.2.0 and the packaging change for 0.3.0: a GitHub tag and release, a Zenodo archive, and the first PyPI upload of the `agents-inc` package (import name `agents_inc`). Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
 
 ## Decisions
 
 ### What a pip install gives you
 
-- The wheel ships two packages, `agents_inc` and `workerbees`, plus every `*.json` file under `agents_inc/`.
-- `skills/` and `docs/governance/SCHEMA-3NF.md` are not in the wheel for 0.2.0.
-- A `pip install agents-inc` or `uvx agents-inc` gives the `agents-inc` command and the library.
-- `agents-inc install --source <checkout>` still needs a git checkout, because the installer copies `skills/workerbee`, `skills/codex-bridge`, and the schema doc from that checkout (`agents_inc/install/bundle.py:16` and `:19`).
+- The wheel ships `agents_inc`, `workerbees`, every `*.json` file under `agents_inc/`, and, from 0.3.0, the skill and doc files the installer needs.
+- `setuptools` maps `agents_inc._skills` to `skills/` and `agents_inc._docs` to `docs/governance/`. Only `skills/workerbee`, `skills/codex-bridge` (without their `tests/`), and `SCHEMA-3NF.md` are packaged.
+- `agents_inc/datafiles.py` finds these files. In a checkout it uses the checkout. In a pip install it reads the packaged copy.
+- `agents-inc install` and `agents-inc repair` work without `--source`. `doctor` then compares the installed hook with the packaged one.
 
-These lookups resolve paths relative to a source checkout. In a plain pip install they point into `site-packages`, where the files they want do not exist (line numbers from commit ed35b0b):
+What `datafiles` resolves:
 
-| Call site | Looks for | Effect in a pip install |
-|---|---|---|
-| `agents_inc/schema.py:6` | `docs/governance/SCHEMA-3NF.md` | The 3NF store raises `FileNotFoundError` on first use |
-| `agents_inc/doctor.py:147` | `skills/codex-bridge/scripts/oask.sh` | The OpenRouter health probe cannot find its wrapper |
-| `agents_inc/install/dispatch.py:19` | `skills/workerbee/scripts/` via `REPO_ROOT` | `agents-inc dispatch` cannot render or lint prompts |
-| `agents_inc/install/models_cmd.py:10` | `routing.json` and `models.json` beside the package | Reads work; `models bump` would rewrite files inside `site-packages` |
-| `agents_inc/bench.py:10` | top-level `fixtures/` | The bench cannot load its fixtures |
-| `agents_inc/install/mcp_broker.py:19` | adds the checkout root to `sys.path` | Harmless; the package is already importable |
+- the schema doc, `docs/governance/SCHEMA-3NF.md` (`agents_inc/schema.py`)
+- the OpenRouter wrapper, `skills/codex-bridge/scripts/oask.sh` (`agents_inc/doctor.py`)
+- the prompt scripts, `skills/workerbee/scripts/` (`agents_inc/install/dispatch.py`)
+- the install bundle sources (`agents_inc/install/cli.py`)
 
-The smallest follow-up loader change fixes the schema doc only. It is written here as text and is not applied. It also needs a committed copy of the doc at `agents_inc/data/SCHEMA-3NF.md` and a test that the copy matches `docs/governance/SCHEMA-3NF.md`.
+Two items still need a checkout:
 
-```diff
---- a/agents_inc/schema.py
-+++ b/agents_inc/schema.py
-@@ -1,7 +1,11 @@
- import re
- import sqlite3
-+from importlib import resources
- from pathlib import Path
+- `agents-inc models bump` (`agents_inc/install/models_cmd.py`) rewrites `routing.json` and `models.json` beside the package. Run it from a checkout only.
+- The bench (`agents_inc/bench.py`) needs the top-level `fixtures/` directory, which is not in the wheel.
 
- SCHEMA_VERSION = "2026-09-05.1"
- SCHEMA_DOC = Path(__file__).parent.parent / "docs" / "governance" / "SCHEMA-3NF.md"
-+if not SCHEMA_DOC.is_file():
-+    # pip or uvx install: no checkout beside the package, so use the packaged copy.
-+    SCHEMA_DOC = Path(str(resources.files("agents_inc") / "data" / "SCHEMA-3NF.md"))
-
---- a/pyproject.toml
-+++ b/pyproject.toml
-@@ -53,3 +53,4 @@
- [tool.setuptools.package-data]
- "*" = ["*.json"]
- agents_inc = ["*.json"]
-+"agents_inc.data" = ["*.md"]
-```
-
-Shipping `skills/` in the wheel, so that `agents-inc install` works without a checkout, is a larger change and is not planned for 0.2.0.
+D55 in `docs/DECISIONS.md` records this.
 
 ### License identifiers
 

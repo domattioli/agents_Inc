@@ -208,6 +208,22 @@ class TestFreeHealthAtomic:
         assert not tmp_files, f"Found temp files: {tmp_files}"
 
 
+class TestFreeHealthOkClearsError:
+    """An ok report after an error clears last_error and stamps last_checked."""
+
+    def test_ok_after_error_clears_last_error(self, hermetic):
+        from agents_inc import free_health
+
+        t0 = datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 10, 9, 11, 0, tzinfo=timezone.utc)
+        free_health.report("openrouter", "m", "error", message="boom", now=t0)
+        assert free_health.load_health()["openrouter"]["last_error"] == "boom"
+        free_health.report("openrouter", "m", "ok", now=t)
+        record = free_health.load_health()["openrouter"]
+        assert record["last_error"] is None
+        assert record["last_checked"] == t.isoformat()
+
+
 class TestFreeHealthDegradation:
     """Test degradation: missing/corrupt file handling."""
 

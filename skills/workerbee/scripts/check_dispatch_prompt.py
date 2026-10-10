@@ -87,6 +87,37 @@ if _SCRIPT_DIR not in sys.path:
 from dispatch_rungs import FAN_OUT_BY_RUNG, MODEL_RUNG  # noqa: E402
 RUNG_RE = re.compile(r"^rung:\s*(\w+)", re.MULTILINE)
 
+# Reporting chain: role word to rank. Aliases rank through MODEL_RUNG (grunt 1 .. executive 4).
+ROLE_RANK = {"operator": 5, "executive": 4, "supervisor": 3, "orchestrator": 3,
+             "cos": 3, "workhorse": 2, "grunt": 1}
+_RUNG_RANK = {"grunt": 1, "workhorse": 2, "orchestrator": 3, "executive": 4}
+_CHAIN_CLAUSE_RE = re.compile(r"(\S+) reports to (?:the )?(\S+)")
+
+
+def _seat_rank(name: str) -> int | None:
+    word = name.strip().strip(".,;:()[]`'\"").lower()
+    if word in ROLE_RANK:
+        return ROLE_RANK[word]
+    if word in MODEL_RUNG:
+        return _RUNG_RANK[MODEL_RUNG[word]]
+    return None
+
+
+def reporting_chain_inverted(lower: str) -> bool:
+    """True when a `reporting chain:` line has a seat reporting to a lower-ranked seat."""
+    for ln in lower.splitlines():
+        ln = ln.strip()
+        if not ln.startswith("reporting chain:"):
+            continue
+        for clause in ln[len("reporting chain:"):].split(";"):
+            m = _CHAIN_CLAUSE_RE.search(clause)
+            if not m:
+                continue
+            reporter, receiver = _seat_rank(m.group(1)), _seat_rank(m.group(2))
+            if reporter is not None and receiver is not None and reporter > receiver:
+                return True
+    return False
+
 
 def known_rung(text: str, model: str | None = None) -> str | None:
     """Rung from --model, else a `RUNG:` line; None when unknown."""
@@ -200,6 +231,9 @@ def check(text: str, tier: str | None = None, prompt_text: str | None = None,
             rung = known_rung(text, model)
             if rung and any(v > c for v, c in zip(parse_fan_out(text), FAN_OUT_BY_RUNG[rung])):
                 missing.append("fan-out-over-ceiling")
+
+    if reporting_chain_inverted(lower):
+        missing.append("reporting-chain-inverted")
 
     # Check tier-specific requirements.
     if tier == "grunt":

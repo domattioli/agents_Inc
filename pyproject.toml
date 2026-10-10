@@ -45,11 +45,26 @@ agents-inc = "agents_inc.install.cli:main"
 [tool.setuptools.dynamic]
 version = { attr = "agents_inc.__version__" }
 
-[tool.setuptools.packages.find]
-include = ["workerbees*", "agents_inc*"]
+# An explicit list: `packages.find` cannot see a package mapped through package-dir,
+# so the two data packages (skills and the schema doc) are named here (D55).
+[tool.setuptools]
+packages = [
+  "agents_inc", "agents_inc.install", "agents_inc.adapters", "agents_inc.hosts",
+  "workerbees", "agents_inc._skills", "agents_inc._docs",
+]
 
-# "*" applies to every package the find step returns, so JSON files in any
-# agents_inc subpackage ship too. The agents_inc line is kept explicit.
+[tool.setuptools.package-dir]
+"agents_inc._skills" = "skills"
+"agents_inc._docs" = "docs/governance"
+
+# "*" applies to every listed package, so JSON files in any agents_inc subpackage
+# ship too. The agents_inc line is kept explicit. The data packages carry only the
+# two skills the installer bundles and the schema doc, never skill tests.
 [tool.setuptools.package-data]
 "*" = ["*.json"]
 agents_inc = ["*.json"]
+"agents_inc._skills" = ["workerbee/**/*", "codex-bridge/**/*"]
+"agents_inc._docs" = ["SCHEMA-3NF.md"]
+
+[tool.setuptools.exclude-package-data]
+"agents_inc._skills" = ["*/tests/**"]

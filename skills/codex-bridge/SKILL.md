@@ -257,11 +257,7 @@ Each call has a 120-second limit, enforced with `perl` `alarm` so that GNU `time
 
 Update 2026-09-23: the "codex CLI not found on PATH" error was a misreport. `bridge.py` catches `FileNotFoundError` from `subprocess.run`, and that error also fires when the daemon `--workdir` no longer exists. Restart with `up.sh --workdir <existing dir>` and the Codex aliases work. The hook now reads the job id from `submit --wait` and prints `agent.sh result <id>`, which is the answer text.
 
-**Install.** Copy or link the script to `~/.claude/scripts/at_route.sh`. Then, in `~/.claude/settings.json`, add this entry to `hooks.UserPromptSubmit[0].hooks[]` directly after the `term_width.sh` entry:
-
-```json
-{"type": "command", "command": "bash ~/.claude/scripts/at_route.sh", "timeout": 130}
-```
+**Install.** The installer owns the `UserPromptSubmit` hook entry and the `@alias` links, so `agents-inc install` is the only install step. The hook runs from `~/.local/share/agents-inc/current/skills/codex-bridge/scripts/at_route.sh`. `agents-inc doctor` warns with `WB_HOOK_DRIFT` when the installed hook differs from the release copy. A hand-copied script under `~/.claude/scripts` is no longer needed.
 
 The hook needs `jq`. Without `jq` it does nothing. Test it with `bash skills/codex-bridge/tests/at_route.smoke.sh`; the test stubs `claude` and never calls a real model.
 
@@ -285,6 +281,7 @@ The hook recognizes three syntaxes:
 |---|---|---|
 | `@<alias> <question>` | Block | Side question. Main model never runs; answer shown to operator only on stderr. Zero main-model cost. |
 | `@@<alias> <question>` | Relay | Shared question. Answer injected into main model context. Main model relays the answer to the operator. |
+| `@openrouter <question>` | Block | Side question routed through `oask.sh` to `openrouter/auto:free`. The answer header names the model that actually answered. Add `@@` for relay mode. |
 | `~@<alias> <question>` | Escape | Bypass the hook. Prompt passed to session model exactly as typed, including the `~@` prefix. |
 
-All aliases (haiku, sonnet, opus, fable, astra, sol, terra, luna) are case-insensitive. The `@@` prefix forces relay mode regardless of the `AT_ROUTE_MODE` environment variable. If a single `@` is used, the mode defaults to block unless the environment variable `AT_ROUTE_MODE=relay` is set.
+All aliases (haiku, sonnet, opus, fable, astra, sol, terra, luna, gemini, mistral, openrouter) are case-insensitive. The `@@` prefix forces relay mode regardless of the `AT_ROUTE_MODE` environment variable. If a single `@` is used, the mode defaults to block unless the environment variable `AT_ROUTE_MODE=relay` is set.

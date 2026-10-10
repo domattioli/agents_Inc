@@ -41,4 +41,7 @@ prune docs/proposals
 
 include LICENSE README.md CHANGELOG.md CITATION.cff
 recursive-include agents_inc *.json
+recursive-include skills/workerbee *
+recursive-include skills/codex-bridge *
+include docs/governance/SCHEMA-3NF.md
 global-exclude __pycache__ *.py[cod]

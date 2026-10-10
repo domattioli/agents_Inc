@@ -1,7 +1,8 @@
 """Command line for user-scoped direct Codex installation."""
 from __future__ import annotations
-import argparse, json, os, sys
+import argparse, json, os, shutil, sys, tempfile
 from pathlib import Path
+from .. import datafiles
 from .bundle import activate, stage_bundle
 from .discovery import install_skill_links, restore_skill_links
 from .doctor import check_install
@@ -55,14 +56,41 @@ def _restore_prior_receipt(paths: InstallPaths, prior_release: str) -> None:
     except (OSError, ValueError): pass
     InstallReceipt(Path(prior_release).name, receipt.python_path, receipt.codex_path, receipt.owned_paths, None, receipt.schema_version).save_atomic(paths.receipt)
 
+PACKAGED_SOURCE = "packaged"  # source-checkout record when install ran from package data, not a checkout
+
+def _packaged_source(tmp: Path) -> Path:
+    """Build a bundle.py-layout source tree from the installed package (copies, not symlinks)."""
+    package = Path(__file__).resolve().parents[1]
+    shutil.copytree(package, tmp / "agents_inc", ignore=shutil.ignore_patterns("__pycache__", "_skills", "_docs"))
+    for name in ("workerbee", "codex-bridge"):
+        shutil.copytree(datafiles.repo_file(f"skills/{name}"), tmp / "skills" / name,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    schema = tmp / "docs/governance/SCHEMA-3NF.md"
+    schema.parent.mkdir(parents=True)
+    shutil.copy2(datafiles.repo_file("docs/governance/SCHEMA-3NF.md"), schema)
+    shim = datafiles.repo_root() / "workerbees"
+    if shim.is_dir():
+        shutil.copytree(shim, tmp / "workerbees", ignore=shutil.ignore_patterns("__pycache__"))
+    return tmp
+
 def install(args):
+    """Install from --source, or from the installed package's own data when --source is omitted."""
+    if getattr(args, "source", None):
+        return _install(args, Path(args.source))
+    tmp = Path(tempfile.mkdtemp(prefix="agents-inc-src-"))
+    try:
+        return _install(args, _packaged_source(tmp))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+def _install(args, source: Path):
     paths = _paths()
     notices = []
     with LifecycleLock(paths.lock):
         TransactionJournal.recover(paths.journal)
         journal = TransactionJournal(paths.journal).begin("install")
         try:
-            staged = stage_bundle(Path(args.source), paths)
+            staged = stage_bundle(source, paths)
             codex = None
             if not getattr(args, "without_codex", False):
                 try: codex = resolve_executable("codex", os.environ.get("PATH"))
@@ -83,7 +111,7 @@ def install(args):
             if not paths.roster.exists(): paths.roster.write_text("{}\n")  # empty, user-editable; never overwritten
             # Unowned cache for doctor's hook-drift check; not journaled, kept by uninstall.
             paths.state.mkdir(parents=True, exist_ok=True)
-            (paths.state / "source-checkout").write_text(str(Path(args.source).resolve()) + "\n")
+            (paths.state / "source-checkout").write_text((str(Path(args.source).resolve()) if getattr(args, "source", None) else PACKAGED_SOURCE) + "\n")
             # Receipt last: journal recovery of a "receipt" op unlinks the file, so any
             # failure before this point must leave the previous receipt in place.
             had_prior = _save_prior_receipt(paths)
@@ -97,7 +125,7 @@ def install(args):
             TransactionJournal.recover(paths.journal)
             raise
 
-NOT_INSTALLED = "WB_NOT_INSTALLED: no install receipt at {}. Run: agents-inc install --source <agents_Inc checkout>, then: agents-inc doctor"
+NOT_INSTALLED = "WB_NOT_INSTALLED: no install receipt at {}. Run: agents-inc install (add --source <agents_Inc checkout> to install from a checkout), then: agents-inc doctor"
 
 def verify_installed(paths: InstallPaths) -> None:
     """Post-install self-check (#35): fail loudly if the receipt or launcher is missing."""
@@ -125,14 +153,14 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
-    p = subs.add_parser("install"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
+    p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
     p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
-    p = subs.add_parser("repair"); p.add_argument("--source", required=True); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
+    p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
-    p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump",)); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?"); p.add_argument("--unpin", action="store_true")
+    p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump", "chain")); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?"); p.add_argument("extra", nargs="*"); p.add_argument("--unpin", action="store_true"); p.add_argument("--clear", action="store_true")
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
@@ -144,7 +172,7 @@ def main(argv=None):
             return dispatch.run(args)
         if args.command == "models":
             from . import models_cmd  # works from a source checkout, before the receipt check
-            return models_cmd.run(args.verb, args.alias, args.slug, unpin=args.unpin)
+            return models_cmd.run(args.verb, args.alias, args.slug, unpin=args.unpin, extra=args.extra, clear=args.clear)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
         if args.command == "ledger":
             from .. import host_ledger  # lazy: hook events must not depend on the ledger import
