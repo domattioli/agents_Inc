@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 from agents_inc.router import pick_model, pick_model_chain, Route, _TABLE
 
 class RouterTest(unittest.TestCase):
@@ -22,13 +23,16 @@ class RouterTest(unittest.TestCase):
         self.assertIsNone(pick_model("extract", "platinum", {"claude"}, workspace_authorized=False))
 
     def test_prefer_provider(self):
-        r = pick_model("extract", "grunt", {"claude", "codex"}, workspace_authorized=False, prefer_provider="codex")
+        # No user roster: the operator's ~/.config/agents-inc/roster.json must not decide the result (CI has none).
+        with mock.patch("agents_inc.install.runtime.load_model_map", return_value={}):
+            r = pick_model("extract", "grunt", {"claude", "codex"}, workspace_authorized=False, prefer_provider="codex")
         self.assertEqual(r.provider, "codex")
         # gpt-5.4-mini deliberately removed from the required-provider "codex"
         # grunt slot: per D27/CONTEXT.md "Free grunt", it must never be a Codex
         # subscription call. grunt/codex now resolves to the real ladder pair
         # (haiku<->luna), matching docs/governance/ROUTING-RANKING.md.
-        self.assertEqual(r.model, "gpt-5.6-luna")
+        self.assertEqual(r.model, _TABLE["tiers"]["grunt"]["codex"])
+        self.assertIn("luna", r.model)
 
     def test_catalog_excludes_unavailable_mistral(self):
         self.assertIsNone(pick_model("extract", "grunt", {"mistral"}, True))

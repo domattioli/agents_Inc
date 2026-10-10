@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "LicenseRef-PolyForm-Small-Business-1.0.0-NoAI-Training"
 license-files = ["LICENSE"]
-authors = [{ name = "Dominik Mattioli" }]
+authors = [{ name = "Dominik O. Mattioli" }]
 keywords = [
     "claude-code",
     "codex",
