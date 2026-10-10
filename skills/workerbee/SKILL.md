@@ -172,6 +172,15 @@ which model ids sit on each rung; edit `agents_inc/models.json` or
 | grunt | openrouter | `openrouter/auto:free` | `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`, `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `google/lyria-3-clip-preview`, `google/lyria-3-pro-preview`, `inclusionai/ling-3.0-flash-fin:free`, `inclusionai/ling-3.0-flash-sante:free`, `liquid/lfm-2.5-2.6b:free`, `minimax/minimax-m2.7:free`, `minimax/minimax-m3:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-content-safety:free`, `nvidia/nemotron-3.5-lightning:free`, `openrouter/auto:free`, `openrouter/free`, `poolside/laguna-s-2.1:free`, `poolside/laguna-xs-2.1:free`, `thinkingmachines/inkling-small:free`, `thinkingmachines/inkling:free`, `z-ai/glm-5.2:free` |
 <!-- END GENERATED tier-table -->
 
+**Relay for chains the tools cannot build.** `agents-inc run` and
+`agents-inc dispatch` cannot spawn Claude `Agent` subagents from inside a Codex
+process (see the one-direction note near the top of this skill). When the
+operator names a chain that cannot be built mechanically, for example a Codex
+supervisor (`terra`) over Claude workers, the supervising session relays: it
+launches the workers itself, forwards their reports to the named Codex
+supervisor as a turn, forwards the supervisor's verdict up, says so to the
+operator in one line, and keeps the authority direction the operator asked for.
+
 **Score the task onto a rung.** Rate five dimensions L1/L2/L3; the rung is
 the highest single score (max, not average). L1 = grunt, L2 = workhorse,
 L3 = orchestrator. Executive is never reached by score; it stays the last
@@ -875,7 +884,15 @@ repo's control.
 
 Include, roughly this order:
 1. ROLE, one line
-2. REPORTING CHAIN — who receives report, what escalates
+2. REPORTING CHAIN — who receives report, what escalates. The renderer
+   writes the line `REPORTING CHAIN: <delegate> reports to <supervisor>;
+   <supervisor> reports to <executive>; <executive> reports to the operator`
+   from the optional slots `DELEGATE`, `SUPERVISOR` and `EXECUTIVE`. Precedence
+   per seat: explicit slot, then the `chain` setting in
+   `~/.config/agents-inc/settings.json` (set it with `agents-inc models chain
+   supervisor=opus executive=fable`), then the ladder default for the delegate's
+   vendor. `check_dispatch_prompt.py` fails a line in which a seat reports to a
+   lower-ranked seat (`reporting-chain-inverted`).
 3. VERIFIED STATE — facts already established, marked do-not-re-derive
 4. THE TASK + what is explicitly out of scope
 5. HARD CONSTRAINTS (MUST 7) — read-only paths, no commits, no paid calls,
@@ -938,6 +955,15 @@ skills/codex-bridge/scripts/agent.sh submit --class review "<prompt>"   # route.
 # For codex/luna, use DelegateAgent MCP tool instead (--wait is broken on codex backend)
 ```
 
+Every `agents-inc dispatch` run that reaches launch leaves a `dispatched` node
+in the host ledger; its node id is the run id the status line prints. List open
+nodes and close one with the verdict you reached, not the delegate's:
+
+```
+agents-inc ledger pending
+agents-inc ledger append --run-id <id> --verdict pass|fail
+```
+
 Prefer `agent.sh` over calling a provider wrapper directly — it gives a job
 id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 `result.json` you can attach to a report.
@@ -981,6 +1007,12 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 - `tests/benchmark.md` — measured baseline per version
 
 ## Version History
+
+- **Unreleased** — REPORTING CHAIN rendered from the optional slots `DELEGATE`,
+  `SUPERVISOR`, `EXECUTIVE` with ladder and settings defaults, `--model` on the
+  renderer, `agents-inc models chain`, and the `reporting-chain-inverted` lint
+  rule (#45); Step 1 relay paragraph for chains the tools cannot build;
+  `ledger pending` and `ledger append --run-id` in the CLI section (#49).
 
 - **v1.4.0** (2026-10-01) — Rung names (executive, orchestrator, workhorse,
   grunt) and a generated tier table; five-dimension rung scoring grid ported

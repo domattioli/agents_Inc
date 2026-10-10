@@ -1,0 +1,3 @@
+# Repo-local additions to the DomI release-ignore baseline.
+[extend]
+exclude = ["demo/", "docs/proposals/"]

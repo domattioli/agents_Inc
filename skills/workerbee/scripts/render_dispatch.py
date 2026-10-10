@@ -1,11 +1,12 @@
 """Render dispatch from slots JSON: fill template with slot values, append header or contract reference.
 
-Usage: python3 render_dispatch.py --slots <json> [--contract-ref <path>] [--header <path>] [--template <path>]
+Usage: python3 render_dispatch.py --slots <json> [--contract-ref <path>] [--header <path>] [--template <path>] [--model <alias>]
 
 --slots: path to JSON file with slot values, keyed by slot name (required).
 --contract-ref: path to contract file; if given, output "CONTRACT: <path>" instead of pasted header text.
 --header: path to header.md; default: skills/workerbee/header.md relative to script directory.
 --template: path to slots.md; default: skills/workerbee/slots.md relative to script directory.
+--model: delegate model alias; feeds the derived REPORTING CHAIN line (see derive_chain).
 
 Output: filled template (slots substituted), blank line, then either pasted header text or
 CONTRACT: reference line followed by training opt-out line. No {{ may remain.
@@ -17,6 +18,7 @@ Exit 0 on success, 2 if required slot missing or empty (stderr names it).
 from __future__ import annotations
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -26,7 +28,7 @@ from pathlib import Path
 _SCRIPT_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
-from dispatch_rungs import FAN_OUT_BY_RUNG, MODEL_RUNG  # noqa: E402
+from dispatch_rungs import ALIAS_VENDOR, FAN_OUT_BY_RUNG, LADDER, MODEL_RUNG  # noqa: E402
 
 
 def default_fan_out(slots: dict) -> str:
@@ -45,6 +47,88 @@ def default_fan_out(slots: dict) -> str:
                 break
     width, total, depth = FAN_OUT_BY_RUNG[rung]
     return f"width {width}, total {total}, depth {depth}"
+
+def _text(value) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _first_alias(text: str) -> str | None:
+    """Return the model alias that appears earliest in text, else None."""
+    best = None
+    for alias in MODEL_RUNG:
+        m = re.search(r"\b%s\b" % alias, text, re.IGNORECASE)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), alias)
+    return best[1] if best else None
+
+
+def _alias_on_rung(vendor: str | None, rung: str) -> str | None:
+    for alias, r in MODEL_RUNG.items():
+        if r == rung and ALIAS_VENDOR.get(alias) == vendor:
+            return alias
+    return None
+
+
+def derive_chain(slots: dict, model: str | None, settings: dict) -> dict:
+    """Return DELEGATE, SUPERVISOR, EXECUTIVE plus a sources map (slot|setting|default).
+
+    Precedence per seat: explicit slot, then setting chain.*, then the ladder default.
+    DELEGATE: slot, then model argument, then MODEL slot, then the first alias named
+    in ROLE (earliest position wins), else the word delegate. Pure: reads no files.
+    """
+    chain_cfg = settings.get("chain") if isinstance(settings, dict) else None
+    chain_cfg = chain_cfg if isinstance(chain_cfg, dict) else {}
+    sources = {}
+
+    delegate = _text(slots.get("DELEGATE"))
+    sources["DELEGATE"] = "slot"
+    if not delegate:
+        for cand in (model, slots.get("MODEL")):
+            word = _text(cand).lower()
+            if word:
+                delegate = _first_alias(word) or word
+                break
+    if not delegate:
+        delegate = _first_alias(_text(slots.get("ROLE"))) or "delegate"
+        sources["DELEGATE"] = "default"
+
+    key = delegate.lower()
+    vendor = ALIAS_VENDOR.get(key)
+    rung = MODEL_RUNG.get(key)
+
+    supervisor = _text(slots.get("SUPERVISOR"))
+    sources["SUPERVISOR"] = "slot"
+    if not supervisor:
+        if _text(chain_cfg.get("supervisor")):
+            supervisor, sources["SUPERVISOR"] = _text(chain_cfg["supervisor"]), "setting"
+        else:
+            sources["SUPERVISOR"] = "default"
+            above = None
+            if rung in LADDER and LADDER.index(rung) + 1 < len(LADDER):
+                above = _alias_on_rung(vendor, LADDER[LADDER.index(rung) + 1])
+            supervisor = above or "CoS"
+
+    executive = _text(slots.get("EXECUTIVE"))
+    sources["EXECUTIVE"] = "slot"
+    if not executive:
+        if _text(chain_cfg.get("executive")):
+            executive, sources["EXECUTIVE"] = _text(chain_cfg["executive"]), "setting"
+        else:
+            sources["EXECUTIVE"] = "default"
+            top = _alias_on_rung(vendor, "executive")
+            executive = top if top and top not in (key, supervisor.lower()) else supervisor
+    return {"DELEGATE": delegate, "SUPERVISOR": supervisor, "EXECUTIVE": executive, "sources": sources}
+
+
+def read_settings() -> dict:
+    """Read ~/.config/agents-inc/settings.json via HOME; {} on any error. Never writes."""
+    path = Path(os.environ.get("HOME", "~")).expanduser() / ".config/agents-inc/settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
 
 def extract_template(slots_path: Path) -> str:
     """Extract template from first ```text block in slots.md."""
@@ -78,6 +162,7 @@ def main() -> int:
     contract_ref = None
     header_path = None
     template_path = None
+    model = None
 
     args = sys.argv[1:]
     i = 0
@@ -93,6 +178,9 @@ def main() -> int:
             i += 2
         elif args[i] == "--template" and i + 1 < len(args):
             template_path = Path(args[i + 1])
+            i += 2
+        elif args[i] == "--model" and i + 1 < len(args):
+            model = args[i + 1]
             i += 2
         else:
             print(f"Unknown argument: {args[i]}", file=sys.stderr)
@@ -138,6 +226,13 @@ def main() -> int:
         slots_data["NOTES"] = "none"
     slots_data.setdefault("STYLE", "")
 
+    chain = derive_chain(slots_data, model, read_settings())
+    src = chain.pop("sources")
+    slots_data.update(chain)
+    print("chain: %s < %s < %s (%s, %s, %s)" % (
+        chain["DELEGATE"], chain["SUPERVISOR"], chain["EXECUTIVE"],
+        src["DELEGATE"], src["SUPERVISOR"], src["EXECUTIVE"]), file=sys.stderr)
+
     missing = []
     for slot in sorted(required_slots):
         value = slots_data.get(slot, "").strip() if isinstance(slots_data.get(slot), str) else ""
@@ -173,6 +268,9 @@ def main() -> int:
             if "{{" in line:
                 print(f"Unfilled placeholder in: {line}", file=sys.stderr)
         return 2
+
+    # A top-rung supervisor is also the executive: drop the "X reports to X" link.
+    result = re.sub(r"(?m)(REPORTING CHAIN: .*?)(\S+) reports to \2; ", r"\1", result)
 
     # Output filled template
     output = result
