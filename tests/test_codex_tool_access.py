@@ -94,6 +94,48 @@ class ProfileTest(unittest.TestCase):
         self.assertNotIn('"/h"', prof)  # rest of HOME is absent, so unreadable
         self.assertFalse(any(v == "write" for v in prof.values()))
 
+    def test_generated_images_readable_rest_of_codex_not(self):
+        prof = permission_profile(Path("/w"), False, home=Path("/h"))
+        self.assertEqual(prof['"/h/.codex/generated_images"'], "read")
+        self.assertEqual(prof['"/h/.codex/skills"'], "read")
+        self.assertNotIn('"/h/.codex"', prof)  # auth.json, config, sessions stay unreadable
+
+    def test_extra_read_grants_file(self):
+        prof = permission_profile(Path("/w"), False, home=Path("/h"), extra_read=(Path("/r/snapshot.json"),))
+        self.assertEqual(prof['"/r/snapshot.json"'], "read")
+        self.assertNotIn('"/r"', prof)
+
+    def test_subdir_cwd_reads_parent_agents_md_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(os.path.realpath(tmp)) / "repo"
+            sub = root / "a" / "b"
+            sub.mkdir(parents=True)
+            (root / ".git").mkdir()
+            (root / "AGENTS.md").write_text("x", encoding="utf-8")
+            (root / "a" / "AGENTS.md").write_text("y", encoding="utf-8")
+            (Path(tmp) / "AGENTS.md").write_text("above root", encoding="utf-8")
+            prof = permission_profile(sub, False, home=Path("/h"))
+            self.assertEqual(prof[f'"{root}/AGENTS.md"'], "read")
+            self.assertEqual(prof[f'"{root}/a/AGENTS.md"'], "read")
+            self.assertNotIn(f'"{os.path.realpath(tmp)}/AGENTS.md"', prof)  # stops at the git root
+            self.assertNotIn(f'"{root}"', prof)  # files only, not the directories
+            at_root = permission_profile(root, False, home=Path("/h"))
+            self.assertFalse(any(k.endswith('AGENTS.md"') for k in at_root))
+
+    def test_lead_home_links_generated_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / ".codex"
+            real.mkdir()
+            (real / "auth.json").write_text("{}", encoding="utf-8")
+            with mock.patch.object(runtime.Path, "home", return_value=Path(tmp)):
+                home = runtime.lead_codex_home("gpt-x")
+            try:
+                self.assertEqual(os.readlink(home / "generated_images"), str(real / "generated_images"))
+                self.assertEqual(os.readlink(home / "skills"), str(real / "skills"))
+                self.assertTrue((real / "generated_images").is_dir())
+            finally:
+                shutil.rmtree(home)
+
     def test_run_dir_only_write(self):
         prof = permission_profile(Path("/w"), True, home=Path("/h"), write_dir=Path("/w/runs/r1"))
         self.assertEqual(prof['"/w"'], "read")

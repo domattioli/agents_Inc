@@ -79,6 +79,7 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | EFFORT | 9 | intended effort level, and whether the transport can set it |
 | SECOND_OPINION | 10 | why this rung, or `not applicable` with the reason |
 | PLAN_CONTRACT | 11 | plan deliverable rules, or `not applicable — deliverable is not a plan.` |
+| CODEX_WRITE | optional | `yes` gives a Codex delegate tools and write access to `--cwd` (for example an image job: built-in `image_gen` saves under `~/.codex/generated_images`, which is readable, and the delegate copies the file into cwd); absent keeps Codex read-only. Claude delegates ignore it |
 | EXECUTIVE | optional | model alias or role word for the top seat of the REPORTING CHAIN line; precedence: explicit slot, then setting `chain.executive`, then the executive-rung alias of the delegate's vendor (equal to SUPERVISOR when that alias is the delegate or the supervisor) |
 | SUPERVISOR | optional | seat the delegate reports to; precedence: explicit slot, then setting `chain.supervisor`, then the alias one rung above the delegate on the grunt, workhorse, orchestrator, executive ladder for the same vendor, else `CoS` for an executive delegate |
 | DELEGATE | optional | the delegate's alias; precedence: explicit slot, then the `--model` flag, then the `MODEL` slot, then the first model alias named in `ROLE`, else the word `delegate` |

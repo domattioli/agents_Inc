@@ -329,7 +329,8 @@ class LeadCodexHomeTest(unittest.TestCase):
     def test_helper_creates_symlinks_and_config(self):
         home = runtime.lead_codex_home("gpt-5.6-terra")
         self.addCleanup(shutil.rmtree, home, True)
-        self.assertEqual(sorted(p.name for p in home.iterdir()), ["auth.json", "config.toml", "sessions"])
+        self.assertEqual(sorted(p.name for p in home.iterdir()),
+                         ["auth.json", "config.toml", "generated_images", "sessions", "skills"])
         self.assertEqual(os.readlink(home / "auth.json"), str(self.fake_home / ".codex" / "auth.json"))
         self.assertEqual(os.readlink(home / "sessions"), str(self.fake_home / ".codex" / "sessions"))
         self.assertTrue((self.fake_home / ".codex" / "sessions").is_dir())
