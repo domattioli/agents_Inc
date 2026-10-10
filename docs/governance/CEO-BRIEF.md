@@ -58,3 +58,20 @@ Smallest complete vertical slice first: registry → graph edge → policy decis
     - Start the build after spec 002, the dispatch graph ledger, lands.
   - **Ledger role**
     - The ledger is the provenance and audit substrate consumed by this plane.
+
+## Where 0.3.0 stands against this brief (added 2026-10-10)
+
+The objective above stays verbatim. This section maps release 0.3.0 facts (`CHANGELOG.md` [0.3.0]) to it.
+
+- Relationships and delegation rules
+  - Every dispatch prompt carries a `REPORTING CHAIN` line derived from the ladder. Precedence: explicit slot, then the `agents-inc models chain` setting, then the ladder default. A lint rule rejects an inverted chain (#45).
+- Provenance and audit
+  - Each launched `agents-inc dispatch` writes one `dispatched` ledger node, id equal to the run id. `agents-inc ledger append --run-id <run>` records the verified return (#49).
+- Tool permissions
+  - A Codex delegate under `agents-inc dispatch` gets tools and write access to `--cwd` whenever `PERMISSION_MODE` allows edits, the same as a Claude subagent. The slot `CODEX_WRITE: no` opts out.
+- Agent registry and versions
+  - Model sync detects newer Codex slugs and promotes them in `approve` (default) or `auto` mode; pinned aliases are skipped (#57).
+- Deployment
+  - Pip-only install: skills and the schema ship as package data, so `agents-inc install` and `repair` work without `--source` (#55, D55).
+- Still open against the brief
+  - `WORKERBEES_GOVERNANCE` defaults to `off`, so the deterministic gateway is not the default path.
