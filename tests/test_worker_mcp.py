@@ -139,7 +139,7 @@ class BrokerTurnBase(unittest.TestCase):
 
     def _launch(self, ask=None):
         """Fake Worker. With ask, the first turn asks the Lead through the real ask_lead channel code."""
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             self.launches.append({"resume": resume, "prompt": prompt, "rid": dispatch._WORKER_ASK})
             body = GOOD_REPORT
             if ask and resume is None and len(self.launches) == 1:  # only the first Worker asks
