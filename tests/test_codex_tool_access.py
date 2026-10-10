@@ -421,3 +421,17 @@ class LeadBuilderContainmentTest(unittest.TestCase):
             nest = home / ".agents/skills/bundle/skills"; nest.mkdir(parents=True)
             (nest / "foo").symlink_to(real)
             self.assertIn("bundle/skills/foo/SKILL.md", runtime._denied_skill_args(home)[1])
+
+
+class SkillLoopTest(unittest.TestCase):
+    def test_symlink_loop_is_walked_once(self):
+        import tempfile
+        from agents_inc.install import runtime
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            real = home / ".local/x"; real.mkdir(parents=True); (real / "SKILL.md").write_text("x")
+            skills = home / ".agents/skills"; skills.mkdir(parents=True)
+            (skills / "wb").symlink_to(real)
+            for i in range(20):
+                (skills / f"loop{i}").symlink_to(skills)
+            self.assertEqual(runtime._denied_skill_args(home)[1].count("enabled=false"), 1)

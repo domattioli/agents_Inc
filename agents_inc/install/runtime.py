@@ -203,10 +203,13 @@ def _denied_skill_args(home: Path | None = None) -> list[str]:
     """D57: user skills that resolve into ~/.local (sandbox-denied) make the Lead stop on a blocked read; turn them off."""
     home = Path(home or Path.home())
     denied = Path(os.path.realpath(home / ".local"))
-    root, paths = home / ".agents" / "skills", []
+    root, paths, seen = home / ".agents" / "skills", [], set()
     for top, dirs, files in os.walk(root, followlinks=True):  # skill links are symlinked dirs; rglob skips them
-        if len(Path(top).relative_to(root).parts) >= 4:
+        real = os.path.realpath(top)
+        if real in seen or len(Path(top).relative_to(root).parts) >= 4:  # visited set: no symlink-loop blowup
             dirs[:] = []
+            continue
+        seen.add(real)
         if "SKILL.md" in files and Path(os.path.realpath(Path(top) / "SKILL.md")).is_relative_to(denied):
             paths.append(str(Path(top) / "SKILL.md"))
     paths.sort()
