@@ -107,3 +107,26 @@ class RepairTest(unittest.TestCase):
             self.assertEqual(len(owned), len(set(owned)))
             self.assertIn(paths.launcher, owned)
             self.assertIn(home / ".claude/AGENTS.md", owned)
+
+
+class PackagedInstallTest(unittest.TestCase):
+    def test_install_without_source_uses_package_data(self):
+        import argparse
+        from agents_inc.install import cli
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            data = tmp / "data"
+            for name in ("workerbee", "codex-bridge"):
+                (data / "skills" / name).mkdir(parents=True); (data / "skills" / name / "SKILL.md").write_text("x")
+            (data / "docs/governance").mkdir(parents=True); (data / "docs/governance/SCHEMA-3NF.md").write_text("s")
+            home = tmp / "home"; (home / ".claude").mkdir(parents=True)
+            paths = InstallPaths.for_home(home)
+            args = argparse.Namespace(source=None, adopt_existing_workerbee=False, without_codex=True, no_host_wiring=False)
+            with mock.patch.object(cli, "_paths", return_value=paths), \
+                 mock.patch.object(cli.datafiles, "repo_file", side_effect=lambda rel: data / rel):
+                self.assertEqual(cli.install(args), 0)
+            self.assertTrue(paths.receipt.exists())
+            self.assertEqual((paths.state / "source-checkout").read_text().strip(), "packaged")
+            self.assertTrue(any(paths.releases.glob("*/skills/workerbee/SKILL.md")))
+

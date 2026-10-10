@@ -19,8 +19,10 @@ import time
 import urllib.parse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = REPO_ROOT / "skills" / "workerbee" / "scripts"
+from agents_inc.datafiles import repo_file, repo_root
+
+REPO_ROOT = repo_root()
+SCRIPTS = repo_file("skills/workerbee/scripts")
 
 CODEX_SLUGS = ("astra", "sol", "terra", "luna")
 # Exact Claude model ids passed to `claude -p --model`. Keep this the only table.
@@ -74,12 +76,12 @@ def new_run_id(model: str) -> str:
     return f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{model}-{secrets.token_hex(3)}"
 
 
-def render(slots_path: Path) -> tuple[int, str, str]:
+def render(slots_path: Path, model: str | None = None) -> tuple[int, str, str]:
     """Render via render_dispatch.main() in-process; return (rc, prompt, stderr)."""
     module = _load("render_dispatch")
     out, err = io.StringIO(), io.StringIO()
     saved = sys.argv
-    sys.argv = ["render_dispatch.py", "--slots", str(slots_path)]
+    sys.argv = ["render_dispatch.py", "--slots", str(slots_path)] + (["--model", model] if model else [])
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = module.main()
@@ -458,6 +460,18 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
     return EXIT_OK if green else EXIT_RED
 
 
+def _record_ledger_node(spec: dict, slots: dict) -> None:
+    """Add a `dispatched` ledger node for this run (id = run id). A failure goes to run.json, never the outcome."""
+    try:
+        from .. import host_ledger  # lazy, like cli.py
+        from .cli import _paths
+        task = slots.get("TASK") if isinstance(slots, dict) else None
+        if not host_ledger.record_dispatch_run(_paths().state, spec, task if isinstance(task, str) else None):
+            spec["ledger_error"] = "ledger write failed"
+    except Exception as exc:
+        spec["ledger_error"] = f"{type(exc).__name__}: {exc}"
+
+
 def run(args) -> int:
     if getattr(args, "resume", None):
         return resume(args)
@@ -494,7 +508,7 @@ def run(args) -> int:
             "gates": {"tier": args.tier, "allow": allow_paths(str(slots.get("FILES_IN_SCOPE", "")))},
             "permission_mode": slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE,
             "rc": None, "outcome": None, "session_id": None}
-    rc, prompt, err = render(slots_path)
+    rc, prompt, err = render(slots_path, model)
     lint = run_dir / "lint.txt"
     if rc != 0:
         _wtext(lint, f"render rc={rc}\n{err}")
@@ -528,6 +542,7 @@ def run(args) -> int:
         spec["outcome"] = "dry-run"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} dry-run prompt={prompt_path}")
         return EXIT_OK
+    _record_ledger_node(spec, slots)
     global _LAUNCHES
     _LAUNCHES += 1
     result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"])

@@ -10,6 +10,20 @@
 .release-ignore.toml
 CLAUDE.md
 AGENTS.md
+CONTEXT.md
+AGENT.md
+CLAUDE.local.md
+GEMINI.md
+.agents/
+.codex/
+.gemini/
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.mcp.json
+.projectmem/
+.github/copilot-instructions.md
 claude_routine_instructions.md
 instructions_on_start.sh
 scripts/hooks/
@@ -18,4 +32,7 @@ docs/introspections/
 specs/
 *introspect*.yml
 .github/
+demo/
+docs/proposals/
 # <<< release-ignore:end
+

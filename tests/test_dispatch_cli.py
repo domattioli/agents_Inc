@@ -109,6 +109,22 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(out.strip(), f"dispatch {run.name} haiku dry-run prompt={run / 'prompt.md'}")
         self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
 
+    def _chain_line(self, model):
+        rc, out, _ = self._main("--slots", str(self._slots()), "--model", model, "--cwd", str(self.repo),
+                                "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 0, out)
+        run = self._run_dir()
+        self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
+        return [ln for ln in (run / "prompt.md").read_text().splitlines() if ln.startswith("REPORTING CHAIN:")]
+
+    def test_dry_run_derives_claude_chain(self):
+        self.assertEqual(self._chain_line("haiku"), [
+            "REPORTING CHAIN: haiku reports to sonnet; sonnet reports to fable; fable reports to the operator"])
+
+    def test_dry_run_derives_codex_chain(self):
+        self.assertEqual(self._chain_line("luna"), [
+            "REPORTING CHAIN: luna reports to terra; terra reports to astra; astra reports to the operator"])
+
     def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
@@ -132,6 +148,35 @@ class DispatchCliTest(unittest.TestCase):
         self.assertIn("report=COMPLIANT snapshot=clean", out)
         self.assertEqual(rc, 0, out)
         return json.loads((run / "run.json").read_text())
+
+    def _ledger_rows(self):
+        path = self.root / ".local/state/agents-inc/host-ledger/.workerbees/ledger.jsonl"
+        if not path.is_file():
+            return []
+        return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+
+    def test_launched_run_leaves_one_dispatched_ledger_row(self):
+        rc, out, _ = self._launch("sonnet")
+        spec = self._assert_launched(rc, out)
+        rows = self._ledger_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["id"], rows[0]["status"], rows[0]["source"], rows[0]["model"]),
+                         (spec["run_id"], "dispatched", "dispatch", "sonnet"))
+        self.assertNotIn("ledger_error", spec)
+
+    def test_ledger_write_failure_does_not_change_outcome(self):
+        with mock.patch("agents_inc.host_ledger.record_dispatch_run", return_value=False):
+            rc, out, _ = self._launch("sonnet")
+        spec = self._assert_launched(rc, out)
+        self.assertEqual(spec["ledger_error"], "ledger write failed")
+
+    def test_dry_run_and_refusals_leave_no_ledger_row(self):
+        self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                   "--run-dir", str(self.runs), "--dry-run")
+        with mock.patch.object(dispatch, "lint_prompt", return_value=([12], "")):
+            self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                       "--run-dir", str(self.runs))
+        self.assertEqual(self._ledger_rows(), [])
 
     def test_launch_codex_mocked(self):
         rc, out, calls = self._launch("sol")

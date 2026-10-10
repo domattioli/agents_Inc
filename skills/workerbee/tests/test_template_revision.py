@@ -21,6 +21,7 @@ EXAMPLE = Path(__file__).resolve().parent / "fixtures" / "example_slots.json"
 HANDOFF = Path.home() / ".claude" / "skills" / "handoff-lint" / "scripts" / "handoff_lint.py"
 sys.path.insert(0, str(LINT.parent))
 import check_dispatch_prompt as cdp  # noqa: E402
+import render_dispatch  # noqa: E402
 
 
 def run(*cmd, **kw):
@@ -64,6 +65,27 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         if HANDOFF.is_file():
             self.assertIn("handoff-lint: 0 finding(s)", res.stderr)
+
+    def test_example_has_reporting_chain_line(self):
+        proc = self.render(self.example())
+        want = "REPORTING CHAIN: haiku reports to sonnet; sonnet reports to fable; fable reports to the operator"
+        self.assertIn(want + "\n", proc.stdout)
+        self.assertIn("chain: haiku < sonnet < fable", proc.stderr)
+        out = self.dir / "prompt.txt"
+        out.write_text(proc.stdout, encoding="utf-8")
+        self.assertEqual(run(LINT, out).stdout.strip(), "COMPLIANT")
+
+    def test_model_flag_sets_delegate(self):
+        proc = self.render(self.example(), "--model", "luna")
+        self.assertIn("REPORTING CHAIN: luna reports to terra; terra reports to astra; astra reports to the operator\n",
+                      proc.stdout)
+
+    def test_top_rung_supervisor_has_no_self_link(self):
+        proc = self.render(self.example(), "--model", "opus")
+        self.assertIn("REPORTING CHAIN: opus reports to fable; fable reports to the operator\n", proc.stdout)
+        out = self.dir / "prompt.txt"
+        out.write_text(proc.stdout, encoding="utf-8")
+        self.assertEqual(run(LINT, out).stdout.strip(), "COMPLIANT")
 
     def test_wrapper_stripped(self):
         proc = self.render(self.example())
@@ -227,6 +249,54 @@ class SharedRungSourceTest(unittest.TestCase):
                            env=dict(os.environ, PYTHONPATH=str(ROOT)))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(str(WB / "scripts" / "dispatch_rungs.py"), r.stdout)
+
+
+
+
+class DeriveChainTest(unittest.TestCase):
+    """derive_chain is pure; settings come in as a dict (SC-001)."""
+
+    def chain(self, slots=None, model=None, settings=None):
+        got = render_dispatch.derive_chain(slots or {}, model, settings or {})
+        return f'{got["DELEGATE"]} < {got["SUPERVISOR"]} < {got["EXECUTIVE"]}'
+
+    def test_defaults_by_vendor(self):
+        self.assertEqual(self.chain(model="haiku"), "haiku < sonnet < fable")
+        self.assertEqual(self.chain(model="luna"), "luna < terra < astra")
+        self.assertEqual(self.chain(model="fable"), "fable < CoS < CoS")
+
+    def test_setting_overrides_default(self):
+        self.assertEqual(self.chain(model="haiku", settings={"chain": {"supervisor": "opus"}}), "haiku < opus < fable")
+
+    def test_slot_beats_setting(self):
+        got = self.chain({"SUPERVISOR": "sol"}, "haiku", {"chain": {"supervisor": "opus"}})
+        self.assertEqual(got, "haiku < sol < fable")
+
+    def test_role_text_fallback_first_hit_wins(self):
+        self.assertEqual(self.chain({"ROLE": "Workhorse (sonnet, Agent tool)"}), "sonnet < opus < fable")
+        self.assertEqual(self.chain({"ROLE": "Grunt (haiku) dispatched by Supervisor (opus)"}),
+                         "haiku < sonnet < fable")
+
+    def test_unknown_delegate(self):
+        self.assertEqual(self.chain({"ROLE": "nobody"}), "delegate < CoS < CoS")
+
+    def test_malformed_settings_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / ".config" / "agents-inc"
+            cfg.mkdir(parents=True)
+            (cfg / "settings.json").write_text("{not json")
+            old = os.environ.get("HOME")
+            os.environ["HOME"] = tmp
+            try:
+                self.assertEqual(render_dispatch.read_settings(), {})
+                (cfg / "settings.json").write_text('{"chain": {"supervisor": "opus"}}')
+                self.assertEqual(self.chain(model="haiku", settings=render_dispatch.read_settings()),
+                                 "haiku < opus < fable")
+            finally:
+                if old is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = old
 
 
 if __name__ == "__main__":

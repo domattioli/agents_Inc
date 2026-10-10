@@ -10,6 +10,20 @@
 .release-ignore.toml export-ignore
 CLAUDE.md export-ignore
 AGENTS.md export-ignore
+CONTEXT.md export-ignore
+AGENT.md export-ignore
+CLAUDE.local.md export-ignore
+GEMINI.md export-ignore
+.agents/ export-ignore
+.codex/ export-ignore
+.gemini/ export-ignore
+.cursor/ export-ignore
+.cursorrules export-ignore
+.windsurfrules export-ignore
+.aider* export-ignore
+.mcp.json export-ignore
+.projectmem/ export-ignore
+.github/copilot-instructions.md export-ignore
 claude_routine_instructions.md export-ignore
 instructions_on_start.sh export-ignore
 scripts/hooks/ export-ignore
@@ -18,4 +32,7 @@ docs/introspections/ export-ignore
 specs/ export-ignore
 *introspect*.yml export-ignore
 .github/ export-ignore
+demo/ export-ignore
+docs/proposals/ export-ignore
 # <<< release-ignore:end
+
