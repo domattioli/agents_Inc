@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import json
+import shutil
 import os
 import re
 import subprocess
@@ -300,7 +301,7 @@ class DispatchCliTest(unittest.TestCase):
         seen = []
 
         def fake_run_codex(*a, **kw):
-            seen.append((kw.get("tools"), kw.get("write"), kw.get("network")))
+            seen.append((kw.get("tools"), kw.get("write"), kw.get("network")) + ((kw["lead_dir"],) if kw.get("lead_dir") else ()))
             self.assertEqual(kw.get("extra_read"),
                              (self.runs / "pre_dispatch_snapshot.py", self.runs / "snapshot.json"))
             return 0
@@ -313,7 +314,55 @@ class DispatchCliTest(unittest.TestCase):
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True, codex_network=True)
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_network=True)
-        self.assertEqual(seen, [(False, False, False), (True, True, False), (True, True, True), (False, False, False)])
+            # #68: a Lead always has tools, writes per CODEX_WRITE, and never gets network
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True, codex_network=True,
+                            lead_dir=self.root / "lead")
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, lead_dir=self.root / "lead")
+        self.assertEqual(seen, [(False, False, False), (True, True, False), (True, True, True), (False, False, False),
+                                (True, True, False, self.root / "lead"), (True, False, False, self.root / "lead")])
+
+    def test_lead_roster_follows_rungs(self):
+        fan = {"width": 1, "total": 2, "depth": 1}
+        allow = {"ALLOWLIST": "sol, luna, haiku, sonnet"}
+        self.assertEqual(dispatch.lead_roster("astra", allow, fan), ["sol", "luna", "sonnet", "haiku"])
+        self.assertEqual(dispatch.lead_roster("terra", allow, fan), ["luna", "haiku"])  # Workhorse: Grunt only
+        self.assertEqual(dispatch.lead_roster("luna", allow, fan), [])
+        self.assertEqual(dispatch.lead_roster("sol", allow, {"width": 0, "total": 0, "depth": 0}), [])
+        self.assertEqual(dispatch.lead_roster("sol", allow, None), [])
+        self.assertEqual(dispatch.lead_roster("sol", {"ALLOWLIST": "none -- do all work yourself"}, fan), [])
+
+    def test_codex_dispatch_with_fan_out_runs_as_lead(self):
+        seen = {}
+
+        def fake(*a, **k):
+            lead = k.get("lead_dir")
+            seen["lead"] = lead
+            seen["run"] = json.loads((lead / "run.json").read_text())
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": None}
+        slots = self._slots(ALLOWLIST="luna, haiku", FAN_OUT="width 1, total 2, depth 1",
+                            ROLE="Workhorse terra, dispatched by CoS (opus) in repo.")
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--slots", str(slots), "--model", "terra", "--cwd", str(self.repo),
+                                    "--run-dir", str(self.runs))
+        self.assertIsNotNone(seen.get("lead"), out)
+        self.assertFalse(seen["lead"].is_relative_to(self.repo))
+        self.assertEqual(seen["run"]["worker_models"], ["luna", "haiku"])
+        self.assertEqual(seen["run"]["fan_out"], {"width": 1, "total": 2, "depth": 1})
+        spec = json.loads((self._run_dir() / "run.json").read_text())
+        self.assertEqual((spec["lead_workers"], spec["lead_dir"]), (["luna", "haiku"], str(seen["lead"])))
+        shutil.rmtree(seen["lead"], ignore_errors=True)
+
+    def test_codex_dispatch_without_fan_out_is_not_a_lead(self):
+        seen = {}
+
+        def fake(*a, **k):
+            seen["lead"] = k.get("lead_dir")
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": None}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            self._main("--slots", str(self._slots(ALLOWLIST="luna")), "--model", "terra", "--cwd", str(self.repo),
+                       "--run-dir", str(self.runs))
+        self.assertIn("lead", seen)
+        self.assertIsNone(seen["lead"])
 
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)

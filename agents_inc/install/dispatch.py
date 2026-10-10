@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -290,11 +291,47 @@ def codex_network(slots: dict) -> bool:
     return str(slots.get("CODEX_NETWORK", "")).strip().lower() in ("yes", "true")
 
 
+LEAD_NOTE = ("\nWORKERS (D57): you may run Workers ({roster}) with the `agents_inc` MCP server's `dispatch`, `wait`, "
+             "`status`, `resume` and `answer` tools (Codex: call `tool_search` with query \"agents_inc\" first if they "
+             "are not listed). The `dispatch` tool description lists every slot a Worker request needs. Skill files "
+             "under ~/.agents/skills and ~/.local are not readable in this sandbox and are not needed: this prompt and "
+             "the tool descriptions carry the contract.\n")
+LEAD_RUNGS = ("astra", "sol", "terra")  # Codex models that may lead; luna is a Grunt and never delegates
+
+
+def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
+    """#68 (D57): a Codex delegate gets the broker on the same terms as a Claude delegate gets subagents: a FAN_OUT
+    total above 0 and models named in SUB-DELEGATE MODEL ALLOWLIST. Keep only models the D46.3 rung rule allows:
+    any lower rung, and a Workhorse only the Grunt rung. Empty list: no broker."""
+    if model not in LEAD_RUNGS or not fan_out or fan_out.get("total", 0) <= 0:
+        return []
+    rungs = _load("dispatch_rungs")
+    text = str(slots.get("ALLOWLIST", "")).lower()
+    mine = rungs.LADDER.index(rungs.MODEL_RUNG[model])
+    named = [m for m in (*CODEX_SLUGS, *CLAUDE_MODELS) if re.search(rf"\b{m}\b", text)]
+    return [m for m in named if rungs.LADDER.index(rungs.MODEL_RUNG[m]) < mine
+            and (rungs.MODEL_RUNG[model] != "workhorse" or rungs.MODEL_RUNG[m] == "grunt")]
+
+
+def make_lead_dir(spec: dict, roster: list[str]) -> Path:
+    """#68: the broker run directory for a Codex Lead, created outside cwd so the Lead's write grant never covers it."""
+    lead_dir = Path(tempfile.mkdtemp(prefix=f"agents-inc-lead-{spec['run_id']}-")).resolve()
+    if lead_dir.is_relative_to(Path(spec["cwd"]).resolve()):
+        shutil.rmtree(lead_dir, ignore_errors=True)
+        raise ValueError("lead-dir-inside-cwd: TMPDIR sits inside the delegate's cwd")
+    _write_json(lead_dir / "run.json", {
+        "schema_version": 1, "run_id": spec["run_id"], "model": spec["model"], "effort": spec["effort"],
+        "cwd": spec["cwd"], "chain": spec["chain"], "worker_models": roster, "fan_out": spec["fan_out"],
+        "permission_mode": spec["permission_mode"]})
+    return lead_dir
+
+
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
            permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None,
-           codex_write: bool = False, codex_network: bool = False) -> dict:
+           codex_write: bool = False, codex_network: bool = False, lead_dir: Path | None = None) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
-    or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54)."""
+    or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54).
+    lead_dir (#68): run a Codex delegate as a Lead with the broker MCP tools over that run directory."""
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
     if kind == "claude":
         argv = claude_argv(model, permission_mode, resume, effort)
@@ -335,8 +372,9 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         rc = run_codex(model, effort, cwd, io.StringIO(prompt), receipt, _efforts(paths.current.resolve()), env=env,
                        extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES,
-                       thread_out=thread, resume_thread=resume, worker=worker,
-                       tools=codex_write, write=codex_write, network=codex_write and codex_network,
+                       thread_out=None if lead_dir else thread, resume_thread=resume, worker=worker,
+                       tools=codex_write or lead_dir is not None, write=codex_write, lead_dir=lead_dir,
+                       network=codex_write and codex_network and lead_dir is None,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
                        # the verifier copy too, so the delegate can run its own FAILURE GATE check (#66)
                        extra_read=(Path(run_dir) / "pre_dispatch_snapshot.py",) + (
@@ -570,16 +608,32 @@ def run(args) -> int:
         spec["outcome"] = "refused-lint"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} refused NON-COMPLIANT:{missing} lint={lint}")
         return EXIT_REFUSED
+    roster = [] if (_BROKER_SAFE_WRITES or kind != "codex") else lead_roster(model, slots, spec["fan_out"])
+    if roster:
+        spec["lead_workers"] = roster
+        if spec["codex_network"]:
+            spec["codex_network_ignored"] = "lead"  # D51: a Lead has no network; its Workers may
     if args.dry_run:
         spec["outcome"] = "dry-run"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} dry-run prompt={prompt_path}")
         return EXIT_OK
+    lead_dir = make_lead_dir(spec, roster) if roster else None
+    if lead_dir is not None:
+        spec["lead_dir"] = str(lead_dir)
+        prompt += LEAD_NOTE.format(roster=", ".join(roster))
+        _wtext(prompt_path, prompt)
     _record_ledger_node(spec, slots)
     global _LAUNCHES
     _LAUNCHES += 1
     result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
                     **({"codex_write": True} if spec["codex_write"] else {}),
-                    **({"codex_network": True} if spec["codex_network"] else {}))
+                    **({"codex_network": True} if spec["codex_network"] else {}),
+                    **({"lead_dir": lead_dir} if lead_dir is not None else {}))
+    if lead_dir is not None:
+        try:
+            spec["broker_workers_spawned"] = json.loads((lead_dir / "run.json").read_text(encoding="utf-8")).get("workers_spawned")
+        except (OSError, ValueError):
+            spec["broker_workers_spawned"] = None
     out_path = run_dir / "stdout.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])

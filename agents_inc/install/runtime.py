@@ -196,7 +196,27 @@ def lead_args(model: str, lead_dir: Path, broker: Path | None = None, codex_home
     server_args = [script, "--run-dir", str(Path(lead_dir).resolve())] + (["--home-repo", str(home_repo)] if home_repo else [])
     # Codex starts stdio MCP servers with a cleared env, so CODEX_HOME (the Worker deny) goes through the env table.
     env_table = ["-c", f"{prefix}.env={{CODEX_HOME={_toml_str(os.path.realpath(codex_home))}}}"] if codex_home else []
-    return _mcp_server_args(server_args) + env_table
+    return _mcp_server_args(server_args) + env_table + _denied_skill_args()
+
+
+def _denied_skill_args(home: Path | None = None) -> list[str]:
+    """D57: user skills that resolve into ~/.local (sandbox-denied) make the Lead stop on a blocked read; turn them off."""
+    home = Path(home or Path.home())
+    denied = Path(os.path.realpath(home / ".local"))
+    root, paths, seen = home / ".agents" / "skills", [], set()
+    for top, dirs, files in os.walk(root, followlinks=True):  # skill links are symlinked dirs; rglob skips them
+        real = os.path.realpath(top)
+        if real in seen or len(Path(top).relative_to(root).parts) >= 4:  # visited set: no symlink-loop blowup
+            dirs[:] = []
+            continue
+        seen.add(real)
+        if "SKILL.md" in files and Path(os.path.realpath(Path(top) / "SKILL.md")).is_relative_to(denied):
+            paths.append(str(Path(top) / "SKILL.md"))
+    paths.sort()
+    if not paths:
+        return []
+    items = ", ".join(f"{{path={_toml_str(f)}, enabled=false}}" for f in paths)
+    return ["-c", f"skills.config=[{items}]"]
 
 
 def _mcp_server_args(server_args: list[str]) -> list[str]:
@@ -311,14 +331,16 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         raise ValueError(f"unsupported effort {effort!r} for {slug}")
     if not executable.is_absolute():
         raise ValueError("Codex executable must be absolute")
+    if lead_dir is not None and write and Path(os.path.realpath(lead_dir)).is_relative_to(Path(os.path.realpath(cwd))):
+        raise ValueError("--lead --write needs the run directory outside cwd (D57)")
     if write and not tools:
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     if network and (not tools or lead_dir is not None):
         raise ValueError("--network needs tools on and no --lead")
     common = ["--skip-git-repo-check", "-C", str(cwd), "-c", f"model_reasoning_effort={effort}",
               "-c", 'shell_environment_policy.inherit="none"', "-c", 'web_search="disabled"']
-    if lead_dir is not None and (not tools or write or write_dir is not None):
-        raise ValueError("--lead needs tools on and no --write or --run-dir")
+    if lead_dir is not None and (not tools or write_dir is not None):
+        raise ValueError("--lead needs tools on and no --run-dir")
     if lead_dir is not None and worker is not None:
         raise ValueError("a Lead gets the broker server, not the Worker ask_lead server")
     if not tools and extra_deny:
@@ -403,8 +425,10 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         if no_tools:
             raise ValueError("--lead excludes --no-tools")
         tools = True  # --lead implies tools on; lead_args refuses luna and raw slugs
-        if write or write_dir is not None:
-            raise ValueError("--lead excludes --write and --run-dir (the run directory is broker-owned)")
+        if write_dir is not None:
+            raise ValueError("--lead excludes --run-dir (the run directory is broker-owned)")
+        if write and Path(os.path.realpath(lead_dir)).is_relative_to(Path(os.path.realpath(cwd))):
+            raise ValueError("--lead --write needs the run directory outside cwd (D57)")
         lead_args(model, lead_dir)  # fail before any launch
     tools = tools_for(model, no_tools, tools)
     if write and not tools:

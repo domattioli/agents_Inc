@@ -29,7 +29,13 @@ LOG_NAME = "mcp.log"
 TOOLS = [
     {"name": "dispatch", "description": "Run one Worker through the credential-blind broker; blocks until done. "
      "Returns the result JSON and the Worker report, or status needs-lead with a Worker question (reply with "
-     "answer, then call wait).",
+     "answer, then call wait). slots keys (all strings; render refuses a missing one): ROLE, TASK, CONSTRAINTS, "
+     "OUT_OF_SCOPE, FILES_IN_SCOPE, STOP_RULE, SUCCESS_GATE, FAILURE_GATE, PRE_EXISTING_CHANGES, NOTES, ALLOWLIST, "
+     "FAN_OUT, CLASSIFICATION, EFFORT, SECOND_OPINION, PLAN_CONTRACT; optional STYLE. Never send PERMISSION_MODE (broker-owned). "
+     "CONSTRAINTS must include: 'Stop-on-block: if a hook or permission classifier blocks a tool call, stop and hand "
+     "back to the dispatcher; never switch tool to route around it.' SUCCESS_GATE and FAILURE_GATE each name a "
+     "command in backticks. PRE_EXISTING_CHANGES may be 'snapshot <snapshot>' (the broker fills the path). "
+     "A Worker that writes nothing: ALLOWLIST 'none -- do all work yourself', FAN_OUT 'width 0, total 0, depth 0'.",
      "inputSchema": {"type": "object", "required": ["model", "effort", "slots"], "properties": {
          "model": {"type": "string"}, "effort": {"type": "string"},
          "slots": {"type": "object", "additionalProperties": {"type": "string"}}}}},
