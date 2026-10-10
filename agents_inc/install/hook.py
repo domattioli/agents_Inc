@@ -29,6 +29,9 @@ def session_start(paths: InstallPaths, host: str) -> str:
     text = (f"agents-inc is installed (doctor: {status}). Every delegation in this session routes through agents-inc; "
             f"read {skill} before the first dispatch. Launcher: {paths.launcher}.")
     if not report.ready: text += " Tell the operator doctor is not READY and suggest `agents-inc repair --source <agents_Inc checkout>`."
+    from .update_check import notice  # at most one PyPI request a day; silent on any failure
+    update = notice(paths.state)
+    if update: text += " " + update + " Tell the operator once; do not update without their go-ahead."
     if host == "claude":
         return json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})
     return text

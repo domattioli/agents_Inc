@@ -192,6 +192,9 @@ def main(argv=None):
             else:
                 print(" ".join(report.codes or ("READY",)))
                 for w in report.warnings: print(f"WARNING: {w}")
+                from .update_check import notice
+                update = notice(paths.state)
+                if update: print(f"UPDATE: {update}")
             return 0 if report.ready else 1
         if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)

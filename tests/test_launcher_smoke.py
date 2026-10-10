@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+os.environ.setdefault("AGENTS_INC_NO_UPDATE_CHECK", "1")  # no PyPI request from tests
 
 REPO = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO / "scripts" / "agents-inc"
