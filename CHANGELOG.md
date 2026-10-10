@@ -14,9 +14,15 @@ Codex delegates can opt into network access and now run heredocs and their own s
 
 - Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
 
+### Changed
+
+- `docs/governance/DELEGATION-MODEL.md` 2.0.0 uses the D46 roles (CEO, CoS, Lead, Worker) in place of Exec and Super; reviewed by sol.
+
 ### Fixed
 
 - Codex tool commands get a private writable temp dir (`TMPDIR`, `TMPPREFIX`), so heredocs work; a dispatched Codex delegate can read `pre_dispatch_snapshot.py` and run its own FAILURE GATE check (#66).
+- DelegateAgent MCP server used `gpt-5.6-luna` after the pin moved; it now reads the luna slug from `routing.json`.
+- Skill tests and the codex-bridge demo no longer ship in the sdist and wheel.
 - `pre_dispatch_snapshot.py verify --allow <file>` no longer reports `CHANGED <dir>/` when the allowed file sits in a new directory (#66).
 
 ## [0.3.0] — 2026-10-10

@@ -17,8 +17,9 @@ Fixed nouns (D46.4): CEO, CoS. Every other role = reporting chain, not title.
 - Chief of Staff (CoS; formerly Interlocutor) → agent CEO talks to directly; normally host session. Charter below (D43).
 - Lead → top-ranked model CEO named for the run; manages run, owns mandate. Aliases Supervisor, Orchestrator.
 - Worker → any agent reporting to a Lead. Aliases Delegate, Team (collective), Workhorse, Grunt.
+- Second → retired as a role noun (D46.4); an agent that helps a run gets no authority from being second, vendor, or rung.
 
-Rungs (Executive, Orchestrator, Workhorse, Grunt) = cost class only, never a role. Ladder (`ROUTING-RANKING.md`) picks the Lead among named models: higher rung manages; same rung → CoS asks CEO one question (D46.2). Example: opus (Orchestrator) = Lead, haiku (Grunt) = Worker.
+Rungs (Executive, Orchestrator, Workhorse, Grunt) = cost class only, never a role. Ladder (`ROUTING-RANKING.md`) picks the Lead among named models: higher rung manages; same rung → CoS asks CEO one interactive question naming the Lead, recommended answer first. CoS states resolved chain in one line only when surprising, with a discrete justification (D46.2). Example: opus (Orchestrator) = Lead, haiku (Grunt) = Worker.
 
 ## Delegation by rung (D46.3, D48)
 
@@ -29,9 +30,10 @@ Rungs (Executive, Orchestrator, Workhorse, Grunt) = cost class only, never a rol
 
 ## Chains (D46.11)
 
-- Grilling (bidirectional, before dispatch): CEO ↔ CoS. Kickoff grammar `<task>. <models>.` (D46.9).
+- Grilling (bidirectional, before dispatch): CEO ↔ CoS.
+- Kickoff grammar (D46.9): `<task>. <models>.` Defaults: chain by ladder, effort medium, gates derived from task, home repo from consumer `AGENTS.md`. Each extra word (effort, budget mode, review vendor) overrides exactly one default.
 - Dispatch (top-down): CEO → CoS → Lead → Worker. CoS dispatches only the Lead, with full mandate + remaining roster. Lead runs its Workers to completion. Nested Lead dispatch goes through the broker (D51).
-- Report (bottom-up, once): Worker → Lead; Lead → CoS once at mandate end. No progress updates flow up.
+- Report (bottom-up): Worker → Lead (a finished Worker may take resume turns and return more reports, D54). Lead → CoS exactly once, at mandate end. No progress updates flow up.
 - Escalation (question path only): Worker asks Lead (`ask_lead`, D54) → Lead asks CoS → CoS asks CEO. Each level answers what it can.
 - Outcome: Lead report → CoS verifies + re-projects (charter) → CEO.
 
@@ -57,11 +59,18 @@ Operator ruling 2026-09-22: CoS = CEO's right hand; takes Lead report, figures o
 6. Budget mode: CoS may hand pile-sorting to flash-tier triage helper (`skills/workerbee/SKILL.md` Step 4); CoS still owns verification + final wording.
 7. No automatic Task Authority over Lead work. CoS authority = what reaches CEO + below-bar calls. Rung-neutral: any model may be CoS; normally host session.
 8. Hands (D46.5): CoS reads to route + verify; answers lookups of ≤3 tool calls itself; every repo edit goes through a delegate.
-9. Big lift (D46.7: ≥2 delegates spawned, or canon edited) -> status card in CEO report.
+9. CEO report shape (D46.6): decisions first, with CoS pick; then one line per result, marked verified or not; then lessons needing sign-off. Transcripts + reports stay in files, named once.
+10. Big lift (D46.7): run spawned ≥2 delegates, or edited canon (`AGENTS.md`, `CONTEXT.md`, `docs/DECISIONS.md`, any `SKILL.md`, policy) -> status card required.
+
+## Run spec + home repo (D46.8)
+
+- One short run spec per run: ask, resolved chain, gates, snapshot path, outcome. Lives in home repo `specs/consumers/<repo>/runs/`. This operator's home repo = DomI; other consumers name theirs in `AGENTS.md`.
+- `agents-inc dispatch` resolves home repo: `--home-repo`, then `AGENTS_INC_HOME_REPO`, then first `agents-inc home repo: <path>` line in `<cwd>/AGENTS.md` (`~` allowed).
+- Agent-only artifacts (specs, run specs, teach-me notes, introspect records, grill notes) live in home repo, never consumer repo.
 
 ## Phase-actor matrix (P2 pipeline phases)
 
-Lead owns/runs all 9 phases. CoS role per phase = route + verify, not author.
+Lead owns/runs all 9 phases. CoS role per phase = route + verify, not author. Worker phase limit (CHECKLIST onward) is the speckit pipeline's ownership rule (v1 fix 4), not a D46 dispatch limit; outside the pipeline a Lead dispatches by rung (D46.3).
 
 | Phase | CEO | CoS | Lead | Worker |
 |---|---|---|---|---|
@@ -87,7 +96,7 @@ flowchart TD
     CEO <-->|grilling: refine request into a specific, concise, robust dispatch| CoS
     CEO -->|kickoff: task. models.| CoS
     CoS -->|dispatch: mandate + roster| Lead
-    Lead -.->|after ANALYZE only; within FAN_OUT| Worker
+    Lead -.->|dispatch within FAN_OUT; in pipeline, CHECKLIST onward| Worker
 
     subgraph Pipeline["Lead owns/runs all 9 phases end-to-end"]
         direction LR
@@ -112,7 +121,8 @@ flowchart TD
 - Exec and Super roles replaced by one Lead (D46.4); rungs are cost classes only.
 - CoS dispatches only the Lead; CoS → Exec/Super direct side channels removed (D46.11).
 - Escalation is a question path; reporting is once at mandate end, no progress updates (D46.11).
-- Added: delegation by rung, fan-out (D48), hard separations (D46.10), CoS hands + big lift (D46.5, D46.7).
+- Added: delegation by rung, fan-out (D48), hard separations (D46.10), CoS hands, report shape, big lift (D46.5-7), run spec + home repo (D46.8), kickoff defaults (D46.9). Second retired.
+- Cross-vendor review: sol, run 20261010T205403Z-sol-46bfad, VERDICT CHANGES (8), all applied.
 - Owner renamed CEO per D46.4. Static PNG still shows pre-D46 labels until regenerated; Mermaid wins.
 
 ## Changes in 1.1.0 (D43)
