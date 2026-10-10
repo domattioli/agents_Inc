@@ -128,9 +128,9 @@ class DispatchCliTest(unittest.TestCase):
     def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
-        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode,
-                         effort=effort)
+                         effort=effort, codex_write=codex_write)
             argv = dispatch.claude_argv(model_, permission_mode, effort=effort) if kind == "claude" else ["run_codex", model_]
             return {"rc": 0, "stdout": stdout, "stderr": "", "argv": argv,
                     "session_id": "sess-1" if kind == "claude" else None}
@@ -184,6 +184,8 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(calls["kind"], "codex")
         self.assertEqual(calls["effort"], "medium")
         self.assertEqual(spec["argv"], ["run_codex", "sol"])
+        self.assertTrue(calls["codex_write"])  # default acceptEdits: writes like a Claude subagent
+        self.assertTrue(spec["codex_write"])
         self.assertEqual(spec["effort"], "medium")
         self.assertIsNone(spec["session_id"])
 
@@ -284,6 +286,30 @@ class DispatchCliTest(unittest.TestCase):
         self.assertTrue((dest / "run.json").is_file())
         self.assertTrue((dest / "prompt.md").is_file())
 
+    def test_codex_write_slot(self):
+        self.assertTrue(dispatch.codex_write({}))  # default acceptEdits: same as a Claude subagent
+        self.assertTrue(dispatch.codex_write({"PERMISSION_MODE": "bypassPermissions"}))
+        self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "plan"}))
+        self.assertFalse(dispatch.codex_write({"PERMISSION_MODE": "default"}))
+        self.assertFalse(dispatch.codex_write({"CODEX_WRITE": "no"}))
+        self.assertTrue(dispatch.codex_write({"CODEX_WRITE": " True ", "PERMISSION_MODE": "plan"}))
+
+    def test_launch_codex_passes_write_to_run_codex(self):
+        seen = []
+
+        def fake_run_codex(*a, **kw):
+            seen.append((kw.get("tools"), kw.get("write")))
+            self.assertEqual(kw.get("extra_read"), (self.runs / "snapshot.json",))
+            return 0
+        receipt = mock.Mock(codex_path="/bin/true")
+        with mock.patch("agents_inc.install.runtime.run_codex", side_effect=fake_run_codex), \
+                mock.patch("agents_inc.install.cli._paths") as paths, \
+                mock.patch("agents_inc.install.cli._efforts", return_value={}), \
+                mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt):
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs)
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
+        self.assertEqual(seen, [(False, False), (True, True)])
+
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
         self.assertIsNone(dispatch.parse_workers_spawned("no count here"))
@@ -329,7 +355,7 @@ class DispatchCliTest(unittest.TestCase):
         (run / "run.json").write_text(json.dumps(spec))
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
@@ -345,7 +371,7 @@ class DispatchCliTest(unittest.TestCase):
         run = self._run_dir()
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             seen.update(resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
