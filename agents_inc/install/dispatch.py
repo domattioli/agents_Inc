@@ -270,10 +270,18 @@ def _ask_channel(run_dir: Path, rid: str) -> dict:
     return {"ask": ask.resolve(), "script": script.resolve(), "config": config.resolve(), "rid": rid}
 
 
+CODEX_WRITE_MODES = ("acceptEdits", "bypassPermissions")
+
+
 def codex_write(slots: dict) -> bool:
-    """Optional slot CODEX_WRITE: yes gives a Codex delegate tools and write access to cwd (for example an image
-    job that saves a PNG). Absent or any other value keeps the read-only default."""
-    return str(slots.get("CODEX_WRITE", "")).strip().lower() in ("yes", "true")
+    """A Codex delegate gets what a Claude subagent gets: tools and write access to cwd whenever PERMISSION_MODE
+    (default acceptEdits) lets a Claude delegate edit. Slot CODEX_WRITE: no (or false) opts out; yes forces it on."""
+    explicit = str(slots.get("CODEX_WRITE", "")).strip().lower()
+    if explicit in ("yes", "true"):
+        return True
+    if explicit in ("no", "false"):
+        return False
+    return (slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE) in CODEX_WRITE_MODES
 
 
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,

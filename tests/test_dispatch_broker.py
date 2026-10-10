@@ -73,7 +73,7 @@ class BrokerTest(unittest.TestCase):
         return final
 
     def _fake_launch(self, rc=0, report=GOOD_REPORT):
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
             self.launches.append({"model": model, "cwd": str(cwd), "permission_mode": permission_mode})
             return {"rc": rc, "stdout": report, "stderr": "", "argv": ["claude"], "session_id": "s"}
         return fake
