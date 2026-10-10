@@ -8,6 +8,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [0.3.0] — 2026-10-10
 
+Codex delegates now work like Claude subagents, installs need only pip, and every dispatch carries a reporting chain and a ledger row.
+
 ### Added
 
 - Model sync: new Claude and Codex models are detected and promoted, with `approve` or `auto` mode and pins (#57).
@@ -25,6 +27,8 @@ All notable changes to this project are recorded here. The format follows
 - `agents-inc run` with a Claude alias exits 2 and prints the matching `dispatch` command (#46).
 - `free_health`: an ok report clears `last_error` (#42).
 - `demo/` and `docs/proposals/` are left out of release artifacts.
+
+Please cite: Mattioli, D. (2026). *agents_Inc: A Model Ladder for Delegating and Verifying Work Across AI Agents* (Version 0.3.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22670100
 
 ## [0.2.0] — 2026-10-07
 
