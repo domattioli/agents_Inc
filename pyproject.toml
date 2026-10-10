@@ -67,4 +67,4 @@ agents_inc = ["*.json"]
 "agents_inc._docs" = ["SCHEMA-3NF.md"]
 
 [tool.setuptools.exclude-package-data]
-"agents_inc._skills" = ["*/tests/**"]
+"agents_inc._skills" = ["*/tests/**", "*/mcp/tests/**", "*/scripts/demo/**"]
