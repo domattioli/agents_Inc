@@ -57,8 +57,27 @@ def load_model_map(roster: Path | None = None, env: dict | None = None) -> dict[
     return merged
 
 
+def is_temp_or_shim_path(entry) -> bool:
+    """True when entry sits under the temp root or has a path component ending in -shims (#50)."""
+    p = Path(entry)
+    roots = {Path(tempfile.gettempdir())}
+    try: roots.add(Path(tempfile.gettempdir()).resolve())
+    except OSError: pass
+    for cand in (p, p.resolve()):
+        if any(cand == r or r in cand.parents for r in roots): return True
+        if any(part.endswith("-shims") for part in cand.parts): return True
+    return False
+
+
 def resolve_executable(name: str, search_path: str | None = None) -> Path:
-    candidate = shutil.which(name, path=search_path)
+    candidate = None
+    if search_path:
+        kept = [e for e in search_path.split(os.pathsep) if e and not is_temp_or_shim_path(e)]
+        if kept: candidate = shutil.which(name, path=os.pathsep.join(kept))
+    if not candidate:
+        candidate = shutil.which(name, path=search_path)
+        if candidate and search_path:
+            print(f"WARN: {name} resolved to a temporary or shim path {candidate}; put the stable directory first on PATH", file=sys.stderr)
     if not candidate:
         raise FileNotFoundError(f"WB_CLI_NOT_FOUND: {name}; run agents-inc repair")
     path = Path(candidate).resolve()

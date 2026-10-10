@@ -242,6 +242,7 @@ class DispatchCliTest(unittest.TestCase):
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
         self.assertIsNone(dispatch.parse_workers_spawned("no count here"))
+        self.assertEqual(dispatch.parse_workers_spawned("[verified] WORKERS SPAWNED: 2.\n"), 2)
 
     def test_claude_launch_builds_command_and_parses_json(self):
         fake = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "hi", "session_id": "s9"}), stderr="")

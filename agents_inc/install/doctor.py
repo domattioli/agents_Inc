@@ -12,7 +12,7 @@ from .bundle import stage_bundle, verify_bundle
 from .host_wiring import AT_ROUTE, wiring_problems
 from .paths import InstallPaths
 from .receipt import InstallReceipt
-from .runtime import MODEL_ALIASES, build_codex_argv
+from .runtime import MODEL_ALIASES, build_codex_argv, is_temp_or_shim_path
 
 @dataclass(frozen=True)
 class DoctorReport:
@@ -68,6 +68,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     if not paths.current.is_symlink() or paths.current.resolve() != release.resolve(): codes.append("WB_RELEASE_UNTRUSTED")
     if receipt.codex_path is None: warnings.append("WB_CLI_NOT_FOUND")  # installed without codex: warning only
     elif not receipt.codex_path.is_file() or not os.access(receipt.codex_path, os.X_OK): codes.append("WB_CLI_NOT_FOUND")
+    elif is_temp_or_shim_path(receipt.codex_path): warnings.append("WB_CLI_TEMP_PATH")
     for root in (paths.claude_skills, paths.codex_skills):
         for name in ("workerbee", "codex-bridge"):
             if not (root / name).is_symlink(): codes.append("WB_SKILL_MISSING")

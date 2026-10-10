@@ -238,5 +238,8 @@ class TestFanOutAndReport(unittest.TestCase):
         self.assertEqual(cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\n"), [])
         self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "WORKERS SPAWNED: unknown\n"))
         self.assertIn("workers-spawned", cdp.check_report(self.REPORT))
+        self.assertEqual(cdp.check_report(self.REPORT + "[verified] WORKERS SPAWNED: 0.\n"), [])
+        self.assertEqual(cdp.check_report(self.REPORT + "- WORKERS SPAWNED: 0\n"), [])
+        self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "[verified] WORKERS SPAWNED: unknown\n"))
         self.assertIn("workers-spawned",
                       cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\nWORKERS SPAWNED: 1\n"))
