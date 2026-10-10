@@ -12,6 +12,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- Codex tool commands get a private writable temp dir (`TMPDIR`, `TMPPREFIX`), so heredocs work; a dispatched Codex delegate can read `pre_dispatch_snapshot.py` and run its own FAILURE GATE check (#66).
 - `pre_dispatch_snapshot.py verify --allow <file>` no longer reports `CHANGED <dir>/` when the allowed file sits in a new directory (#66).
 
 ## [0.3.0] — 2026-10-10

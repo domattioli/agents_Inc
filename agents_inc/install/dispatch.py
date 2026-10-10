@@ -338,7 +338,9 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                        thread_out=thread, resume_thread=resume, worker=worker,
                        tools=codex_write, write=codex_write, network=codex_write and codex_network,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
-                       extra_read=() if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",))
+                       # the verifier script too, so the delegate can run its own FAILURE GATE check (#66)
+                       extra_read=(SCRIPTS / "pre_dispatch_snapshot.py",) + (
+                           () if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",)))
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume}
