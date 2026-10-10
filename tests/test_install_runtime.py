@@ -34,6 +34,24 @@ class RuntimeTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             resolve_executable("codex", "")
 
+    def _fake(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True); path.write_text("#!/bin/sh\n"); path.chmod(0o755)
+        return path
+
+    def test_resolution_skips_temp_dir_and_shim_entries(self):
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw); real = self._fake(tmp / "real" / "codex")
+            patch = mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp / "t"))
+            self._fake(tmp / "t" / "codex-dir" / "codex"); self._fake(tmp / "x-shims" / "abc" / "codex")
+            with patch:
+                self.assertEqual(resolve_executable("codex", f"{tmp / 't' / 'codex-dir'}:{tmp / 'real'}"), real.resolve())
+                self.assertEqual(resolve_executable("codex", f"{tmp / 'x-shims' / 'abc'}:{tmp / 'real'}"), real.resolve())
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    got = resolve_executable("codex", str(tmp / "x-shims" / "abc"))
+                self.assertEqual(got, (tmp / "x-shims" / "abc" / "codex").resolve())
+                self.assertIn("WARN", err.getvalue())
+
     def test_unsupported_effort_fails_before_execution(self):
         with self.assertRaises(ValueError):
             build_codex_argv(Path("/x/codex"), "luna", "ultra", Path("/tmp"), {"gpt-5.6-luna": ["low"]})
