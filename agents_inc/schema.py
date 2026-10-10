@@ -2,8 +2,13 @@ import re
 import sqlite3
 from pathlib import Path
 
+from .datafiles import repo_file, repo_root
+
 SCHEMA_VERSION = "2026-09-05.1"
-SCHEMA_DOC = Path(__file__).parent.parent / "docs" / "governance" / "SCHEMA-3NF.md"
+try:
+    SCHEMA_DOC = repo_file("docs/governance/SCHEMA-3NF.md")
+except FileNotFoundError:  # import must work without the doc; _parse_blocks reports it on first use
+    SCHEMA_DOC = repo_root() / "docs" / "governance" / "SCHEMA-3NF.md"
 
 def _parse_blocks():
     """Parse SQL blocks from SCHEMA_DOC (on first use, not at import)."""

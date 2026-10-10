@@ -109,6 +109,22 @@ class DoctorWarningsTest(unittest.TestCase):
         check_install(self.paths, models=self.models)
         self.assertEqual(sorted(p.name for p in self.paths.releases.iterdir()), before)
 
+    def _warnings_with_packaged_hook(self, text):
+        (self.paths.state / "source-checkout").write_text("packaged\n")
+        pkg = Path(self.tmp.name) / "pkg_at_route.sh"; pkg.write_text(text)
+        from agents_inc.install import doctor
+        with mock.patch.object(doctor.datafiles, "repo_file", return_value=pkg):
+            return check_install(self.paths, models=self.models).warnings
+
+    def test_packaged_record_matching_hook_has_no_drift_or_stale(self):
+        warnings = self._warnings_with_packaged_hook("#!/usr/bin/env bash\nexit 0\n")
+        self.assertFalse([w for w in warnings if w.startswith("WB_HOOK_DRIFT")])
+        self.assertNotIn("INSTALL_STALE", warnings)
+
+    def test_packaged_record_changed_hook_warns_drift(self):
+        warnings = self._warnings_with_packaged_hook("# changed\n")
+        self.assertIn("WB_HOOK_DRIFT", warnings)
+
 
 if __name__ == "__main__":
     unittest.main()

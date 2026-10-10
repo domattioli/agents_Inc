@@ -137,8 +137,10 @@ class BuildTests(unittest.TestCase):
             source.mkdir()
             for name in BUILD_INPUTS:
                 shutil.copy2(ROOT / name, source / name)
-            for package in ("agents_inc", "workerbees"):
+            for package in ("agents_inc", "workerbees", "skills/workerbee", "skills/codex-bridge"):
                 shutil.copytree(ROOT / package, source / package, ignore=ignore)
+            (source / "docs/governance").mkdir(parents=True)
+            shutil.copy2(ROOT / "docs/governance/SCHEMA-3NF.md", source / "docs/governance/SCHEMA-3NF.md")
             env = {**os.environ, "HOME": tmp, "XDG_CACHE_HOME": str(Path(tmp) / "cache")}
             result = subprocess.run(command, cwd=source, capture_output=True, text=True, env=env, timeout=300)
         self.assertEqual(result.returncode, 0, result.stdout[-2000:] + result.stderr[-2000:])
@@ -153,6 +155,14 @@ class BuildTests(unittest.TestCase):
         self.assertTrue(any(re.fullmatch(r"[^/]+\.dist-info/(licenses/)?LICENSE", n) for n in names), sorted(names))
         tops = {n.split("/")[0] for n in names if not n.split("/")[0].endswith(".dist-info")}
         self.assertEqual(tops, {"agents_inc", "workerbees"})
+        for packaged in ("agents_inc/_skills/workerbee/SKILL.md",
+                         "agents_inc/_skills/workerbee/scripts/check_dispatch_prompt.py",
+                         "agents_inc/_skills/codex-bridge/scripts/at_route.sh",
+                         "agents_inc/_docs/SCHEMA-3NF.md"):
+            self.assertIn(packaged, names)
+        self.assertFalse([n for n in names if n.startswith("agents_inc/_skills/") and "/tests/" in n])
+        self.assertFalse([n for n in names if n.startswith("agents_inc/_skills/")
+                          and n.split("/")[2] not in ("workerbee", "codex-bridge")])
 
 
 if __name__ == "__main__":

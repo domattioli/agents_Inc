@@ -44,6 +44,8 @@ Cheap models take routine work. Costlier models manage. An author never grades i
 
 Name your models in plain English. The ladder decides who manages whom, and the rest fills in. You do not hand-pick every model or write JSON.
 
+The reporting chain in each dispatch prompt comes from the ladder; `agents-inc models chain supervisor=opus` sets a default if you want a different one.
+
 A **rung** is a cost and capability class: Executive, Orchestrator, Workhorse, Grunt. A rung is not a job title. The chain of command decides who is Lead and who is Worker.
 
 ### Worked example: name two, get four
@@ -424,7 +426,7 @@ Tracked as open issues on this repo:
 
 ### Install and configure providers
 
-Run the project from the repository root. Its Python code uses the standard library. No Python package-install step exists.
+Run the project from the repository root. Its Python code uses the standard library. No Python package-install step exists. A pip-only install also works: `pip install agents-inc`, then `agents-inc install`. The `--source` flag is optional and only needed to install from a checkout.
 
 **Skill dependencies.** The runtime dependencies of this repo are Claude Skills, not pip packages. [`skills.requirements.txt`](skills.requirements.txt) is the agentic-AI analog of `requirements.txt`. It pins the version and source of each skill. A source is either vendored in this repo or an external repo that the skill was copied from. Refresh and verify with:
 

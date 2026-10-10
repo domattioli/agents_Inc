@@ -106,16 +106,61 @@ def dispatch_row(payload) -> dict | None:
     }
 
 
+def dispatch_run_row(spec: dict, task: str | None) -> dict:
+    """Build a Node-shaped dispatch row for an `agents-inc dispatch` run; id and run_id are the run id."""
+    provider = spec["kind"]
+    model = spec["model"]
+    first = task.strip().splitlines()[0][:_TASK_CAP] if isinstance(task, str) and task.strip() else None
+    return {
+        "id": spec["run_id"],
+        "run_id": spec["run_id"],
+        "model": model,
+        "tier": _tier(provider, model),
+        "task": first,
+        "provider": provider,
+        "parent_id": None,
+        "edge_type": None,
+        "status": "dispatched",
+        "seconds": None,
+        "subscription_calls": None,
+        "gate_reason": None,
+        "artifact_hash": None,
+        "effort": spec.get("effort"),
+        "input_tokens": None,
+        "output_tokens": None,
+        "cache_read": None,
+        "cache_write": None,
+        "files_created": None,
+        "verdict": None,
+        "cwd": spec.get("cwd"),
+        "source": "dispatch",
+        "timestamp": ledger._now_iso(),
+    }
+
+
+def _append_row(state, row: dict) -> None:
+    d = host_workspace(state) / ".workerbees"
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "ledger.jsonl", "a") as f:
+        f.write(json.dumps(row) + "\n")
+
+
 def record_hook_dispatch(state, payload) -> bool:
     """Append one dispatch row for a delegated-call payload. Never raises; JSONL only."""
     try:
         row = dispatch_row(payload)
         if row is None:
             return False
-        d = host_workspace(state) / ".workerbees"
-        d.mkdir(parents=True, exist_ok=True)
-        with open(d / "ledger.jsonl", "a") as f:
-            f.write(json.dumps(row) + "\n")
+        _append_row(state, row)
+        return True
+    except Exception:
+        return False
+
+
+def record_dispatch_run(state, spec: dict, task: str | None) -> bool:
+    """Append one dispatch row for a launched `agents-inc dispatch` run. Never raises; JSONL only."""
+    try:
+        _append_row(state, dispatch_run_row(spec, task))
         return True
     except Exception:
         return False
@@ -126,7 +171,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     a = sub.add_parser("append", help="record a return row with an explicit verdict")
-    a.add_argument("--node-id", required=True)
+    a.add_argument("--node-id")
     a.add_argument("--verdict", choices=["pass", "fail"])
     a.add_argument("--status")
     a.add_argument("--run-id")
@@ -162,9 +207,14 @@ def cli(argv, state) -> int:
                             for v in fields))
         return 0
 
+    if args.node_id is None and args.run_id is None:
+        print("agents-inc ledger append: give --node-id or --run-id", file=sys.stderr)
+        return 2
     if args.verdict is None:
         print(_VERDICT_MSG, file=sys.stderr)
         return 2
+    if args.node_id is None:
+        args.node_id = args.run_id  # a dispatch node id is its run id
     run_id = args.run_id
     if run_id is None:
         node = ledger.load(ws).nodes.get(args.node_id)

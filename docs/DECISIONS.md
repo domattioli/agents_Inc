@@ -600,3 +600,11 @@ The limit stays: the Lead cannot push a message into a running Worker. The Lead 
 
 `agents-inc run --model luna --tools` turns on Codex's shell tool for luna under the D49 permission profile. `--write` then works as it does for the other rungs. Without `--tools`, luna stays tool-free. `--lead` still refuses luna, and the broker's Grunt path for luna is unchanged.
 Reason: a read-only luna left no Codex Grunt for code edits once the Claude quota was spent.
+
+## D55 — Packaged skills and docs; install without a checkout (2026-10-09, status: accepted)
+
+The wheel now carries `skills/workerbee`, `skills/codex-bridge` (no `tests/`), and `docs/governance/SCHEMA-3NF.md`. `setuptools` `package-dir` maps them to `agents_inc._skills` and `agents_inc._docs`. `agents_inc/datafiles.py` resolves a repo-relative path to the checkout when it exists and to the packaged copy otherwise.
+`agents-inc install` and `agents-inc repair` take `--source` as optional. Without it the installer builds a temporary source tree from package data. The `source-checkout` record then holds `packaged`, and `doctor` compares the hook with the packaged copy.
+`agents-inc models bump` stays a checkout command: on a pip install it would rewrite files in `site-packages`. Bench fixtures stay out of the wheel.
+This supersedes the "What a pip install gives you" text in `docs/RELEASING.md` for 0.2.0, which said `skills/` was not shipped and that an install needed a checkout. No version bump is part of this change.
+Reason: a pip or uvx user could not run `agents-inc install` or `dispatch` without cloning the repo.

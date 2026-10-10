@@ -104,7 +104,53 @@ def bump(alias: str | None, slug: str | None, routing: Path = ROUTING, models_js
     return 0
 
 
-def run(verb: str | None, alias: str | None = None, slug: str | None = None, unpin: bool = False) -> int:
+CHAIN_KEYS = ("supervisor", "executive")
+CHAIN_WORDS = ("CoS", "operator")
+
+
+def chain(pairs: list[str] | None = None, clear: bool = False, settings: Path | str | None = None) -> int:
+    """List or set the default REPORTING CHAIN seats (settings key `chain`). Values: model aliases, CoS, operator."""
+    from agents_inc import model_sync
+    from . import dispatch
+    rungs = dispatch._load("dispatch_rungs")
+    settings = model_sync.DEFAULT_SETTINGS if settings is None else settings
+    if clear and pairs:
+        return _refuse("chain --clear takes no key=alias pairs")
+    updates = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in CHAIN_KEYS:
+            return _refuse(f"expected supervisor=<alias> or executive=<alias>, got {pair!r}")
+        if value not in rungs.MODEL_RUNG and value not in CHAIN_WORDS:
+            return _refuse(f"unknown chain value {value!r}; use one of {', '.join(sorted(rungs.MODEL_RUNG))}, CoS, operator")
+        updates[key] = value
+    try:
+        if clear and Path(settings).exists():
+            model_sync._update_settings(settings, lambda data: data.pop("chain", None))
+        elif updates:
+            def change(data):
+                cfg = data.get("chain") if isinstance(data.get("chain"), dict) else {}
+                cfg.update(updates)
+                data["chain"] = cfg
+            model_sync._update_settings(settings, change)
+        data = model_sync._read_settings(settings)
+    except ValueError as exc:
+        return _refuse(str(exc))
+    cfg = data.get("chain") if isinstance(data.get("chain"), dict) else {}
+    for vendor in ("claude", "codex"):
+        aliases = [a for rung in rungs.LADDER for a, r in rungs.MODEL_RUNG.items()
+                   if r == rung and rungs.ALIAS_VENDOR[a] == vendor]
+        print(f"{vendor} ladder " + " < ".join(aliases))
+    for key in CHAIN_KEYS:
+        value = cfg.get(key)
+        print(f"{key} {value} setting" if value else f"{key} ladder ladder")
+    return 0
+
+
+def run(verb: str | None, alias: str | None = None, slug: str | None = None, unpin: bool = False,
+        extra: list[str] | None = None, clear: bool = False) -> int:
+    if verb == "chain":
+        return chain([a for a in (alias, slug, *(extra or [])) if a], clear=clear)
     if verb == "bump":
         return bump(alias, slug, unpin=unpin)
     for line in listing():
