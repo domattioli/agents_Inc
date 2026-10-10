@@ -71,17 +71,17 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 
 ## Stray Zenodo record (0.3.1)
 
-On 2026-10-10 the Zenodo GitHub integration archived v0.3.1 as record 23288172 under a new concept, `10.5281/zenodo.23286662`, instead of `10.5281/zenodo.22670100`. Owners cannot delete a published Zenodo record.
+On 2026-10-10 the Zenodo GitHub integration archived v0.3.1 as record 23288172 under a new concept, `10.5281/zenodo.23286662`, instead of `10.5281/zenodo.22670100`.
 
-- Cite `10.5281/zenodo.22670100` only. Never cite 23286662 or 23288172.
-- The integration switch stays off. Turn it on again only after Zenodo support confirms it targets 22670100.
-- Status: pending a Zenodo support request to merge 23286662 into 22670100. If support refuses, or 14 days pass with no workable plan, deposit 0.3.1 under 22670100 with `--new-version-of 23286808 --draft`, then ask support to hide 23288172. Update this note when it is resolved.
+- Cite `10.5281/zenodo.22670100` only.
+- Fix: the owner deletes record 23288172 from its Zenodo page (owners may delete a record within 30 days of publishing; after that only Zenodo support can). Then deposit 0.3.1 under 22670100 with `--new-version-of 23286808 --draft` and publish the draft.
+- The integration switch stays off, so it cannot start another concept.
 
 ## Rollback
 
 - PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.3.2.
 - GitHub: delete the release with `gh release delete v0.3.1`, then delete the tag with `git push origin :refs/tags/v0.3.1` and `git tag -d v0.3.1`.
-- Zenodo: published records cannot be deleted. Leave the 0.3.1 record and publish 0.3.2 with the fix.
+- Zenodo: the owner may delete a record within 30 days of publishing; after that only Zenodo support can.
 
 ## README EDIT PLAN
 
