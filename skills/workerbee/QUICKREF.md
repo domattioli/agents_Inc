@@ -28,6 +28,7 @@ Pick the cheapest rung that will not get the answer wrong. Escalate on evidence 
 - The supervisor owns the verifier. Do not let a delegate grade its own work.
 - Unknown is not zero. Leave an unestablished price or count absent.
 - Poll every dispatch that outlives one tool call. Exit 0 means returned, not verified.
+- Dispatching from a git worktree: a Codex delegate cannot run git there, because the worktree's metadata sits in the main checkout's `.git`, outside the sandbox. Save the diff to a git-ignored file inside cwd (for example `.scratch/<task>/pr.diff`) and tell the delegate not to run git.
 - A Codex delegate (astra, sol, terra) spawns Workers through the broker when its FAN_OUT total is above 0 and ALLOWLIST names models, on the same terms as a Claude delegate (D57). Its Workers may be Claude or Codex.
 
 ## Dispatch prompt: 14 required elements
