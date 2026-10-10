@@ -18,3 +18,5 @@ jobs:
         run: pip install pytest
       - name: Run test suite
         run: PYTHONPATH=. python3 -m unittest discover -s tests
+      - name: Run workerbee skill tests
+        run: python3 -m unittest discover -s skills/workerbee/tests -p 'test_*.py'

@@ -6,6 +6,16 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `check_dispatch_prompt.py` reads a `FAN_OUT:` line wrapped in a list bullet, backticks or bold marks, or ending in punctuation (#66).
+
+### Changed
+
+- `agents-inc doctor` prints a note that Codex delegates have no network unless a dispatch opts in (#66).
+- `slots.md`: a Codex delegate writes only inside `--cwd`; dispatch with `--cwd <repo>` to edit another repository (#66).
+- Release workflow checks that Zenodo archived the release under concept DOI 10.5281/zenodo.22670100.
+
 ## [0.3.1] — 2026-10-10
 
 Codex delegates can opt into network access and now run heredocs and their own snapshot check inside the sandbox. Versioned as a patch by operator ruling, although it adds an opt-in flag (Constitution VIII-A would make it 0.4.0).

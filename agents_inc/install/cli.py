@@ -192,6 +192,9 @@ def main(argv=None):
             else:
                 print(" ".join(report.codes or ("READY",)))
                 for w in report.warnings: print(f"WARNING: {w}")
+                if "WB_CLI_NOT_FOUND" not in (*report.codes, *report.warnings):
+                    print("NOTE: Codex delegates have no network by default; a dispatch opts in with "
+                          "`CODEX_NETWORK: yes` (needs CODEX_WRITE) or `agents-inc run --network` (D56).")
                 from .update_check import notice
                 update = notice(paths.state)
                 if update: print(f"UPDATE: {update}")

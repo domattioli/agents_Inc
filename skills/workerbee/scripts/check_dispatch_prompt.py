@@ -132,10 +132,16 @@ def known_rung(text: str, model: str | None = None) -> str | None:
 FAN_OUT_RE = re.compile(r"^fan_out:\s*width\s+(\d+),\s*total\s+(\d+),\s*depth\s+(\d+)\s*$")
 
 
+def _fan_out_line(ln: str) -> str:
+    """Lowercased line without list bullets, backticks, bold marks or trailing punctuation (#66)."""
+    ln = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", ln.lower())
+    return ln.replace("`", "").replace("**", "").strip().rstrip(".;,").strip()
+
+
 def parse_fan_out(text: str) -> tuple[int, int, int] | None:
     """Return (width, total, depth) from the first well-formed FAN_OUT line, else None."""
-    for ln in text.lower().splitlines():
-        m = FAN_OUT_RE.match(ln.strip())
+    for ln in text.splitlines():
+        m = FAN_OUT_RE.match(_fan_out_line(ln))
         if m:
             return int(m.group(1)), int(m.group(2)), int(m.group(3))
     return None
@@ -224,7 +230,7 @@ def check(text: str, tier: str | None = None, prompt_text: str | None = None,
 
     # D48 fan-out: a prompt that carries a `FAN_OUT:` line must give three
     # integers. Prompts written before D48 carry no such line and pass.
-    if any(ln.strip().startswith("fan_out:") for ln in lower.splitlines()):
+    if any(_fan_out_line(ln).startswith("fan_out:") for ln in text.splitlines()):
         if parse_fan_out(text) is None:
             missing.append("fan-out")
         else:

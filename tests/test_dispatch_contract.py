@@ -228,6 +228,15 @@ class TestFanOutAndReport(unittest.TestCase):
         text = self._p("width 3, total 6, depth 2") + "RUNG: grunt\n"
         self.assertIn("fan-out-over-ceiling", cdp.check(text))
 
+    def test_decorated_fan_out_line_parses(self):
+        # #66: bullets, backticks, bold marks and trailing punctuation around a valid line.
+        for line in ("- FAN_OUT: width 2, total 4, depth 1", "`FAN_OUT: width 2, total 4, depth 1`",
+                     "**FAN_OUT:** width 2, total 4, depth 1.", "1. FAN_OUT: width 2, total 4, depth 1;"):
+            self.assertEqual(cdp.check(COMPLIANT_PROMPT + line + "\n", model="sonnet"), [], line)
+        self.assertIn("fan-out-over-ceiling",
+                      cdp.check(COMPLIANT_PROMPT + "- `FAN_OUT: width 3, total 6, depth 2`.\n", model="sonnet"))
+        self.assertIn("fan-out", cdp.check(COMPLIANT_PROMPT + "- FAN_OUT: lots.\n", model="sonnet"))
+
     def test_unknown_rung_and_missing_fan_out_accepted(self):
         self.assertEqual(cdp.check(self._p("width 9, total 9, depth 9")), [])
         self.assertEqual(cdp.check(COMPLIANT_PROMPT, model="haiku"), [])
