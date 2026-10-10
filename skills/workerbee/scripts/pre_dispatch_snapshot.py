@@ -76,6 +76,9 @@ def capture(out: str) -> int:
         "head": _git("rev-parse", "HEAD").strip(),
         "porcelain": porcelain,
         "sha256": {p: _sha(p) for p in sorted(files)},
+        # ignored paths as the capturing user's git sees them; a sandboxed verify may lack ~/.gitignore
+        "ignored": sorted(p for p in _git("ls-files", "--others", "--ignored", "--exclude-standard",
+                                          "--directory").splitlines() if p),
     }
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(snap, fh, indent=1)
@@ -101,6 +104,7 @@ def verify(snap_path: str, allow: list[str]) -> int:
     for path, digest in hashes.items():
         if not _allowed(path, allow) and _sha(path) != digest:
             changed.add(path)
+    ignored = list(snap.get("ignored", []))
     old = set(snap.get("porcelain", "").splitlines())
     new = set(_git("status", "--porcelain").splitlines())
     for line in old ^ new:
@@ -108,11 +112,11 @@ def verify(snap_path: str, allow: list[str]) -> int:
             # `?? dir/` collapses a new untracked directory; its files are checked one by one below
             if line.startswith("??") and p.endswith("/"):
                 continue
-            if not _allowed(p, allow):
+            if not _allowed(p, allow) and not (line.startswith("??") and _allowed(p, ignored)):
                 changed.add(p)
     # untracked files hidden inside a pre-existing untracked directory line
     for p in _untracked() - set(hashes):
-        if not _allowed(p, allow):
+        if not _allowed(p, allow) and not _allowed(p, ignored):
             changed.add(p)
     if snap.get("head") and _git("rev-parse", "HEAD").strip() != snap["head"]:
         changed.add("HEAD")

@@ -21,7 +21,7 @@ Codex delegates can opt into network access and now run heredocs and their own s
 
 ### Fixed
 
-- Codex tool commands get a private writable temp dir (`TMPDIR`, `TMPPREFIX`), so heredocs work; a dispatched Codex delegate can read `pre_dispatch_snapshot.py` and run its own FAILURE GATE check (#66).
+- Codex tool commands get a private writable temp dir (`TMPDIR`, `TMPPREFIX`), so heredocs work; a dispatched Codex delegate gets a copy of `pre_dispatch_snapshot.py` in its run directory (named in the prompt as `SNAPSHOT VERIFIER`) and can run its own FAILURE GATE check (#66). Tool commands use an empty global git config, and the snapshot records ignored paths at capture, so a sandboxed verify matches the supervisor's.
 - DelegateAgent MCP server used `gpt-5.6-luna` after the pin moved; it now reads the luna slug from `routing.json`.
 - Skill tests and the codex-bridge demo no longer ship in the sdist and wheel.
 - `pre_dispatch_snapshot.py verify --allow <file>` no longer reports `CHANGED <dir>/` when the allowed file sits in a new directory (#66).
