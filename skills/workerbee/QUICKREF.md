@@ -28,7 +28,7 @@ Pick the cheapest rung that will not get the answer wrong. Escalate on evidence 
 - The supervisor owns the verifier. Do not let a delegate grade its own work.
 - Unknown is not zero. Leave an unestablished price or count absent.
 - Poll every dispatch that outlives one tool call. Exit 0 means returned, not verified.
-- Codex supervisors cannot spawn Claude `Agent` subagents. If the operator asks for that chain, say so and relay from the supervising session.
+- A Codex delegate (astra, sol, terra) spawns Workers through the broker when its FAN_OUT total is above 0 and ALLOWLIST names models, on the same terms as a Claude delegate (D57). Its Workers may be Claude or Codex.
 
 ## Dispatch prompt: 14 required elements
 

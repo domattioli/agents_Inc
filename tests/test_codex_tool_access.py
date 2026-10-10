@@ -260,10 +260,18 @@ class LeadMcpTest(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 self.assertIn('"transport": "mcp", "codex_home": "isolated"', err.getvalue())
                 self.assertIn('mcp_servers.agents_inc.default_tools_approval_mode="approve"', sp.call_args[0][0])
-                for bad in ({"write": True}, {"no_tools": True}, {"write_dir": Path(d)}):
+                for bad in ({"no_tools": True}, {"write_dir": Path(d)}):
                     with self.assertRaises(ValueError):
                         run_codex("terra", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
                                   lead_dir=Path(d), **bad)
+                # D57 (#68): a Lead may write to cwd, but never when its run directory sits inside cwd
+                self.assertEqual(run_codex("terra", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE),
+                                           EFF, lead_dir=Path(d), write=True), 0)
+                argv = sp.call_args[0][0]
+                self.assertTrue(any(os.path.realpath(d) in a and "none" in a for a in argv), argv)
+                with self.assertRaisesRegex(ValueError, "outside cwd"):
+                    run_codex("terra", "medium", Path(d).parent, io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                              lead_dir=Path(d), write=True)
                 with self.assertRaises(ValueError):
                     run_codex("luna", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
                               lead_dir=Path(d))
@@ -376,3 +384,20 @@ class SeatbeltProbes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeniedSkillArgsTest(unittest.TestCase):
+    def test_skills_linked_into_local_are_disabled(self):
+        import tempfile
+        from agents_inc.install import runtime
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            real = home / ".local/share/x/wb"; real.mkdir(parents=True); (real / "SKILL.md").write_text("x")
+            skills = home / ".agents/skills"; skills.mkdir(parents=True)
+            (skills / "workerbee").symlink_to(real)
+            ok = skills / "other"; ok.mkdir(); (ok / "SKILL.md").write_text("x")
+            args = runtime._denied_skill_args(home)
+            self.assertEqual(args[0], "-c")
+            self.assertIn("workerbee/SKILL.md", args[1]); self.assertIn("enabled=false", args[1])
+            self.assertNotIn("other", args[1])
+            self.assertEqual(runtime._denied_skill_args(home / "none"), [])
