@@ -161,6 +161,7 @@ def main(argv=None):
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
     p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump", "chain")); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?"); p.add_argument("extra", nargs="*"); p.add_argument("--unpin", action="store_true"); p.add_argument("--clear", action="store_true")
+    p = subs.add_parser("report", help="draft a bug report or feature request for agents_Inc; --submit files it"); p.add_argument("kind", choices=("bug", "feature")); p.add_argument("--title", required=True); p.add_argument("--body", required=True, help="text, or - to read stdin"); p.add_argument("--submit", action="store_true")
     subs.add_parser("rollback"); subs.add_parser("uninstall")
     args = parser.parse_args(argv); paths = _paths()
     try:
@@ -174,6 +175,13 @@ def main(argv=None):
             from . import models_cmd  # works from a source checkout, before the receipt check
             return models_cmd.run(args.verb, args.alias, args.slug, unpin=args.unpin, extra=args.extra, clear=args.clear)
         if args.command == "hook": return host_hook.run(paths, args.event, args.host)
+        if args.command == "report":
+            from . import report  # works without an install; doctor codes only when one exists
+            try:
+                codes = list(check_install(paths).codes) if paths.receipt.exists() else ["WB_NOT_INSTALLED"]
+            except Exception:  # a broken install is itself worth reporting
+                codes = ["DOCTOR_FAILED"]
+            return report.run(args.kind, args.title, args.body, args.submit, codes)
         if args.command == "ledger":
             from .. import host_ledger  # lazy: hook events must not depend on the ledger import
             return host_ledger.cli(args.rest, paths.state)

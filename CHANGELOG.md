@@ -12,6 +12,7 @@ Codex delegates can opt into network access and now run heredocs and their own s
 
 ### Added
 
+- `agents-inc report bug|feature`: drafts a GitHub issue for agents_Inc with version, doctor codes, OS and Codex version; home paths redacted, likely secrets refused. Prints only; `--submit` files it through the caller's `gh` login.
 - Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
 
 ### Changed
