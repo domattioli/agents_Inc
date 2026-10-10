@@ -78,7 +78,7 @@ REPORT_KEYWORDS: dict[str, list[str]] = {
 }
 
 # D48: exactly one report line `WORKERS SPAWNED: <integer>`.
-WORKERS_LINE_RE = re.compile(r"^\W*workers spawned:\s*\d+\W*$", re.IGNORECASE)
+WORKERS_LINE_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*\d+\W*$", re.IGNORECASE)
 
 # D48 ceilings per rung and model-to-rung table: dispatch_rungs.py.
 _SCRIPT_DIR = str(Path(__file__).resolve().parent)

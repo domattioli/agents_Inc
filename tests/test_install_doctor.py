@@ -11,6 +11,7 @@ from unittest import mock
 from agents_inc.install import catalog, cli
 from agents_inc.install.doctor import check_install
 from agents_inc.install.paths import InstallPaths
+from agents_inc.install.receipt import InstallReceipt
 from agents_inc.install.runtime import MODEL_ALIASES
 
 CATALOG_DIR = Path(__file__).parent / "fixtures/catalog"
@@ -57,6 +58,17 @@ class DoctorWarningsTest(unittest.TestCase):
         self.assertEqual(report.codes, ())
         self.assertTrue(report.ready)
         self.assertIn(self.drift, report.warnings)
+
+    def test_temp_path_codex_is_warning_not_code(self):
+        tmp = Path(self.tmp.name)
+        codex = tmp / "bin" / "codex"; codex.parent.mkdir(); codex.write_text("#!/bin/sh\n"); codex.chmod(0o755)
+        real = InstallReceipt.load(self.paths.receipt)
+        stub = mock.Mock(release_hash=real.release_hash, codex_path=codex)
+        with mock.patch("agents_inc.install.doctor.InstallReceipt.load", return_value=stub), \
+             mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp)):
+            report = check_install(self.paths, models=[])
+        self.assertIn("WB_CLI_TEMP_PATH", report.warnings)
+        self.assertTrue(report.ready); self.assertEqual(report.codes, ())
 
     def test_no_cache_means_no_drift_warning(self):
         report = check_install(self.paths, catalog_path=self.home / "missing.json")

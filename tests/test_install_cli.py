@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,52 @@ class CliTest(unittest.TestCase):
             self.assertIn(paths.launcher, retained)
 
 
+class RunGuardTest(unittest.TestCase):
+    def test_run_rejects_claude_alias_and_passes_codex_alias(self):
+        import contextlib, io
+        from unittest import mock
+        from agents_inc.install import cli
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            paths = InstallPaths.for_home(tmp / "home")
+            rel = paths.releases / "h"; rel.mkdir(parents=True)
+            paths.current.parent.mkdir(parents=True, exist_ok=True); paths.current.symlink_to(rel)
+            InstallReceipt("a" * 64, Path("/usr/bin/python3"), None).save_atomic(paths.receipt)
+            with mock.patch.object(cli, "_paths", return_value=paths), mock.patch.object(cli, "_efforts", return_value={}), \
+                 mock.patch.object(cli, "run_codex", return_value=0) as rc:
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    code = cli.main(["run", "--model", "opus", "--effort", "low", "--cwd", str(tmp)])
+                self.assertEqual(code, 2)
+                self.assertIn(f"Claude aliases go through: agents-inc dispatch --model opus --effort low --cwd {tmp}", err.getvalue())
+                rc.assert_not_called()
+                self.assertEqual(cli.main(["run", "--model", "luna", "--cwd", str(tmp)]), 0)
+                rc.assert_called_once()
+
+
 class RepairTest(unittest.TestCase):
+    def test_install_and_repair_record_stable_codex_not_shim(self):
+        import argparse
+        from agents_inc.install import cli
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            source = tmp / "source"; (source / "agents_inc").mkdir(parents=True)
+            (source / "agents_inc" / "models.json").write_text("{}")
+            for name in ("workerbee", "codex-bridge"):
+                (source / "skills" / name).mkdir(parents=True); (source / "skills" / name / "SKILL.md").write_text("x")
+            for d in ("x-shims/abc", "real"):
+                (tmp / d).mkdir(parents=True); f = tmp / d / "codex"; f.write_text("#!/bin/sh\n"); f.chmod(0o755)
+            home = tmp / "home"; (home / ".claude").mkdir(parents=True)
+            paths = InstallPaths.for_home(home)
+            args = argparse.Namespace(source=str(source), adopt_existing_workerbee=False, without_codex=False, no_host_wiring=False)
+            env = {"PATH": f"{tmp / 'x-shims' / 'abc'}:{tmp / 'real'}"}
+            with mock.patch.object(cli, "_paths", return_value=paths), mock.patch.dict(os.environ, env), \
+                 mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp / "t")):
+                for _ in range(2):
+                    self.assertEqual(cli.install(args), 0)
+                    self.assertEqual(InstallReceipt.load(paths.receipt).codex_path, (tmp / "real" / "codex").resolve())
+
     def test_repair_over_existing_install_keeps_ownership(self):
         import argparse
         from agents_inc.install import cli

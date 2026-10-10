@@ -159,7 +159,12 @@ def main(argv=None):
             return 0 if report.ready else 1
         if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)
-        if args.command == "run": return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo)
+        if args.command == "run":
+            from .dispatch import CLAUDE_MODELS  # lazy: dispatch imports from cli
+            if args.model in CLAUDE_MODELS:
+                print(f"Claude aliases go through: agents-inc dispatch --model {args.model} --effort {args.effort} --cwd {args.cwd}", file=sys.stderr)
+                return 2
+            return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo)
         if args.command == "uninstall":
             retained = uninstall(paths, receipt)
             if retained: print("WB_CONFIG_CONFLICT: retained modified artifacts", file=sys.stderr); return 1
