@@ -105,6 +105,8 @@ The full description, including the delegation limits, the 14-element prompt con
 - Deterministic checks cover what a script can express, such as a file, a quote or an exit code. They do not replace human judgment on scope or design.
 - Free-model capacity varies: a probe on 2026-09-29 found 429 or capacity errors on several free models ([docs/BENCH.md](https://github.com/domattioli/agents_Inc/blob/main/docs/BENCH.md)). Artifacts stay local; remote publication (Bindle Backend B) is not built.
 
+Updates: new sessions and `agents-inc doctor` tell you when a newer release is on PyPI (one check a day; `AGENTS_INC_NO_UPDATE_CHECK=1` turns it off).
+
 Found a bug or want a feature? `agents-inc report bug --title "..." --body "..."` (or `report feature`) prints a draft issue with your version, doctor result and OS; home paths become `~`. Add `--submit` to file it on GitHub with your own `gh` login.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>

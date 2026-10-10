@@ -12,6 +12,7 @@ Codex delegates can opt into network access and now run heredocs and their own s
 
 ### Added
 
+- Update notice: the session-start hook and `agents-inc doctor` say when PyPI has a newer agents-inc, with the update command. At most one request to pypi.org a day, 2 s timeout, silent on failure; opt out with `AGENTS_INC_NO_UPDATE_CHECK=1`.
 - `agents-inc report bug|feature`: drafts a GitHub issue for agents_Inc with version, doctor codes, OS and Codex version; home paths redacted, likely secrets refused. Prints only; `--submit` files it through the caller's `gh` login.
 - Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
 
