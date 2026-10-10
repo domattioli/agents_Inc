@@ -1,6 +1,6 @@
 # Releasing agents_Inc
 
-This runbook covers release 0.3.0: a GitHub tag and release, a Zenodo archive, and the PyPI upload of the `agents-inc` package (import name `agents_inc`). 0.2.0 was the first PyPI upload; 0.3.0 is the first release that installs from pip alone, with no `--source` checkout. Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
+This runbook covers release 0.3.1: a GitHub tag and release, a Zenodo archive, and the PyPI upload of the `agents-inc` package (import name `agents_inc`). 0.2.0 was the first PyPI upload; 0.3.0 is the first release that installs from pip alone, with no `--source` checkout. Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
 
 ## Decisions
 
@@ -60,20 +60,20 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 1. Pre-tag gate. Both commands must pass:
    - `grep -c TODO-operator CITATION.cff .zenodo.json` prints 0 for both files.
    - `python3 -m unittest discover -s tests -p 'test_*.py'` ends with `OK`.
-2. Check that `CHANGELOG.md` has a dated `[0.3.0]` section and that `agents_inc.__version__` is `0.3.0`.
+2. Check that `CHANGELOG.md` has a dated `[0.3.1]` section and that `agents_inc.__version__` is `0.3.1`.
 3. Merge `development` into `main` by pull request.
-4. On `main`, create the tag: `git tag -a v0.3.0 -m "agents_Inc 0.3.0"`.
-5. Push the tag: `git push origin v0.3.0`.
+4. On `main`, create the tag: `git tag -a v0.3.1 -m "agents_Inc 0.3.1"`.
+5. Push the tag: `git push origin v0.3.1`.
 6. Watch the `release` workflow in the Actions tab. The `publish` job waits for the `pypi` environment approval if a reviewer was set.
-7. Confirm that https://pypi.org/project/agents-inc/0.3.0/ exists and that the GitHub release lists the wheel and the sdist.
-8. Confirm that Zenodo minted a version DOI for 0.3.0 under the concept DOI.
+7. Confirm that https://pypi.org/project/agents-inc/0.3.1/ exists and that the GitHub release lists the wheel and the sdist.
+8. Confirm that Zenodo minted a version DOI for 0.3.1 under the concept DOI.
 9. Confirm that the `README.md` DOI badge still shows the concept DOI `10.5281/zenodo.22670100`. Version DOIs never go in the README.
 
 ## Rollback
 
-- PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.3.1.
-- GitHub: delete the release with `gh release delete v0.3.0`, then delete the tag with `git push origin :refs/tags/v0.3.0` and `git tag -d v0.3.0`.
-- Zenodo: published records cannot be deleted. Leave the 0.3.0 record and publish 0.3.1 with the fix.
+- PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.3.2.
+- GitHub: delete the release with `gh release delete v0.3.1`, then delete the tag with `git push origin :refs/tags/v0.3.1` and `git tag -d v0.3.1`.
+- Zenodo: published records cannot be deleted. Leave the 0.3.1 record and publish 0.3.2 with the fix.
 
 ## README EDIT PLAN
 

@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-10
+
+Codex delegates can opt into network access and now run heredocs and their own snapshot check inside the sandbox. Versioned as a patch by operator ruling, although it adds an opt-in flag (Constitution VIII-A would make it 0.4.0).
+
 ### Added
 
 - Codex network opt-in (#66, D56): slot `CODEX_NETWORK: yes` or `agents-inc run --network` lets a Codex delegate's tool commands reach the network. Default stays off.
