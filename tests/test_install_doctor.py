@@ -84,6 +84,7 @@ class DoctorWarningsTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(lines[0], "READY")
         self.assertIn("WARNING: " + self.drift, lines[1:])
+        self.assertFalse([ln for ln in lines if ln.startswith("NOTE: Codex")])  # #66: fixture has no codex, so no network note
 
     def test_cli_json_shape_unchanged(self):
         out = io.StringIO()
