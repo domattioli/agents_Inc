@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/logo-wide.png" width="100%" alt="agents_Inc: a crew of original cartoon monsters on a dispatch floor"></p>
+<p align="center"><img src="docs/assets/logo-wide.png" width="100%" alt="agents_Inc: a crew of original cartoon monsters at work on a night-shift dispatch floor"></p>
 
 # agents_Inc
 
