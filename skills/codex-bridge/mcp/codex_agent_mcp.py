@@ -5,7 +5,20 @@ import subprocess
 import os
 
 # luna only by default; astra/sol/terra are added by user config (roster.json / env map) once tested live.
-DEFAULT_MODEL_MAP = {"luna": "gpt-5.6-luna"}
+# The luna slug comes from agents_inc/routing.json (the single alias source, D-pin rule); the literal is a fallback.
+ROUTING = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "agents_inc", "routing.json")
+
+
+def _pinned_luna(path=ROUTING, fallback="gpt-6-luna"):
+    try:
+        with open(path) as fh:
+            slug = json.load(fh)["tiers"]["grunt"]["codex"]
+        return slug if isinstance(slug, str) and slug else fallback
+    except (OSError, ValueError, KeyError, TypeError):
+        return fallback
+
+
+DEFAULT_MODEL_MAP = {"luna": _pinned_luna()}
 
 
 def _read_map(raw):

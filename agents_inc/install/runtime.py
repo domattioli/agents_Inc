@@ -336,7 +336,9 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         tmp_env = ([] if tool_tmp is None else
                    ["-c", f"shell_environment_policy.set.TMPDIR={_toml_str(str(tool_tmp))}",
                     "-c", f"shell_environment_policy.set.TMPPREFIX={_toml_str(str(Path(tool_tmp) / 'zsh'))}"])
-        argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"']
+        # ~/.gitconfig is unreadable in the profile and git aborts on it; tool commands get an empty global config
+        argv = ([str(executable), "exec", "-m", slug] + common + ["-c", f'shell_environment_policy.set.PATH="{TOOL_PATH}"',
+                                                              "-c", 'shell_environment_policy.set.GIT_CONFIG_GLOBAL="/dev/null"']
                 + tmp_env
                 + permission_args(cwd, write, write_dir=write_dir, extra_deny=extra_deny, extra_read=extra_read,
                                   network=network, extra_write=() if tool_tmp is None else (tool_tmp,))

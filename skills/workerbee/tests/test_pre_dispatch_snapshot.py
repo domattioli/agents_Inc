@@ -89,6 +89,18 @@ class SnapshotPathTests(unittest.TestCase):
         self.assertIn("CHANGED new/stray.md", r.stdout)
         self.assertNotIn("CHANGED new/\n", r.stdout)
 
+    def test_ignored_at_capture_stays_ignored_without_global_excludes(self):
+        self._commit("f")
+        excludes = self.repo.parent / (self.repo.name + "-excludes")
+        excludes.write_text("local.json\n", encoding="utf-8")
+        _git(self.repo, "config", "core.excludesFile", str(excludes))
+        (self.repo / "local.json").write_text("x\n", encoding="utf-8")
+        self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)
+        _git(self.repo, "config", "--unset", "core.excludesFile")  # the sandbox view: no global excludes
+        r = _run(self.repo, "verify", self.snap)
+        excludes.unlink()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

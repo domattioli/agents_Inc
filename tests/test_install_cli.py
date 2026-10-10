@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+os.environ.setdefault("AGENTS_INC_NO_UPDATE_CHECK", "1")  # no PyPI request from tests
 
 from agents_inc.install.cli import install_convenience_launcher, uninstall
 from agents_inc.install.receipt import InstallReceipt, OwnedPath

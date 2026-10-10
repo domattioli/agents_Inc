@@ -27,7 +27,7 @@
 
 ## 1. Status & Roadmap
 
-Version 0.3.0. The project is experimental and pre-MVP. The governed path (`WORKERBEES_GOVERNANCE`) is off by default. Changes per release are in the [CHANGELOG](https://github.com/domattioli/agents_Inc/blob/main/CHANGELOG.md). The build plan and cut line are in [docs/PLAN-MVP.md](https://github.com/domattioli/agents_Inc/blob/main/docs/PLAN-MVP.md). Open work is tracked in [the issues](https://github.com/domattioli/agents_Inc/issues).
+Version 0.3.1. The project is experimental and pre-MVP. The governed path (`WORKERBEES_GOVERNANCE`) is off by default. Changes per release are in the [CHANGELOG](https://github.com/domattioli/agents_Inc/blob/main/CHANGELOG.md). The build plan and cut line are in [docs/PLAN-MVP.md](https://github.com/domattioli/agents_Inc/blob/main/docs/PLAN-MVP.md). Open work is tracked in [the issues](https://github.com/domattioli/agents_Inc/issues).
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 
@@ -104,6 +104,10 @@ The full description, including the delegation limits, the 14-element prompt con
 - Cross-vendor review catches disagreement between models. It does not catch a blind spot that both vendors share.
 - Deterministic checks cover what a script can express, such as a file, a quote or an exit code. They do not replace human judgment on scope or design.
 - Free-model capacity varies: a probe on 2026-09-29 found 429 or capacity errors on several free models ([docs/BENCH.md](https://github.com/domattioli/agents_Inc/blob/main/docs/BENCH.md)). Artifacts stay local; remote publication (Bindle Backend B) is not built.
+
+Updates: new sessions and `agents-inc doctor` tell you when a newer release is on PyPI (one check a day; `AGENTS_INC_NO_UPDATE_CHECK=1` turns it off).
+
+Found a bug or want a feature? `agents-inc report bug --title "..." --body "..."` (or `report feature`) prints a draft issue with your version, doctor result and OS; home paths become `~`. Add `--submit` to file it on GitHub with your own `gh` login.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 

@@ -44,7 +44,7 @@ Aliases, case-insensitive:
 | `astra` | `gpt-6-astra` | codex-bridge daemon |
 | `sol` | `gpt-5.6-sol` | codex-bridge daemon |
 | `terra` | `gpt-5.6-terra` | codex-bridge daemon |
-| `luna` | `gpt-5.6-luna` | codex-bridge daemon |
+| `luna` | `gpt-6-luna` | codex-bridge daemon |
 | `gemini` | `gemini-3.8-flash` | `gask.sh --tier digest` |
 | `mistral` | `codestral-latest` | `mask.sh --tier code` |
 | `openrouter` | free tier via `oask.sh` | OpenRouter |
