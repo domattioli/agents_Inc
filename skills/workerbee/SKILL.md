@@ -671,7 +671,8 @@ then reported "no files outside scope touched".
    output, or quoted source for anything stated as fact. Bare assertion
    doesn't count. Tag every factual claim and conclusion
    `[verified]`/`[inferred]`/`[assumed]`. Only exemption: action-log lines
-   directly linked to recorded tool evidence (command + exit code).
+   directly linked to recorded tool evidence (command + exit code). The
+   `WORKERS SPAWNED: n` line needs no evidence tag.
 7. **Scope boilerplate, standing.** Repo-scoped writes only; no git
    commit/push; no writes to `~/.claude/**`, other repos, credentials/`.env`.
    Covers writes via any script/tool the delegate runs, not only its own

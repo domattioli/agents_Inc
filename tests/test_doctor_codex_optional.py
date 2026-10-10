@@ -39,7 +39,8 @@ class DoctorCodexOptionalTest(unittest.TestCase):
     def test_present_executable_codex_ready(self):
         with tempfile.TemporaryDirectory() as d:
             c = Path(d) / "codex"; c.write_text("#!/bin/sh\n"); c.chmod(0o755)
-            r = _run(c)
+            with mock.patch.object(doctor, "is_temp_or_shim_path", return_value=False):
+                r = _run(c)
         self.assertTrue(r.ready); self.assertEqual(r.warnings, ())
 
     def test_non_executable_codex_is_failure(self):
