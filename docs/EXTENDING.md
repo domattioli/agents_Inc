@@ -33,6 +33,11 @@ for m in d['models']:
 - Add the model to `reference/routing-policy.md` when it belongs in a chain.
 - `astra`, `sol`, `terra`, and `luna` are account-specific ChatGPT codenames, not public names or Claude tiers.
 - Re-run step 1 on another machine before porting a nickname.
+- A newer slug of an existing Codex persona needs no hand edit (0.3.0, #57).
+  - `python3 -m agents_inc.model_sync` reports the newest slug per persona; `--apply` writes it to `agents_inc/routing.json` and `agents_inc/models.json`.
+  - The `model_updates` setting picks `approve` (default) or `auto`; `--scheduled` honours it and `--approve` applies a parked update.
+  - `agents-inc models bump <alias> <slug>` pins an alias so sync skips it; `--unpin` releases it.
+  - Claude aliases are bare (`opus`, `sonnet`, `haiku`), so a new Claude model needs no entry here.
 
 ## Add a whole vendor
 
