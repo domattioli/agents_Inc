@@ -28,7 +28,7 @@ Codex delegates now work like Claude subagents, installs need only pip, and ever
 - `free_health`: an ok report clears `last_error` (#42).
 - `demo/` and `docs/proposals/` are left out of release artifacts.
 
-Please cite: Mattioli, D. (2026). *agents_Inc: A Model Ladder for Delegating and Verifying Work Across AI Agents* (Version 0.3.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22670100
+Please cite: Mattioli, D. O. (2026). *agents_Inc: A Model Ladder for Delegating and Verifying Work Across AI Agents* (Version 0.3.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22670100 (author ORCID: https://orcid.org/0000-0002-7327-6337)
 
 ## [0.2.0] — 2026-10-07
 

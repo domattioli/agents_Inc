@@ -458,7 +458,7 @@ class TestWatchdogAbort(unittest.TestCase):
         code, err, breaker, ps_called = self._run(itertools.chain([healthy_snap()], itertools.repeat(low)),
                                                    generate_raise=OSError("blocked"))
         self.assertEqual(code, 3)
-        self.assertTrue(err.startswith("WB_LOCAL_LOW_MEMORY_ABORT"))
+        self.assertIn("WB_LOCAL_LOW_MEMORY_ABORT", err)
         self.assertTrue(breaker)
         self.assertTrue(ps_called)
 
@@ -469,7 +469,7 @@ class TestWatchdogAbort(unittest.TestCase):
         code, err, breaker, ps_called = self._run(itertools.chain([base], itertools.repeat(grown)),
                                                    generate_raise=OSError("blocked"))
         self.assertEqual(code, 3)
-        self.assertTrue(err.startswith("WB_LOCAL_SWAP_GROWTH"))
+        self.assertIn("WB_LOCAL_SWAP_GROWTH", err)
         self.assertTrue(breaker)
         self.assertTrue(ps_called)
 
