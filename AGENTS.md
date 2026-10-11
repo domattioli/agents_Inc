@@ -15,7 +15,7 @@
 | `tests/` | Python `unittest` suite |
 | `fixtures/` | Seeded fault and expected-result fixtures |
 | `docs/governance/` | Routing, authority, and operating governance |
-| `scripts/` | `agents-inc` launcher, skill installer, isolation and proof scripts |
+| `scripts/` | `agents-inc` launcher, skill installer, isolation and proof scripts, live Claude Code status line (`statusline.sh`, `statusline.d/`) |
 | `docs/at-route/` | `@alias` side-question routing guide, bench, and prior art |
 
 ## Setup, test, and run

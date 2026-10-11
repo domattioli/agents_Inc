@@ -1,0 +1,14 @@
+{
+  "claude_models": ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"],
+  "openai_models": ["gpt-6-astra", "gpt-6-sol", "gpt-5.6-terra", "gpt-6-luna"],
+  "labels": {"claude-opus-5-5": "OPUS55", "claude-sonnet-5-5": "SON55", "claude-haiku-4-5": "HAI45", "claude-fable-5-1": "FAB51",
+             "gpt-6-astra": "ASTRA", "gpt-6-sol": "SOL", "gpt-5.6-terra": "TERRA", "gpt-6-luna": "LUNA"},
+  "subscriptions": {"claude": 100, "openai": 20},
+  "prices_json": ["~/Projects/agents_Inc/skills/codex-bridge/reference/prices.json"],
+  "openai_price_estimates": {"gpt-6-astra": "claude-fable-5-1", "gpt-6-sol": "claude-opus-5", "gpt-5.6-terra": "claude-sonnet-5", "gpt-6-luna": "claude-haiku-4-5"},
+  "usage_db": "~/.codex-bridge/usage.db",
+  "codex_state_db": "~/.codex/state_5.sqlite",
+  "codex_sessions_glob": "~/.codex/sessions/*/*/*/*.jsonl",
+  "cache_path": "~/.claude/statusline-domi-cache.json",
+  "cache_ttl_s": 60
+}
