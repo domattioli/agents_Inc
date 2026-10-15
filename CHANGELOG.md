@@ -13,6 +13,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- Report lint accepts `WORKERS SPAWNED: <n> this turn (...)` on a resume turn, and flags `verified-exit-without-code` when a `[verified]` line about an exit or gate result carries no exit code.
 - A delegate that stops on a usage limit now ends `outcome=red reason=quota-paused` instead of a misleading report reason; a quota pause counts as one failed attempt.
 - `agents-inc dispatch --resume` accepts a run-directory path as well as a run id; a path used to fail with `no run.json`.
 - `check_dispatch_prompt.py` reads a `FAN_OUT:` line wrapped in a list bullet, backticks or bold marks, or ending in punctuation (#66).
