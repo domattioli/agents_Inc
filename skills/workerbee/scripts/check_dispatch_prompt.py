@@ -77,8 +77,8 @@ REPORT_KEYWORDS: dict[str, list[str]] = {
     "gate-exit-codes": ["exit code", "exit=", "rc=", "exit 0", "exit 1"],
 }
 
-# D48: exactly one report line `WORKERS SPAWNED: <integer>`.
-WORKERS_LINE_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*\d+\W*$", re.IGNORECASE)
+# D48: exactly one report line `WORKERS SPAWNED: <integer>`; a resume turn may add ` this turn (<n> total ...)`.
+WORKERS_LINE_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*\d+(?:\s+this turn\b.*)?\W*$", re.IGNORECASE)
 
 # D48 ceilings per rung and model-to-rung table: dispatch_rungs.py.
 _SCRIPT_DIR = str(Path(__file__).resolve().parent)
@@ -168,12 +168,19 @@ def parse_contract_line(line: str) -> tuple[str, str | None]:
     return path, (sha.group(1).lower() if sha else None)
 
 
+# A `[verified]` claim about an exit or gate result must carry the exit code it saw.
+VERIFIED_EXIT_RE = re.compile(r"\[verified\].*\b(?:exit(?:ed|s)?|rc)\b|\b(?:exit(?:ed|s)?|rc)\b.*\[verified\]", re.IGNORECASE)
+EXIT_CODE_RE = re.compile(r"\b(?:exit(?:ed|s)?(?:\s+code)?|rc)\s*[=:]?\s*-?\d+", re.IGNORECASE)
+
+
 def check_report(text: str) -> list[str]:
     """Return missing report elements (names from REPORT_KEYWORDS)."""
     lower = text.lower()
     missing = [name for name, kws in REPORT_KEYWORDS.items() if not any(k in lower for k in kws)]
     if sum(1 for ln in text.splitlines() if WORKERS_LINE_RE.match(ln.strip())) != 1:
         missing.append("workers-spawned")
+    if any(VERIFIED_EXIT_RE.search(ln) and not EXIT_CODE_RE.search(ln) for ln in text.splitlines()):
+        missing.append("verified-exit-without-code")
     return missing
 
 

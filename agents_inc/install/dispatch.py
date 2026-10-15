@@ -597,7 +597,7 @@ def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt")
     return report, snap, src
 
 
-WORKERS_SPAWNED_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*(\d+)\W*$", re.IGNORECASE | re.MULTILINE)
+WORKERS_SPAWNED_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*(\d+)(?:\s+this turn\b.*)?\W*$", re.IGNORECASE | re.MULTILINE)
 
 
 def parse_workers_spawned(text: str) -> int | None:

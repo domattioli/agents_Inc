@@ -253,6 +253,19 @@ class TestFanOutAndReport(unittest.TestCase):
         self.assertIn("workers-spawned",
                       cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\nWORKERS SPAWNED: 1\n"))
 
+    def test_resume_turn_workers_line(self):
+        self.assertEqual(cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0 this turn (1 total for the run)\n"), [])
+        from agents_inc.install import dispatch
+        self.assertEqual(dispatch.parse_workers_spawned("WORKERS SPAWNED: 0 this turn (1 total for the run)\n"), 0)
+
+    def test_verified_exit_needs_code(self):
+        self.assertIn("verified-exit-without-code",
+                      cdp.check_report(self.REPORT + "[verified] gate exit code N/A\nWORKERS SPAWNED: 0\n"))
+        self.assertIn("verified-exit-without-code",
+                      cdp.check_report(self.REPORT + "the gate exited cleanly [verified]\nWORKERS SPAWNED: 0\n"))
+        self.assertEqual(cdp.check_report(self.REPORT + "[verified] gate rc=0; exited 1 earlier\nWORKERS SPAWNED: 0\n"), [])
+        self.assertEqual(cdp.check_report(self.REPORT + "[inferred] exit code not printed\nWORKERS SPAWNED: 0\n"), [])
+
 
 class TestReportingChain(unittest.TestCase):
     """REPORTING CHAIN lint rule (spec 020 FR-003/FR-004)."""
