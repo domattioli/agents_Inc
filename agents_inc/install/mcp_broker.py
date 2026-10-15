@@ -35,7 +35,8 @@ TOOLS = [
      "CONSTRAINTS must include: 'Stop-on-block: if a hook or permission classifier blocks a tool call, stop and hand "
      "back to the dispatcher; never switch tool to route around it.' SUCCESS_GATE and FAILURE_GATE each name a "
      "command in backticks. PRE_EXISTING_CHANGES may be 'snapshot <snapshot>' (the broker fills the path). "
-     "A Worker that writes nothing: ALLOWLIST 'none -- do all work yourself', FAN_OUT 'width 0, total 0, depth 0'.",
+     "A Worker that writes nothing: ALLOWLIST 'none -- do all work yourself', FAN_OUT 'width 0, total 0, depth 0'. "
+     "A Worker never leads: FAN_OUT must be 'width 0, total 0, depth 0' or omitted (else worker-cannot-lead).",
      "inputSchema": {"type": "object", "required": ["model", "effort", "slots"], "properties": {
          "model": {"type": "string"}, "effort": {"type": "string"},
          "slots": {"type": "object", "additionalProperties": {"type": "string"}}}}},
@@ -89,6 +90,7 @@ class Broker:
         self.version = None  # protocol version negotiated by the latest initialize
         self.spec = None  # loaded on the first tool call, so initialize and tools/list answer at once
         self.turn = None  # D54: the running Worker turn, if any
+        self.parent_error = None  # D60: "<code>: <message>" when a Claude Lead's parent check failed; cached per start
         self.poll = 0.2
 
     def issue(self, rid: str) -> None:
@@ -126,10 +128,30 @@ class Broker:
         return True
 
     def ensure(self) -> None:
+        if self.parent_error:
+            raise D.ParentRefused(self.parent_error)
         if self.spec is None:
-            self.spec = D._load_run_manifest(self.run_dir)
+            spec = D._load_run_manifest(self.run_dir)
+            if spec.get("parent_run_id"):  # D60: a Claude Lead proves its parent run; a Codex or legacy run has none
+                self.parent_error = D.check_parent(spec, os.environ, self.run_dir)
+                if self.parent_error:
+                    log_line(self.run_dir, f"parent refused:{self.parent_error.split(':', 1)[0]}")
+                    print(f"mcp_broker: {self.parent_error}", file=sys.stderr)
+                    raise D.ParentRefused(self.parent_error)
+            self.spec = spec
             D.init_broker_state(self.spec, transport="mcp")
             self.save()
+
+    def guard(self) -> None:
+        """D60: raise ParentRefused for every tool call (wait and answer included) when the parent check fails. Any other
+        load error is left to the tool, which reports it as before."""
+        if self.spec is None or self.parent_error:
+            try:
+                self.ensure()
+            except D.ParentRefused:
+                raise
+            except Exception:
+                pass
 
     def save(self) -> None:
         with D._SPEC_LOCK:
@@ -165,7 +187,7 @@ class Broker:
         inside = os.path.realpath(report).startswith(os.path.realpath(self.run_dir) + os.sep)
         data["report_path"] = str(report)
         data["report"] = report.read_text(encoding="utf-8") if inside and report.is_file() else ""
-        return data, data.get("status") != "green", f"found:{data.get('status')}"
+        return data, data.get("status") not in ("green", "unverified"), f"found:{data.get('status')}"
 
     def remaining(self) -> int:
         return max(0, self.spec["fan_out"]["total"] - self.spec["workers_spawned"])
@@ -308,7 +330,10 @@ def handle(broker: Broker, msg) -> dict | None:
         if handler is None or not isinstance(args, dict):
             return _reply(mid, error={"code": -32602, "message": "unknown tool or bad arguments"})
         try:
+            broker.guard()
             data, is_error, note = handler(args)
+        except D.ParentRefused as exc:
+            data, is_error, note = {"status": "refused", "reason": exc.code}, True, f"parent refused:{exc.code}"
         except Exception as exc:  # one bad call never stops the server
             data, is_error, note = {"status": "red", "reason": f"exception:{type(exc).__name__}"}, True, f"exception:{type(exc).__name__}"
         log_line(broker.run_dir, f"tool={name} {'error' if is_error else 'ok'} {note}")
