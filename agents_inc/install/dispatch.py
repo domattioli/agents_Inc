@@ -755,7 +755,8 @@ def run(args) -> int:
 def resume(args) -> int:
     """Send one more turn to a finished delegate: Claude via its session id, Codex via its thread id (D54)."""
     cwd = Path(getattr(args, "cwd", None) or os.getcwd()).resolve()
-    run_dir = Path(args.run_dir or default_parent(cwd)).resolve() / args.resume
+    given = Path(args.resume)  # a run id under --run-dir, or a path to the run directory itself
+    run_dir = given.resolve() if (given.is_absolute() or len(given.parts) > 1) and (given / "run.json").is_file() else Path(args.run_dir or default_parent(cwd)).resolve() / args.resume
     try:
         spec = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

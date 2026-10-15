@@ -12,10 +12,12 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- `agents-inc dispatch --resume` accepts a run-directory path as well as a run id; a path used to fail with `no run.json`.
 - `check_dispatch_prompt.py` reads a `FAN_OUT:` line wrapped in a list bullet, backticks or bold marks, or ending in punctuation (#66).
 
 ### Changed
 
+- Sub-delegation no longer allows Agent-tool Claude models; Leads sub-delegate only via `agents-inc dispatch` (D59). Future examination: Agent-tool scouts can be watched live in Claude Code like native agents, which dispatch runs cannot yet. Revisit once dispatch offers the same live view.
 - `agents-inc doctor` prints a note that Codex delegates have no network unless a dispatch opts in (#66).
 - `slots.md`: a Codex delegate writes only inside `--cwd`; dispatch with `--cwd <repo>` to edit another repository (#66).
 - Release workflow checks that Zenodo archived the release under concept DOI 10.5281/zenodo.22670100.

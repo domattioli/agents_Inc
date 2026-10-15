@@ -437,6 +437,19 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(seen, {"resume": "sess-1", "prompt": "go on", "effort": None})
         self.assertTrue((run / "stdout.1.md").is_file())
 
+    def test_resume_accepts_run_dir_path(self):
+        self._launch("haiku")
+        run = self._run_dir()
+        seen = {}
+
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
+            seen.update(resume=resume)
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--resume", str(run), "--message", "go on")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, {"resume": "sess-1"})
+
     def test_allow_paths(self):
         self.assertEqual(dispatch.allow_paths("none (read-only scout)"), [])
         self.assertEqual(dispatch.allow_paths("agents_inc/install/cli.py\ntests/test_x.py, README.md"),
