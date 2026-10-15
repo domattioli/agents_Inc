@@ -5,9 +5,11 @@ Fixture payloads and a fake home only.
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agents_inc.install import hook
 from agents_inc.install.paths import InstallPaths
@@ -26,6 +28,7 @@ def agent(session="s1", description="Grunt fix typo"):
 
 class QuickrefTest(unittest.TestCase):
     def setUp(self):
+        gate = mock.patch.dict(os.environ, {"AGENTS_INC_AGENT_GATE": "advisory"}); gate.start(); self.addCleanup(gate.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.paths = InstallPaths.for_home(Path(self.tmp.name))
         quickref = self.paths.current / "skills/workerbee/QUICKREF.md"

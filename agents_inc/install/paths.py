@@ -19,6 +19,9 @@ class InstallPaths:
     def lock(self) -> Path: return self.home / ".local/state/agents-inc/lifecycle.lock"
 
     @property
+    def settings(self) -> Path: return self.home / ".config/agents-inc/settings.json"
+
+    @property
     def journal(self) -> Path: return self.home / ".local/state/agents-inc/lifecycle.json"
 
     @classmethod
