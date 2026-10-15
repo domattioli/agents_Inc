@@ -8,6 +8,7 @@ import shutil
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,7 +19,7 @@ from agents_inc.install import cli, dispatch
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]) "
-                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+) outcome=(green|red)( reason=\S+)? out=\S+stdout\.md$")
+                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+) outcome=(green|red|unverified)( reason=\S+)? out=\S+stdout\.md$")
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
 
@@ -54,6 +55,7 @@ class DispatchCliTest(unittest.TestCase):
         data = json.loads(EXAMPLE.read_text())
         if drop:
             data.pop(drop)
+        data.setdefault("GATES", [{"argv": [sys.executable, "-c", "pass"]}])  # a passing gate keeps green paths green
         data.update(extra)
         path = self.root / "slots.json"
         path.write_text(json.dumps(data))
@@ -129,7 +131,8 @@ class DispatchCliTest(unittest.TestCase):
     def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
-        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False,
+                 **_):
             calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode,
                          effort=effort, codex_write=codex_write)
             argv = dispatch.claude_argv(model_, permission_mode, effort=effort) if kind == "claude" else ["run_codex", model_]
@@ -409,7 +412,7 @@ class DispatchCliTest(unittest.TestCase):
         (run / "run.json").write_text(json.dumps(spec))
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
@@ -425,7 +428,7 @@ class DispatchCliTest(unittest.TestCase):
         run = self._run_dir()
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             seen.update(resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):

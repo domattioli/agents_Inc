@@ -11,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -145,8 +146,8 @@ def allow_paths(files_in_scope: str) -> list[str]:
     return out
 
 
-def claude_argv(model: str, permission_mode: str, resume: str | None = None,
-                effort: str | None = None) -> list[str]:
+def claude_argv(model: str, permission_mode: str, resume: str | None = None, effort: str | None = None,
+                allowed: list | None = None, disallowed: list | None = None) -> list[str]:
     exe = shutil.which("claude") or "claude"
     argv = [exe, "-p", "--model", CLAUDE_MODELS[model], "--permission-mode", permission_mode,
             "--output-format", "json"]
@@ -154,7 +155,36 @@ def claude_argv(model: str, permission_mode: str, resume: str | None = None,
         argv += ["--effort", effort]
     if resume:
         argv += ["--resume", resume]
+    if allowed:
+        argv += ["--allowedTools", *allowed]
+    if disallowed:
+        argv += ["--disallowedTools", *disallowed]
     return argv
+
+
+def _bash(prefix: str) -> list[str]:
+    """The two Bash rules for one command prefix: the bare command and the command with arguments."""
+    return [f"Bash({prefix})", f"Bash({prefix} *)"]
+
+
+def tool_grants(spec: dict, gates: list | None, bash_allow: list, run_dir) -> tuple[list, list]:
+    """Per-run Claude tool grants (D58): (allowed, disallowed), order-preserving and deduplicated. Test runners only
+    when FILES_IN_SCOPE names paths. Never grants `agents-inc` (nested dispatch is PR 2)."""
+    snap = spec["snapshot"]
+    allowed = ["Read", "Glob", "Grep"]
+    for prefix in ("git status", "git diff", "git log", "git show", "git ls-files", "git check-ignore"):
+        allowed += _bash(prefix)
+    allowed += ["Bash(claude --help)"]
+    allowed += _bash(f"python3 {run_dir}/pre_dispatch_snapshot.py verify {snap}")
+    allowed += _bash(f"python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify {snap}")
+    if spec["gates"]["allow"]:
+        for prefix in ("python3 -m unittest", "python3 -m pytest", "pytest"):
+            allowed += _bash(prefix)
+    allowed += [f"Bash({shlex.join(g['argv'])})" for g in gates or []]
+    for prefix in bash_allow:
+        allowed += _bash(prefix)
+    disallowed = _bash("git push") + _bash("git commit") + _bash("sudo") + ["WebFetch", "WebSearch"]
+    return list(dict.fromkeys(allowed)), list(dict.fromkeys(disallowed))
 
 
 # D51 Claude Worker confinement (mirrors D49), applied only under the broker.
@@ -328,16 +358,21 @@ def make_lead_dir(spec: dict, roster: list[str]) -> Path:
 
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
            permission_mode: str = DEFAULT_PERMISSION_MODE, resume: str | None = None,
-           codex_write: bool = False, codex_network: bool = False, lead_dir: Path | None = None) -> dict:
+           codex_write: bool = False, codex_network: bool = False, lead_dir: Path | None = None,
+           allowed_tools: list | None = None, disallowed_tools: list | None = None) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
     or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54).
     lead_dir (#68): run a Codex delegate as a Lead with the broker MCP tools over that run directory."""
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
     if kind == "claude":
-        argv = claude_argv(model, permission_mode, resume, effort)
+        # allowed_tools None is a legacy run.json: keep the old argv. Else one --allowedTools flag carries ASK_TOOL too.
+        granted = None if allowed_tools is None else list(allowed_tools) + ([ASK_TOOL] if channel is not None else [])
+        argv = claude_argv(model, permission_mode, resume, effort, granted, disallowed_tools)
         extra = {}
         if channel is not None:
-            argv += ["--mcp-config", str(channel["config"]), "--strict-mcp-config", "--allowedTools", ASK_TOOL]
+            argv += ["--mcp-config", str(channel["config"]), "--strict-mcp-config"]
+            if allowed_tools is None:
+                argv += ["--allowedTools", ASK_TOOL]
         if _BROKER_SAFE_WRITES:
             if not sandbox_available():
                 raise RuntimeError("no-sandbox-backend")  # never run a broker Claude Worker unconfined
@@ -477,17 +512,53 @@ def _fan_out_check(spec: dict, out_path: Path) -> str | None:
     return None
 
 
-def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None) -> tuple[bool, str | None]:
-    """Return (green, red reason)."""
+def _run_gates(spec: dict) -> tuple[list, str | None]:
+    """D58: run each structured gate with no shell after the delegate exits. Return (results, red reason):
+    gate-missing when a gate could not run, else gate-failed when an exit code differs, else None."""
+    danger, results = _load("render_dispatch").DANGER_RE, []
+    for g in spec["gate_commands"]:
+        row = {"argv": g["argv"], "cwd": g["cwd"], "expect_rc": g["expect_rc"], "rc": None, "excerpt": ""}
+        joined = " ".join(g["argv"])
+        wd = (Path(spec["cwd"]) / g["cwd"]).resolve()  # re-checked here: the delegate may have planted a link
+        if danger.search(joined) or CREDENTIAL_RE.search(joined) or CREDENTIAL_RE.search(g["cwd"]):
+            row["error"] = "refused"
+        elif not wd.is_relative_to(Path(spec["cwd"]).resolve()):
+            row["error"] = "cwd-outside"
+        else:
+            try:
+                res = subprocess.run(g["argv"], cwd=str(wd), shell=False,
+                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
+                                     timeout=g["timeout_s"])
+                tail = ((res.stdout or "") + (res.stderr or "")).encode()[-2048:].decode("utf-8", "ignore")
+                row.update(rc=res.returncode, excerpt=screen_text(tail, 2048))
+            except subprocess.TimeoutExpired:
+                row["error"] = "timeout"
+            except OSError as exc:
+                row["error"] = type(exc).__name__
+        results.append(row)
+    if any(r["rc"] is None for r in results):
+        return results, "gate-missing"
+    if any(r["rc"] != r["expect_rc"] for r in results):
+        return results, "gate-failed"
+    return results, None
+
+
+def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None, gate_reason: str | None = None,
+             gated: bool = False) -> tuple[str, str | None]:
+    """Return (outcome, reason): red checks first, then a failed gate; green only when gates ran and passed."""
     if fan_reason:
-        return False, fan_reason
+        return "red", fan_reason
     if rc != 0:
-        return False, "rc-nonzero"
+        return "red", "rc-nonzero"
     if report != "COMPLIANT":
-        return False, "report-noncompliant"
+        return "red", "report-noncompliant"
     if vrc != 0:
-        return False, "snapshot-not-clean"
-    return True, None
+        return "red", "snapshot-not-clean"
+    if gate_reason:
+        return "red", gate_reason
+    if gated:
+        return "green", None
+    return "unverified", "no-gates"
 
 
 def _status(spec: dict, report: str, snap: str, out_path: Path) -> str:
@@ -513,15 +584,24 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
             verify_name: str = "verify.txt") -> int:
     report, snap, vrc = _verify(spec, run_dir, out_path, verify_name)
     fan_reason = _fan_out_check(spec, out_path)
-    green, reason = _outcome(spec, report, vrc, result["rc"], fan_reason)
-    spec["outcome"] = "green" if green else "red"
+    gated, skipped, gate_reason = bool(spec.get("gate_commands")), False, None
+    if gated and _BROKER_SAFE_WRITES:
+        gated, skipped, spec["gate_results"] = False, True, None  # a broker child never runs commands for its Lead
+    elif gated:  # after _verify, so gate side effects never count against the snapshot
+        spec["gate_results"], gate_reason = _run_gates(spec)
+        if spec.get("resumes"):
+            spec["resumes"][-1]["gate_results"] = spec["gate_results"]
+    outcome, reason = _outcome(spec, report, vrc, result["rc"], fan_reason, gate_reason, gated)
+    if skipped and outcome == "unverified":
+        reason = "gates-skipped-broker"
+    spec["outcome"] = outcome
     spec["reason"] = reason
     _write_json(run_dir / "run.json", spec)
     print(_status(spec, report, snap, out_path))
     _mirror(spec, run_dir, home_repo)
-    if not green and result["rc"] == EXIT_USAGE:
+    if outcome == "red" and result["rc"] == EXIT_USAGE:
         return EXIT_USAGE  # keep a child usage error distinct from red (broker request status 2)
-    return EXIT_OK if green else EXIT_RED
+    return EXIT_RED if outcome == "red" else EXIT_OK
 
 
 def _record_ledger_node(spec: dict, slots: dict) -> None:
@@ -534,6 +614,27 @@ def _record_ledger_node(spec: dict, slots: dict) -> None:
             spec["ledger_error"] = "ledger write failed"
     except Exception as exc:
         spec["ledger_error"] = f"{type(exc).__name__}: {exc}"
+
+
+def _grants_from_slots(slots: dict, cwd: Path) -> tuple[list | None, list, tuple | None]:
+    """Parse GATES and BASH_ALLOW. Return (gates, bash_allow, None) or (None, [], (refused outcome, why))."""
+    rd = _load("render_dispatch")
+    gates, why = rd.parse_gates(slots.get("GATES"))
+    if why:
+        return None, [], ("refused-gates", why)
+    for g in gates or []:
+        joined = " ".join(g["argv"])
+        if CREDENTIAL_RE.search(joined) or CREDENTIAL_RE.search(g["cwd"]):
+            return None, [], ("refused-gates", f"credential-seeking gate {joined!r}")
+        if not (cwd / g["cwd"]).resolve().is_relative_to(cwd):
+            return None, [], ("refused-gates", f"gate cwd {g['cwd']!r} resolves outside --cwd")
+    bash_allow, why = rd.bash_allow_list(slots.get("BASH_ALLOW"))
+    if why:
+        return None, [], ("refused-bash-allow", why)
+    for prefix in bash_allow:
+        if CREDENTIAL_RE.search(prefix):
+            return None, [], ("refused-bash-allow", f"credential-seeking prefix {prefix!r}")
+    return gates, bash_allow, None
 
 
 def run(args) -> int:
@@ -574,8 +675,16 @@ def run(args) -> int:
             "codex_write": codex_write(slots),
             "codex_network": codex_network(slots),
             "rc": None, "outcome": None, "session_id": None}
-    rc, prompt, err = render(slots_path, model)
     lint = run_dir / "lint.txt"
+    gates, bash_allow, why = _grants_from_slots(slots, cwd)
+    if why:
+        _wtext(lint, why[1] + "\n")
+        spec["outcome"] = why[0]; _write_json(run_dir / "run.json", spec)
+        print(f"dispatch {run_id} {model} refused {why[0]}: {why[1]} lint={lint}")
+        return EXIT_REFUSED
+    spec["gate_commands"] = gates or []
+    spec["allowed_tools"], spec["disallowed_tools"] = tool_grants(spec, gates, bash_allow, run_dir) if kind == "claude" else (None, None)
+    rc, prompt, err = render(slots_path, model)
     if rc != 0:
         _wtext(lint, f"render rc={rc}\n{err}")
         spec["outcome"] = "refused-render"; _write_json(run_dir / "run.json", spec)
@@ -628,7 +737,9 @@ def run(args) -> int:
     result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
                     **({"codex_write": True} if spec["codex_write"] else {}),
                     **({"codex_network": True} if spec["codex_network"] else {}),
-                    **({"lead_dir": lead_dir} if lead_dir is not None else {}))
+                    **({"lead_dir": lead_dir} if lead_dir is not None else {}),
+                    **({"allowed_tools": spec["allowed_tools"], "disallowed_tools": spec["disallowed_tools"]}
+                       if kind == "claude" else {}))
     if lead_dir is not None:
         try:
             spec["broker_workers_spawned"] = json.loads((lead_dir / "run.json").read_text(encoding="utf-8")).get("workers_spawned")
@@ -660,7 +771,9 @@ def resume(args) -> int:
     result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
                     spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
                     **({"codex_write": True} if spec.get("codex_write") is True else {}),
-                    **({"codex_network": True} if spec.get("codex_network") is True else {}))
+                    **({"codex_network": True} if spec.get("codex_network") is True else {}),
+                    **({"allowed_tools": spec.get("allowed_tools"), "disallowed_tools": spec.get("disallowed_tools")}
+                       if kind == "claude" else {}))
     n = len(spec.get("resumes", [])) + 1
     out_path = run_dir / f"stdout.{n}.md"
     _wtext(out_path, result["stdout"])
@@ -686,7 +799,7 @@ REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 REQUEST_FILE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.request\.json$")
 SLOT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 # Slots a request may never set: the broker owns these through run.json.
-BROKER_OWNED_SLOTS = frozenset({"PERMISSION_MODE"})
+BROKER_OWNED_SLOTS = frozenset({"PERMISSION_MODE", "BASH_ALLOW"})
 # Efforts for a model without `supported_efforts` in models.json (Claude: passed as `claude -p --effort`).
 DEFAULT_EFFORTS = ("low", "medium", "high", "max")
 INBOX = "inbox"  # the only Lead-writable path in a run directory (D51)
@@ -700,6 +813,11 @@ CREDENTIAL_RE = re.compile(
 BROKER_OK, BROKER_FATAL, BROKER_USAGE = 0, 1, 2
 REQ_GREEN, REQ_RED, REQ_USAGE, REQ_REFUSED = 0, 1, 2, 3
 REQ_STATUS = {REQ_GREEN: "green", REQ_RED: "red", REQ_USAGE: "usage-error", REQ_REFUSED: "refused"}
+
+
+def _req_status(code: int, outcome) -> str:
+    """Broker request status; a clean child with no gates to check (outcome unverified, exit 0) is "unverified"."""
+    return "unverified" if code == REQ_GREEN and outcome == "unverified" else REQ_STATUS[code]
 
 
 class BrokerFatal(Exception):
@@ -916,7 +1034,7 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
         with _SPEC_LOCK:
             spec["workers_spawned"] -= 1  # never launched: release the reservation
     code = rc if rc in REQ_STATUS else REQ_RED
-    return dict(base, status=REQ_STATUS[code], dispatch_exit_code=code,
+    return dict(base, status=_req_status(code, cspec.get("outcome")), dispatch_exit_code=code,
                 child_run_id=cspec.get("run_id") or (child.name if child else None),
                 outcome=cspec.get("outcome"), reason=crash or cspec.get("reason") or (None if code == REQ_GREEN else "dispatch-rc"),
                 finished_at=_now(), status_line=out.getvalue().strip(),
@@ -1222,7 +1340,7 @@ def plan_resume(run_dir: Path, spec: dict, rid, message, known) -> tuple[dict | 
         status = json.loads(result_path.read_text(encoding="utf-8")).get("status")
     except (OSError, ValueError):
         return None, "unknown-request"
-    if status not in ("green", "red"):
+    if status not in ("green", "red", "unverified"):
         return None, "not-resumable"
     root = _root_of(spec, rid)
     child = _child_dir(run_dir, root)
@@ -1255,7 +1373,8 @@ def run_resume(run_dir: Path, plan: dict, message: str, spec: dict, home_repo: s
     turns = cspec.get("resumes") or []
     ran = len(turns) >= plan["turn"]
     code = rc if rc in REQ_STATUS else REQ_RED
-    result = {"status": REQ_STATUS[code], "dispatch_exit_code": code, "child_run_id": child.name,
+    result = {"status": _req_status(code, cspec.get("outcome") if ran else None), "dispatch_exit_code": code,
+              "child_run_id": child.name,
               "outcome": cspec.get("outcome") if ran else None,
               "reason": crash or (cspec.get("reason") if ran else None) or (None if code == REQ_GREEN else "dispatch-rc"),
               "started_at": started, "finished_at": _now(), "status_line": out.getvalue().strip(),
@@ -1283,7 +1402,7 @@ def init_broker_state(spec: dict, poll_interval: float | None = None, idle_timeo
         spec["workers_spawned"] = 0
     counts = spec.get("request_counts")
     spec["request_counts"] = {k: (counts or {}).get(k, 0) if isinstance(counts, dict) else 0
-                              for k in ("green", "red", "usage-error", "refused", "duplicate")}
+                              for k in ("green", "red", "unverified", "usage-error", "refused", "duplicate")}
     for key in ("resumes", "questions"):  # D54 counters
         if type(spec.get(key)) is not int or spec[key] < 0:
             spec[key] = 0

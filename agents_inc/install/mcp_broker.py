@@ -165,7 +165,7 @@ class Broker:
         inside = os.path.realpath(report).startswith(os.path.realpath(self.run_dir) + os.sep)
         data["report_path"] = str(report)
         data["report"] = report.read_text(encoding="utf-8") if inside and report.is_file() else ""
-        return data, data.get("status") != "green", f"found:{data.get('status')}"
+        return data, data.get("status") not in ("green", "unverified"), f"found:{data.get('status')}"
 
     def remaining(self) -> int:
         return max(0, self.spec["fan_out"]["total"] - self.spec["workers_spawned"])
