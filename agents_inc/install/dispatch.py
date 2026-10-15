@@ -376,9 +376,11 @@ def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
 
 
 def lead_grants(lead_dir) -> tuple[list, list]:
-    """D60: the (allow, deny) rules a Claude Lead adds: the five broker tools; no Agent/Task; no Read/Edit of its broker
-    run directory (absolute paths take a leading `/`: Read(//abs/**))."""
-    return list(LEAD_TOOLS), ["Agent", "Task", f"Read(/{lead_dir}/**)", f"Edit(/{lead_dir}/**)"]
+    """D60: the (allow, deny) rules a Claude Lead adds: the five broker tools; no Agent/Task; no Read/Edit of any broker
+    run directory (`agents-inc-lead-*` siblings of its own: older runs are never removed and hold lead_mcp.json and Worker
+    reports; absolute paths take a leading `/`: Read(//abs/**))."""
+    parent = Path(lead_dir).parent
+    return list(LEAD_TOOLS), ["Agent", "Task", f"Read(/{parent}/agents-inc-lead-*/**)", f"Edit(/{parent}/agents-inc-lead-*/**)"]
 
 
 def lead_skip_reason(spec: dict, roster: list) -> str | None:

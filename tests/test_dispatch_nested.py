@@ -2,6 +2,7 @@
 launch is always patched, so no model runs."""
 from __future__ import annotations
 import contextlib
+import fnmatch
 import hashlib
 import io
 import json
@@ -96,7 +97,9 @@ class LeadSetupTest(NestedBase):
                  "mcp__agents_inc__resume", "mcp__agents_inc__answer"]
         self.assertEqual(spec["allowed_tools"][-5:], tools)
         self.assertEqual(spec["allowed_tools"][:-5].count("mcp__agents_inc__dispatch"), 0)
-        self.assertEqual(spec["disallowed_tools"][-4:], ["Agent", "Task", f"Read(/{lead}/**)", f"Edit(/{lead}/**)"])
+        sibling = f"/{Path(lead).parent}/agents-inc-lead-*/**"
+        self.assertEqual(spec["disallowed_tools"][-4:], ["Agent", "Task", f"Read({sibling})", f"Edit({sibling})"])
+        self.assertTrue(fnmatch.fnmatch(f"/{lead}/lead_mcp.json", sibling))  # the Lead's own directory stays covered
         self.assertFalse(any("agents-inc" in r for r in spec["allowed_tools"]))
         self.assertEqual(p["call"]["allowed_tools"], spec["allowed_tools"])
         self.assertEqual(p["call"]["disallowed_tools"], spec["disallowed_tools"])

@@ -676,8 +676,8 @@ def run_worker(job_id: str) -> int:
             if job.get("mandate"):
                 job["thread_id"] = mandate_thread_id
                 settle_mandate(job["mandate"], job["role"], job["id"], "returned", thread_id=mandate_thread_id)
+            write_artifact(job)  # result.json before the terminal status, so a waiter never sees "returned" without it
             save_job(job)
-            write_artifact(job)
             report_route(job["backend"], "ok")
             return 0
 
@@ -706,8 +706,8 @@ def run_worker(job_id: str) -> int:
         break
 
     job.update(status="failed", finished_at=now())
-    save_job(job)
     write_artifact(job)
+    save_job(job)
     return int(job.get("exit_code") or 1)
 
 
@@ -739,8 +739,8 @@ def mark_verified(job_id: str, verdict: str) -> None:
     if job.get("status") != "returned":
         die(f"cannot mark job {job_id}: status is '{job.get('status')}' (must be 'returned')", 1)
     job.update(status=verdict, verified_at=now())
-    save_job(job)
     write_artifact(job)
+    save_job(job)
 
 
 def wait_for(job_id: str, as_json: bool = False, interval: float = 0.1) -> int:

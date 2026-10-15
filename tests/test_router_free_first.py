@@ -3,14 +3,10 @@ import json
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-import pytest
-from tests._free012 import hermetic  # noqa: F401 - imported for use in tests
+from tests._free012 import fixture, hermetic, parametrize, suite  # noqa: F401
 
 
-pytestmark = pytest.mark.usefixtures("hermetic")
-
-
-@pytest.fixture
+@fixture
 def mistral_ok(monkeypatch):
     """Patch mistral-small-latest to be available for extract/summarize/classify."""
     from agents_inc import router
@@ -31,7 +27,7 @@ def mistral_ok(monkeypatch):
 class TestRouterGoldenIdeal:
     """Test T018: golden-chain equality in ideal modality."""
 
-    @pytest.fixture
+    @fixture
     def golden_data(self):
         """Load golden chains from fixture."""
         golden_path = Path(__file__).parent / "fixtures" / "012" / "router_golden.json"
@@ -685,11 +681,5 @@ class TestRouterGuards:
 
 
 def load_tests(loader, tests, pattern):
-    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
-    import importlib.util
-    import pathlib
-    spec = importlib.util.spec_from_file_location(
-        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
-    bridge = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bridge)
-    return bridge.bridge_suite(__file__)
+    """Expose this fixture-style file to `unittest discover` (see _free012.suite)."""
+    return suite(globals(), autouse=("hermetic",))
