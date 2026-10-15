@@ -5,7 +5,7 @@ Short form of `SKILL.md` for routine dispatch. Read the full `SKILL.md` and `ski
 ## Before any dispatch
 
 1. Dispatch gate. Estimate the direct tool calls the task needs. Three or fewer: do it yourself. Exceptions: one of three or more parallel tasks, large output you should not hold, or code work under a repo dispatch policy. Bare-API wrappers (`gask.sh`, `mask.sh`, `oask.sh`) have no filesystem, shell or repo access. Paste real source into the prompt or pick a delegate that has them.
-2. Vendor gate. Claude (`Agent` tool) is the default. Codex (astra, sol, terra, luna), Gemini, Mistral and OpenRouter open only when the operator names one, a stated capability needs it, or the operator declared budget mode (free grunts only). State one line: `vendor gate: <gate> -> <delegate>`.
+2. Vendor gate picks the rung; the route is always `agents-inc dispatch`. Naming a model chooses the rung, not the route. The `Agent` tool is only for read-only foreground scouts (Explore, Plan); the agent gate may block other uses (D61). Claude is the default vendor. Codex (astra, sol, terra, luna), Gemini, Mistral and OpenRouter open only when the operator names one, a stated capability needs it, or the operator declared budget mode (free grunts only). State one line: `vendor gate: <gate> -> <delegate>`.
 3. Chain resolves by ladder (D46): higher rung manages; same rung, ask the operator one question. State the chain only when surprising.
 
 4. Dispatch through `agents-inc dispatch --slots <json> --model <slug>` (D47). The CoS writes the slots file and pastes nothing: the command renders, lints, snapshots, launches, and verifies, and returns one status line. Files stay in the run directory.

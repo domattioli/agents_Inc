@@ -6,7 +6,7 @@ from .. import datafiles
 from .bundle import activate, stage_bundle
 from .discovery import install_skill_links, restore_skill_links
 from .doctor import check_install
-from .host_wiring import install_alias_links, install_host_wiring, remove_host_wiring
+from .host_wiring import install_alias_links, install_host_wiring, remove_host_wiring, unwire_hooks, HOSTS
 from . import hook as host_hook
 from .paths import InstallPaths
 from .receipt import InstallReceipt, OwnedPath
@@ -119,6 +119,8 @@ def _install(args, source: Path):
             # Verify before commit: a failure raises into recover(), which rolls the whole install back.
             verify_installed(paths)
             journal.commit()
+            if getattr(args, "agent_gate", None): host_hook.write_agent_gate(paths, args.agent_gate)
+            if not getattr(args, "no_host_wiring", False) and (paths.home / ".claude").is_dir(): notices.append(host_hook.gate_notice(paths))
             for line in notices: print(line)
             return 0
         except Exception:
@@ -153,11 +155,12 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
-    p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
+    p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
     p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--network", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
     p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
-    p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true")
+    p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
+    p = subs.add_parser("unwire"); p.add_argument("--host", choices=("claude",), default="claude")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
     p = subs.add_parser("models"); p.add_argument("verb", nargs="?", choices=("bump", "chain")); p.add_argument("alias", nargs="?"); p.add_argument("slug", nargs="?"); p.add_argument("extra", nargs="*"); p.add_argument("--unpin", action="store_true"); p.add_argument("--clear", action="store_true")
@@ -191,6 +194,7 @@ def main(argv=None):
                 print(json.dumps(report.as_dict()))
             else:
                 print(" ".join(report.codes or ("READY",)))
+                print("agent gate: {} ({})".format(*host_hook.agent_gate_mode(paths)))
                 for w in report.warnings: print(f"WARNING: {w}")
                 if "WB_CLI_NOT_FOUND" not in (*report.codes, *report.warnings):
                     print("NOTE: Codex delegates have no network by default; a dispatch opts in with "
@@ -199,6 +203,14 @@ def main(argv=None):
                 update = notice(paths.state)
                 if update: print(f"UPDATE: {update}")
             return 0 if report.ready else 1
+        if args.command == "unwire":
+            with LifecycleLock(paths.lock):
+                removed = unwire_hooks(paths, args.host)
+            target = paths.home / next(h.hooks_file for h in HOSTS if h.name == args.host)
+            for line in removed: print(f"removed: {line}")
+            if not removed: print(f"nothing to remove: no agents-inc hooks in {target}")
+            else: print("`agents-inc repair` re-adds them; doctor reports WB_HOST_UNWIRED until then.")
+            return 0
         if not paths.receipt.exists(): print(NOT_INSTALLED.format(paths.receipt), file=sys.stderr); return 1
         receipt = InstallReceipt.load(paths.receipt)
         if args.command == "run":

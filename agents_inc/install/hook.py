@@ -1,4 +1,4 @@
-"""Host hook entry points. Advisory, except the FR-002 persona deny; never break a session, always exit 0."""
+"""Host hook entry points. Advisory, except the FR-002 persona deny and the opt-in agent gate deny; never break a session, always exit 0."""
 from __future__ import annotations
 import hashlib, json, os, re, sys, tempfile, time
 from datetime import datetime
@@ -15,6 +15,14 @@ PERSONA_DENY_REASON = ("FR-002: Agent/Task descriptions cannot begin with a Code
                        "repository, person, or supervised worker, put the actual Claude rung first and mention that "
                        "name later. Renaming does not change the execution model.")
 AGENT_TOOLS = {"Agent", "Task"}
+AGENT_GATE_ENV = "AGENTS_INC_AGENT_GATE"
+AGENT_GATE_MODES = ("enforce", "advisory", "off")
+GATE_ALLOW = frozenset({"Explore", "Plan", "claude-code-guide", "statusline-setup"})
+GATE_DENY_REASON = ("agents-inc agent gate: this Agent/Task call is blocked (subagent_type: {subagent}; background: {background}). "
+                    "Agent/Task spawns Claude subagents outside agents-inc routing, ledger, and verification. Allowed here: {allowed} "
+                    "(foreground only). For every other delegation run: agents-inc dispatch --slots <json> --model <opus|sonnet|haiku|fable>. "
+                    "Naming a model picks the rung, not the route. Per-session bypass: start the session with "
+                    "AGENTS_INC_AGENT_GATE=off claude. Switch to advisory: agents-inc repair --agent-gate advisory.")
 FAN_OUT = "agents-inc: fan-out"
 INFLIGHT_TTL_S = 7200  # a spawn that never reports done stops warning after 2 h
 DISPATCH_RE = re.compile(r"agents-inc\s+dispatch|\b(?:gask|mask|oask|agent)\.sh\b|\bcodex\s+exec\b")
@@ -82,6 +90,67 @@ def persona_deny(payload: object) -> str:
     except Exception:
         return ""
 
+def agent_gate_mode(paths: InstallPaths, env=None) -> tuple[str, str]:
+    """(mode, source): env var, then settings.json 'agent_gate', then advisory. Never raises; read on every call."""
+    env = os.environ if env is None else env
+    value = str(env.get(AGENT_GATE_ENV) or "").strip().lower()
+    if value in AGENT_GATE_MODES: return value, f"env {AGENT_GATE_ENV}"
+    try:
+        if not paths.settings.exists(): return "advisory", "default"
+        data = json.loads(paths.settings.read_text(encoding="utf-8"))
+        if not isinstance(data, dict): raise ValueError("not an object")
+    except (OSError, ValueError):
+        return "advisory", "default; settings unreadable"
+    if data.get("agent_gate") in AGENT_GATE_MODES: return data["agent_gate"], f"settings {paths.settings}"
+    return "advisory", "default"
+
+def write_agent_gate(paths: InstallPaths, mode: str) -> None:
+    """Persist 'agent_gate' in settings.json, keeping other keys; a malformed file raises rather than being clobbered."""
+    if mode not in AGENT_GATE_MODES: raise ValueError(f"agent gate mode must be one of {', '.join(AGENT_GATE_MODES)}: {mode!r}")
+    data = {}
+    if paths.settings.exists():
+        try: data = json.loads(paths.settings.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc: raise RuntimeError(f"{paths.settings} is not readable JSON: {exc}") from exc
+        if not isinstance(data, dict): raise RuntimeError(f"{paths.settings} is not a JSON object")
+    data["agent_gate"] = mode
+    paths.settings.parent.mkdir(parents=True, exist_ok=True)
+    fd, raw = tempfile.mkstemp(prefix=f".{paths.settings.name}.", dir=paths.settings.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out: json.dump(data, out, indent=2); out.write("\n")
+        os.chmod(raw, 0o600)
+        os.replace(raw, paths.settings)
+    finally:
+        if os.path.exists(raw): os.unlink(raw)
+
+def gate_deny(paths: InstallPaths, payload: object) -> str:
+    """Second blocking path: under mode 'enforce', only foreground allowlisted subagent types pass. Fails open."""
+    try:
+        if not isinstance(payload, dict) or payload.get("tool_name") not in AGENT_TOOLS: return ""
+        tool_input = payload.get("tool_input")
+        if not isinstance(tool_input, dict) or agent_gate_mode(paths)[0] != "enforce": return ""
+        subagent, background = tool_input.get("subagent_type"), tool_input.get("run_in_background") is True
+        if isinstance(subagent, str) and subagent in GATE_ALLOW and not background: return ""
+        reason = GATE_DENY_REASON.format(subagent=subagent if isinstance(subagent, str) else "omitted",
+                                         background="yes" if background else "no", allowed=", ".join(sorted(GATE_ALLOW)))
+        return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                  "permissionDecisionReason": reason}})
+    except Exception:
+        return ""
+
+def gate_notice(paths: InstallPaths) -> str:
+    mode, source = agent_gate_mode(paths)
+    lines = [f"agents-inc added hooks to {paths.home / '.claude/settings.json'}: SessionStart session-start; PreToolUse agent-nudge "
+             "(Agent|Task, dispatch-shaped Bash, DelegateAgent); PostToolUse agent-done; UserPromptSubmit at_route.",
+             f"agent gate: {mode} ({source}). enforce blocks Agent/Task calls except foreground "
+             f"{', '.join(sorted(GATE_ALLOW))}."]
+    if mode == "advisory":
+        lines.append("Advisory: Agent/Task delegations skip agents-inc routing, ledger and verification; "
+                     "`agents-inc repair --agent-gate enforce` blocks them.")
+    lines += [f"Disable for one session: {AGENT_GATE_ENV}=off claude",
+              "Switch mode: agents-inc repair --agent-gate advisory|off|enforce (stored in " + str(paths.settings) + ")",
+              "Remove the hooks: agents-inc unwire"]
+    return "\n".join(lines)
+
 def task_key(payload: dict) -> str:
     def norm(value): return " ".join(str(value or "").lower().split())
     tool_input = _tool_input(payload)
@@ -148,7 +217,7 @@ def run(paths: InstallPaths, event: str, host: str | None, stdin=sys.stdin) -> i
             payload = _payload(stdin)
             if _is_dispatch(payload):  # the Bash matcher sees every command; only dispatch-shaped calls get context
                 nudge = _nudge_text(paths, payload) if payload.get("tool_name") in AGENT_TOOLS else ""  # NUDGE wording is Agent-only
-                out = persona_deny(payload) or _context(nudge, _quickref_text(paths, payload), duplicate_check(paths, payload))
+                out = persona_deny(payload) or gate_deny(paths, payload) or _context(nudge, _quickref_text(paths, payload), duplicate_check(paths, payload))
         elif event == "agent-done": agent_done(paths, _payload(stdin))
         if out: print(out)
     except Exception as exc:  # a broken hook must never break the host session
