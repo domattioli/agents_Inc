@@ -9,9 +9,11 @@ All notable changes to this project are recorded here. The format follows
 ### Added
 
 - Codex delegates spawn Workers on the same terms as Claude delegates (D57, #68). `agents-inc dispatch` runs astra, sol or terra as a broker Lead when FAN_OUT total is above 0 and ALLOWLIST names models; the roster follows the D46.3 rung rule. A Codex Lead may now write to cwd; its broker run directory sits outside cwd.
+- Claude delegates (fable, opus, sonnet) spawn Workers through the credential-blind broker when FAN_OUT allows it and ALLOWLIST names lower-rung models. The broker checks the parent run's token, roster, fan-out, permission mode and tool grants. Workers cannot lead (D60).
 
 ### Fixed
 
+- A delegate that stops on a usage limit now ends `outcome=red reason=quota-paused` instead of a misleading report reason; a quota pause counts as one failed attempt.
 - `agents-inc dispatch --resume` accepts a run-directory path as well as a run id; a path used to fail with `no run.json`.
 - `check_dispatch_prompt.py` reads a `FAN_OUT:` line wrapped in a list bullet, backticks or bold marks, or ending in punctuation (#66).
 

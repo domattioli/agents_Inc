@@ -450,6 +450,11 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen, {"resume": "sess-1"})
 
+    def test_quota_pause_reason(self):
+        self.assertEqual(dispatch._outcome({}, "NON-COMPLIANT", 0, 1, "workers-spawned-missing", quota=True), ("red", "quota-paused"))
+        self.assertEqual(dispatch._outcome({}, "NON-COMPLIANT", 0, 1, None), ("red", "rc-nonzero"))
+        self.assertTrue(dispatch.QUOTA_RE.search("You've hit your session limit \u00b7 resets 2:50pm"))
+
     def test_allow_paths(self):
         self.assertEqual(dispatch.allow_paths("none (read-only scout)"), [])
         self.assertEqual(dispatch.allow_paths("agents_inc/install/cli.py\ntests/test_x.py, README.md"),

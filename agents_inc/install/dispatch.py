@@ -5,6 +5,8 @@ Only the status line goes to stdout. Everything else lands in the run directory.
 from __future__ import annotations
 import base64
 import contextlib
+import hashlib
+import hmac
 import importlib.util
 import io
 import json
@@ -167,24 +169,45 @@ def _bash(prefix: str) -> list[str]:
     return [f"Bash({prefix})", f"Bash({prefix} *)"]
 
 
+# D60: (allowed, disallowed) of the Claude Lead whose broker runs this Worker, else None. Set by _in_worker_scope.
+_GRANT_CEILING: tuple | None = None
+
+
+def _verifier_rules(spec: dict, run_dir) -> list[str]:
+    """The two snapshot-verifier Bash pairs of one run; their paths are run-specific."""
+    snap = spec["snapshot"]
+    return (_bash(f"python3 {run_dir}/pre_dispatch_snapshot.py verify {snap}")
+            + _bash(f"python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify {snap}"))
+
+
 def tool_grants(spec: dict, gates: list | None, bash_allow: list, run_dir) -> tuple[list, list]:
     """Per-run Claude tool grants (D58): (allowed, disallowed), order-preserving and deduplicated. Test runners only
-    when FILES_IN_SCOPE names paths. Never grants `agents-inc` (nested dispatch is PR 2)."""
-    snap = spec["snapshot"]
+    when FILES_IN_SCOPE names paths. Never grants `agents-inc` Bash. Under a Lead's broker (D60, _GRANT_CEILING) a
+    runner is kept only when the Lead has it, GATES argv is not granted (broker children skip gates), and the
+    disallowed list gains the Lead's."""
+    ceiling = _GRANT_CEILING
     allowed = ["Read", "Glob", "Grep"]
     for prefix in ("git status", "git diff", "git log", "git show", "git ls-files", "git check-ignore"):
         allowed += _bash(prefix)
     allowed += ["Bash(claude --help)"]
-    allowed += _bash(f"python3 {run_dir}/pre_dispatch_snapshot.py verify {snap}")
-    allowed += _bash(f"python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify {snap}")
+    allowed += _verifier_rules(spec, run_dir)
     if spec["gates"]["allow"]:
         for prefix in ("python3 -m unittest", "python3 -m pytest", "pytest"):
-            allowed += _bash(prefix)
-    allowed += [f"Bash({shlex.join(g['argv'])})" for g in gates or []]
+            allowed += [r for r in _bash(prefix) if ceiling is None or r in ceiling[0]]
+    if ceiling is None:
+        allowed += [f"Bash({shlex.join(g['argv'])})" for g in gates or []]
     for prefix in bash_allow:
         allowed += _bash(prefix)
-    disallowed = _bash("git push") + _bash("git commit") + _bash("sudo") + ["WebFetch", "WebSearch"]
+    disallowed = (_bash("git push") + _bash("git commit") + _bash("sudo") + ["WebFetch", "WebSearch", "Agent", "Task"]
+                  + (list(ceiling[1]) if ceiling else []))
     return list(dict.fromkeys(allowed)), list(dict.fromkeys(disallowed))
+
+
+def ceiling_violation(allowed: list, own: list = ()) -> str | None:
+    """D60: the first allowed rule the Lead does not hold, else None. own: this run's verifier rules (run-specific)."""
+    if _GRANT_CEILING is None:
+        return None
+    return next((r for r in allowed if r not in _GRANT_CEILING[0] and r not in own), None)
 
 
 # D51 Claude Worker confinement (mirrors D49), applied only under the broker.
@@ -321,19 +344,28 @@ def codex_network(slots: dict) -> bool:
     return str(slots.get("CODEX_NETWORK", "")).strip().lower() in ("yes", "true")
 
 
-LEAD_NOTE = ("\nWORKERS (D57): you may run Workers ({roster}) with the `agents_inc` MCP server's `dispatch`, `wait`, "
-             "`status`, `resume` and `answer` tools (Codex: call `tool_search` with query \"agents_inc\" first if they "
-             "are not listed). The `dispatch` tool description lists every slot a Worker request needs. Skill files "
-             "under ~/.agents/skills and ~/.local are not readable in this sandbox and are not needed: this prompt and "
-             "the tool descriptions carry the contract.\n")
-LEAD_RUNGS = ("astra", "sol", "terra")  # Codex models that may lead; luna is a Grunt and never delegates
+LEAD_NOTE_CODEX = ("\nWORKERS (D57): you may run Workers ({roster}) with the `agents_inc` MCP server's `dispatch`, `wait`, "
+                   "`status`, `resume` and `answer` tools (Codex: call `tool_search` with query \"agents_inc\" first if they "
+                   "are not listed). The `dispatch` tool description lists every slot a Worker request needs. Skill files "
+                   "under ~/.agents/skills and ~/.local are not readable in this sandbox and are not needed: this prompt and "
+                   "the tool descriptions carry the contract.\n")
+LEAD_NOTE_CLAUDE = ("\nWORKERS (D60): you may run Workers ({roster}) with the `agents_inc` MCP server's tools "
+                    "`mcp__agents_inc__dispatch`, `mcp__agents_inc__wait`, `mcp__agents_inc__status`, "
+                    "`mcp__agents_inc__resume` and `mcp__agents_inc__answer`. The `dispatch` tool description lists every "
+                    "slot a Worker request needs. A Worker runs one at a time and never leads: send its FAN_OUT as "
+                    "'width 0, total 0, depth 0'. The Agent tool is not a route (D59); `agents-inc` is not a Bash command "
+                    "for you.\n")
+LEAD_RUNGS = ("astra", "sol", "terra", "fable", "opus", "sonnet")  # models that may lead; luna and haiku are Grunts and never delegate
+LEAD_TOOLS = tuple(f"mcp__agents_inc__{t}" for t in ("dispatch", "status", "wait", "resume", "answer"))
 
 
 def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
-    """#68 (D57): a Codex delegate gets the broker on the same terms as a Claude delegate gets subagents: a FAN_OUT
-    total above 0 and models named in SUB-DELEGATE MODEL ALLOWLIST. Keep only models the D46.3 rung rule allows:
-    any lower rung, and a Workhorse only the Grunt rung. Empty list: no broker."""
+    """#68 (D57, D60): a Codex or Claude delegate gets the broker on the same terms as a Claude delegate gets subagents: a FAN_OUT
+    total above 0 (and, for Claude, depth above 0) and models named in SUB-DELEGATE MODEL ALLOWLIST. Keep only models the
+    D46.3 rung rule allows: any lower rung, and a Workhorse only the Grunt rung. Empty list: no broker."""
     if model not in LEAD_RUNGS or not fan_out or fan_out.get("total", 0) <= 0:
+        return []
+    if _kind(model) == "claude" and fan_out.get("depth", 0) <= 0:
         return []
     rungs = _load("dispatch_rungs")
     text = str(slots.get("ALLOWLIST", "")).lower()
@@ -343,17 +375,94 @@ def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
             and (rungs.MODEL_RUNG[model] != "workhorse" or rungs.MODEL_RUNG[m] == "grunt")]
 
 
-def make_lead_dir(spec: dict, roster: list[str]) -> Path:
-    """#68: the broker run directory for a Codex Lead, created outside cwd so the Lead's write grant never covers it."""
+def lead_grants(lead_dir) -> tuple[list, list]:
+    """D60: the (allow, deny) rules a Claude Lead adds: the five broker tools; no Agent/Task; no Read/Edit of its broker
+    run directory (absolute paths take a leading `/`: Read(//abs/**))."""
+    return list(LEAD_TOOLS), ["Agent", "Task", f"Read(/{lead_dir}/**)", f"Edit(/{lead_dir}/**)"]
+
+
+def lead_skip_reason(spec: dict, roster: list) -> str | None:
+    """D60: why a Claude Lead gets no broker (recorded as run.json `lead_skipped`), else None."""
+    fan = spec.get("fan_out")
+    if not fan or fan["total"] <= 0:
+        return "total-zero"
+    if fan["depth"] <= 0:
+        return "depth-zero"
+    if not roster:
+        return "no-roster"
+    if spec["permission_mode"] == "bypassPermissions":
+        return "bypass-permissions"  # an allow list does not bind there, so a broker would cap nothing
+    return None
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def make_lead_dir(spec: dict, roster: list[str], parent: dict | None = None) -> tuple[Path, str | None]:
+    """#68: the broker run directory for a Lead, created outside cwd so the Lead's write grant never covers it.
+    D60: with parent (run_dir, allowed_tools, disallowed_tools, home_repo) it is a Claude Lead's: its run.json binds the
+    parent run and the sha256 of a fresh token, and lead_mcp.json (0600) starts the broker with the token in its env.
+    Return (lead_dir, token); token is None without parent. The token is never written to the parent run."""
     lead_dir = Path(tempfile.mkdtemp(prefix=f"agents-inc-lead-{spec['run_id']}-")).resolve()
     if lead_dir.is_relative_to(Path(spec["cwd"]).resolve()):
         shutil.rmtree(lead_dir, ignore_errors=True)
         raise ValueError("lead-dir-inside-cwd: TMPDIR sits inside the delegate's cwd")
-    _write_json(lead_dir / "run.json", {
-        "schema_version": 1, "run_id": spec["run_id"], "model": spec["model"], "effort": spec["effort"],
-        "cwd": spec["cwd"], "chain": spec["chain"], "worker_models": roster, "fan_out": spec["fan_out"],
-        "permission_mode": spec["permission_mode"]})
-    return lead_dir
+    data = {"schema_version": 1, "run_id": spec["run_id"], "model": spec["model"], "effort": spec["effort"],
+            "cwd": spec["cwd"], "chain": spec["chain"], "worker_models": roster, "fan_out": spec["fan_out"],
+            "permission_mode": spec["permission_mode"]}
+    token = None
+    if parent is not None:
+        from .runtime import MCP_BROKER, MCP_TOOL_TIMEOUT_SEC
+        token = secrets.token_hex(32)
+        run_dir = os.path.realpath(parent["run_dir"])
+        data.update(lead_kind="claude", parent_run_id=spec["run_id"], parent_run_dir=run_dir,
+                    parent_token_sha256=_sha256(token), parent_allowed_tools=parent["allowed_tools"],
+                    parent_disallowed_tools=parent["disallowed_tools"])
+        args = [str(MCP_BROKER), "--run-dir", str(lead_dir)] + (["--home-repo", str(parent["home_repo"])] if parent.get("home_repo") else [])
+        _replace_text(lead_dir / "lead_mcp.json", json.dumps({"mcpServers": {"agents_inc": {
+            "type": "stdio", "command": sys.executable, "args": args,
+            "env": {"AGENTS_INC_PARENT_RUN": run_dir, "AGENTS_INC_PARENT_TOKEN": token},
+            "timeout": MCP_TOOL_TIMEOUT_SEC * 1000}}}, indent=1) + "\n", 0o600)
+    _write_json(lead_dir / "run.json", data)
+    return lead_dir, token
+
+
+class ParentRefused(Exception):
+    """D60: the broker of a Claude Lead cannot prove its parent run. str(exc) is `<code>: <message>`."""
+
+    @property
+    def code(self) -> str:
+        return str(self).split(":", 1)[0]
+
+
+def check_parent(spec: dict, env, lead_dir) -> str | None:
+    """D60: check a Claude Lead's parent run from the broker side. spec: the Lead run.json; env: the broker's environment;
+    lead_dir: the broker run directory. Return `<code>: <message>` for the first failure, else None."""
+    run, token = env.get("AGENTS_INC_PARENT_RUN") or "", env.get("AGENTS_INC_PARENT_TOKEN") or ""
+    if not run or not token:
+        return "parent-env-missing: AGENTS_INC_PARENT_RUN and AGENTS_INC_PARENT_TOKEN must both be set for a Claude Lead broker"
+    missing = f"parent-run-missing: {run} is not a run directory with a regular run.json"
+    path = Path(run)
+    if not path.is_absolute() or path.is_symlink() or not path.is_dir() or (path / "run.json").is_symlink() or not (path / "run.json").is_file():
+        return missing
+    try:
+        parent = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return missing
+    if not isinstance(parent, dict):
+        return missing
+    for field, left, right in (("parent_run_dir", os.path.realpath(run), spec.get("parent_run_dir")),
+                               ("run_id", parent.get("run_id"), spec.get("parent_run_id")),
+                               ("cwd", parent.get("cwd"), spec.get("cwd")),
+                               ("lead_dir", parent.get("lead_dir"), os.path.realpath(lead_dir))):
+        if not isinstance(left, str) or left != right:
+            return f"parent-run-mismatch: {field} differs between the Lead run.json and the parent run"
+    digest = _sha256(token)
+    for want in (spec.get("parent_token_sha256"), parent.get("lead_token_sha256")):
+        if not isinstance(want, str) or not hmac.compare_digest(digest.encode(), want.encode("utf-8", "replace")):
+            return "parent-token-mismatch: the parent token does not match this run"
+    return None
 
 
 def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, run_dir: Path,
@@ -362,9 +471,11 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
            allowed_tools: list | None = None, disallowed_tools: list | None = None) -> dict:
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
     or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54).
-    lead_dir (#68): run a Codex delegate as a Lead with the broker MCP tools over that run directory."""
+    lead_dir (#68, D60): run a Codex or Claude delegate as a Lead with the broker MCP tools over that run directory."""
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
     if kind == "claude":
+        if lead_dir is not None and channel is not None:
+            raise RuntimeError("a Worker with an ask channel never leads")
         # allowed_tools None is a legacy run.json: keep the old argv. Else one --allowedTools flag carries ASK_TOOL too.
         granted = None if allowed_tools is None else list(allowed_tools) + ([ASK_TOOL] if channel is not None else [])
         argv = claude_argv(model, permission_mode, resume, effort, granted, disallowed_tools)
@@ -373,6 +484,10 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
             argv += ["--mcp-config", str(channel["config"]), "--strict-mcp-config"]
             if allowed_tools is None:
                 argv += ["--allowedTools", ASK_TOOL]
+        if lead_dir is not None:  # D60: the Lead's broker; a long Worker run needs a long MCP tool timeout
+            from .runtime import MCP_TOOL_TIMEOUT_SEC
+            argv += ["--mcp-config", str(Path(lead_dir) / "lead_mcp.json"), "--strict-mcp-config"]
+            extra["env"] = dict(os.environ, MCP_TOOL_TIMEOUT=str(MCP_TOOL_TIMEOUT_SEC * 1000))
         if _BROKER_SAFE_WRITES:
             if not sandbox_available():
                 raise RuntimeError("no-sandbox-backend")  # never run a broker Claude Worker unconfined
@@ -442,10 +557,10 @@ def _wtext(path: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _replace_text(path: Path, text: str) -> None:
+def _replace_text(path: Path, text: str, mode: int = 0o644) -> None:
     """Atomic overwrite that never writes through a planted link (the link itself is replaced)."""
     tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.broker-tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -498,8 +613,9 @@ def parse_fan_out(prompt: str) -> dict | None:
 
 
 def _fan_out_check(spec: dict, out_path: Path) -> str | None:
-    """Record per-attempt `workers_spawned_attempts` and their sum in `workers_spawned`.
-    Return a red reason (`workers-spawned-missing`, `fan-out-over-total`) or None."""
+    """Record per-attempt `workers_spawned_attempts` and their sum in `workers_spawned`. Return a red reason
+    (`workers-spawned-missing`, `fan-out-over-total`, `workers-spawned-underreported`: the broker's count (D60) is
+    above the report's) or None."""
     n = parse_workers_spawned(out_path.read_text(encoding="utf-8"))
     attempts = spec.setdefault("workers_spawned_attempts", [])
     attempts.append(n)
@@ -509,6 +625,9 @@ def _fan_out_check(spec: dict, out_path: Path) -> str | None:
     budget = spec.get("fan_out")
     if budget and spec["workers_spawned"] > budget["total"]:
         return "fan-out-over-total"
+    broker = spec.get("broker_workers_spawned")
+    if type(broker) is int and broker > spec["workers_spawned"]:
+        return "workers-spawned-underreported"
     return None
 
 
@@ -543,9 +662,14 @@ def _run_gates(spec: dict) -> tuple[list, str | None]:
     return results, None
 
 
+QUOTA_RE = re.compile(r"hit your (?:session |usage )?limit|usage limit reached|rate limit exceeded|quota exceeded", re.I)
+
+
 def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None, gate_reason: str | None = None,
-             gated: bool = False) -> tuple[str, str | None]:
-    """Return (outcome, reason): red checks first, then a failed gate; green only when gates ran and passed."""
+             gated: bool = False, quota: bool = False) -> tuple[str, str | None]:
+    """Return (outcome, reason): a quota pause first, then red checks, then a failed gate; green only when gates ran and passed."""
+    if rc != 0 and quota:
+        return "red", "quota-paused"
     if fan_reason:
         return "red", fan_reason
     if rc != 0:
@@ -591,7 +715,8 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
         spec["gate_results"], gate_reason = _run_gates(spec)
         if spec.get("resumes"):
             spec["resumes"][-1]["gate_results"] = spec["gate_results"]
-    outcome, reason = _outcome(spec, report, vrc, result["rc"], fan_reason, gate_reason, gated)
+    quota = bool(QUOTA_RE.search((result.get("stdout") or "")[-4000:] + (result.get("stderr") or "")[-4000:]))
+    outcome, reason = _outcome(spec, report, vrc, result["rc"], fan_reason, gate_reason, gated, quota)
     if skipped and outcome == "unverified":
         reason = "gates-skipped-broker"
     spec["outcome"] = outcome
@@ -635,6 +760,37 @@ def _grants_from_slots(slots: dict, cwd: Path) -> tuple[list | None, list, tuple
         if CREDENTIAL_RE.search(prefix):
             return None, [], ("refused-bash-allow", f"credential-seeking prefix {prefix!r}")
     return gates, bash_allow, None
+
+
+def _record_lead(spec: dict, lead_dir: Path) -> None:
+    """After a Lead turn: `broker_workers_spawned` (None when unreadable) and `children` (D60), one entry per broker
+    result file in lead_dir (regular files only, at most total + resumes), so the mirrored run.json links the Workers."""
+    try:
+        lead = json.loads((lead_dir / "run.json").read_text(encoding="utf-8"))
+        spec["broker_workers_spawned"] = lead.get("workers_spawned")
+    except (OSError, ValueError):
+        lead = {}
+        spec["broker_workers_spawned"] = None
+    fan = spec.get("fan_out") or {}
+    resumes = lead.get("resumes") if type(lead.get("resumes")) is int else 0
+    children = []
+    for path in sorted(lead_dir.glob("*.result.json")):
+        if len(children) >= fan.get("total", 0) + resumes:
+            break
+        if path.is_symlink() or not path.is_file():
+            continue
+        res, cspec = {}, {}
+        try:
+            res = json.loads(path.read_text(encoding="utf-8"))
+            cid, root = res.get("child_run_id"), res.get("resumed_from") or res.get("request_id")
+            if cid and root:
+                cspec = json.loads((lead_dir / "workers" / root / "runs" / cid / "run.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass
+        res, cspec = (res if isinstance(res, dict) else {}), (cspec if isinstance(cspec, dict) else {})
+        children.append({"request_id": res.get("request_id"), "child_run_id": res.get("child_run_id"),
+                         "model": cspec.get("model"), "status": res.get("status"), "outcome": res.get("outcome")})
+    spec["children"] = children
 
 
 def run(args) -> int:
@@ -684,6 +840,16 @@ def run(args) -> int:
         return EXIT_REFUSED
     spec["gate_commands"] = gates or []
     spec["allowed_tools"], spec["disallowed_tools"] = tool_grants(spec, gates, bash_allow, run_dir) if kind == "claude" else (None, None)
+    if kind == "claude" and _BROKER_SAFE_WRITES:
+        if any(r in LEAD_TOOLS for r in spec["allowed_tools"]):
+            raise RuntimeError("a broker Worker is never granted a dispatch tool")  # D60
+        bad = ceiling_violation(spec["allowed_tools"], _verifier_rules(spec, run_dir))
+        if bad:
+            why = f"grant-exceeds-parent: {bad} is not granted to the parent run"
+            _wtext(lint, why + "\n")
+            spec["outcome"] = "refused-grants"; _write_json(run_dir / "run.json", spec)
+            print(f"dispatch {run_id} {model} refused refused-grants: {why} lint={lint}")
+            return EXIT_REFUSED
     rc, prompt, err = render(slots_path, model)
     if rc != 0:
         _wtext(lint, f"render rc={rc}\n{err}")
@@ -717,7 +883,11 @@ def run(args) -> int:
         spec["outcome"] = "refused-lint"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} refused NON-COMPLIANT:{missing} lint={lint}")
         return EXIT_REFUSED
-    roster = [] if (_BROKER_SAFE_WRITES or kind != "codex") else lead_roster(model, slots, spec["fan_out"])
+    roster = [] if _BROKER_SAFE_WRITES else lead_roster(model, slots, spec["fan_out"])
+    if kind == "claude" and model in LEAD_RUNGS and not _BROKER_SAFE_WRITES:
+        skipped = lead_skip_reason(spec, roster)
+        if skipped:
+            spec["lead_skipped"], roster = skipped, []
     if roster:
         spec["lead_workers"] = roster
         if spec["codex_network"]:
@@ -726,12 +896,22 @@ def run(args) -> int:
         spec["outcome"] = "dry-run"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} dry-run prompt={prompt_path}")
         return EXIT_OK
-    lead_dir = make_lead_dir(spec, roster) if roster else None
-    if lead_dir is not None:
+    lead_dir, token = None, None
+    if roster:
+        parent = {"run_dir": run_dir, "allowed_tools": spec["allowed_tools"], "disallowed_tools": spec["disallowed_tools"],
+                  "home_repo": getattr(args, "home_repo", None)} if kind == "claude" else None
+        lead_dir, token = make_lead_dir(spec, roster, parent)
         spec["lead_dir"] = str(lead_dir)
-        prompt += LEAD_NOTE.format(roster=", ".join(roster))
+        if kind == "claude":  # D60: the parent keeps the token's hash only; its grants gain the broker tools
+            spec["lead_token_sha256"] = _sha256(token)
+            allow, deny = lead_grants(lead_dir)
+            spec["allowed_tools"] = list(dict.fromkeys(spec["allowed_tools"] + allow))
+            spec["disallowed_tools"] = list(dict.fromkeys(spec["disallowed_tools"] + deny))
+        prompt += (LEAD_NOTE_CLAUDE if kind == "claude" else LEAD_NOTE_CODEX).format(roster=", ".join(roster))
         _wtext(prompt_path, prompt)
     _record_ledger_node(spec, slots)
+    if token is not None:
+        _write_json(run_dir / "run.json", spec)  # before launch: the broker reads the parent run.json
     global _LAUNCHES
     _LAUNCHES += 1
     result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
@@ -741,10 +921,7 @@ def run(args) -> int:
                     **({"allowed_tools": spec["allowed_tools"], "disallowed_tools": spec["disallowed_tools"]}
                        if kind == "claude" else {}))
     if lead_dir is not None:
-        try:
-            spec["broker_workers_spawned"] = json.loads((lead_dir / "run.json").read_text(encoding="utf-8")).get("workers_spawned")
-        except (OSError, ValueError):
-            spec["broker_workers_spawned"] = None
+        _record_lead(spec, lead_dir)
     out_path = run_dir / "stdout.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])
@@ -769,8 +946,16 @@ def resume(args) -> int:
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
+    lead_dir = Path(spec["lead_dir"]) if kind == "claude" and spec.get("lead_dir") else None
+    if lead_dir is not None:  # D60: re-attach the Lead's broker; its counters reload from lead_dir/run.json
+        cfg = lead_dir / "lead_mcp.json"
+        if cfg.is_symlink() or not cfg.is_file():
+            print(f"dispatch: lead-dir-missing: {lead_dir}; cannot resume a Lead without its broker run directory",
+                  file=sys.stderr)
+            return EXIT_USAGE
     result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
                     spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
+                    **({"lead_dir": lead_dir} if lead_dir is not None else {}),
                     **({"codex_write": True} if spec.get("codex_write") is True else {}),
                     **({"codex_network": True} if spec.get("codex_network") is True else {}),
                     **({"allowed_tools": spec.get("allowed_tools"), "disallowed_tools": spec.get("disallowed_tools")}
@@ -780,6 +965,8 @@ def resume(args) -> int:
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / f"stderr.{n}.txt", result["stderr"])
     spec.setdefault("resumes", []).append({"rc": result["rc"], "out": str(out_path)})
+    if lead_dir is not None:
+        _record_lead(spec, lead_dir)
     spec["rc"] = result["rc"]
     if result.get("session_id"):
         spec["session_id"] = result["session_id"]
@@ -952,6 +1139,8 @@ def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, st
             return None, "bad-slots"
         if key in BROKER_OWNED_SLOTS:
             return None, "broker-owned-slot"
+    if "FAN_OUT" in slots and parse_fan_out("FAN_OUT: " + slots["FAN_OUT"]) != {"width": 0, "total": 0, "depth": 0}:
+        return None, "worker-cannot-lead"  # D60: a broker Worker never leads (#73); send 'width 0, total 0, depth 0' or omit it
     if _reject_credential_seeking(slots):
         return None, "credential-seeking"
     if _kind(model) == "claude" and not sandbox_available():
@@ -1008,6 +1197,7 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
     wdir = workers / rid
     wdir.mkdir()  # FileExistsError for a planted path: caller refuses
     slots = dict(req["slots"])
+    slots.setdefault("FAN_OUT", "width 0, total 0, depth 0")  # D60: render would fill the rung default, which leads
     slots["PERMISSION_MODE"] = spec.get("permission_mode", DEFAULT_PERMISSION_MODE)
     slots_path = wdir / "slots.json"
     _atomic_write_json(slots_path, slots)
@@ -1021,7 +1211,7 @@ def _process_request(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: 
                               dry_run=False, resume=None, message=None, home_repo=home_repo)
     out = io.StringIO()
     launches_before = _LAUNCHES
-    rc, crash = _in_worker_scope(run_dir, rid, out, lambda: run(args))
+    rc, crash = _in_worker_scope(run_dir, rid, out, lambda: run(args), spec)
     child = None
     children = sorted(p for p in child_parent.iterdir() if p.is_dir() and not p.is_symlink()) if child_parent.is_dir() else []
     if children:
@@ -1136,12 +1326,15 @@ def _run_validated(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: st
     return result, report_text
 
 
-def _in_worker_scope(run_dir: Path, rid: str, out, fn) -> tuple[int, str | None]:
-    """Run fn (a D47 run or resume) with the broker's Worker confinement on; return (rc, crash reason)."""
-    global _BROKER_SAFE_WRITES, _BROKER_DENY, _WORKER_ASK
+def _in_worker_scope(run_dir: Path, rid: str, out, fn, spec: dict | None = None) -> tuple[int, str | None]:
+    """Run fn (a D47 run or resume) with the broker's Worker confinement on; return (rc, crash reason). spec: the
+    Lead run.json; a Claude Lead's (parent_run_id) grants become the Worker's ceiling (D60)."""
+    global _BROKER_SAFE_WRITES, _BROKER_DENY, _WORKER_ASK, _GRANT_CEILING
     with contextlib.redirect_stdout(out):
         try:
             _BROKER_SAFE_WRITES, _WORKER_ASK = True, rid
+            if spec and spec.get("parent_run_id"):
+                _GRANT_CEILING = (list(spec.get("parent_allowed_tools") or []), list(spec.get("parent_disallowed_tools") or []))
             codex_home = os.environ.get("CODEX_HOME")  # read, never logged
             _BROKER_DENY = (Path(run_dir).resolve(),) + ((Path(codex_home).resolve(),) if codex_home else ())
             return fn(), None
@@ -1149,7 +1342,7 @@ def _in_worker_scope(run_dir: Path, rid: str, out, fn) -> tuple[int, str | None]
             return REQ_RED, f"dispatch-exception:{type(exc).__name__}"
         finally:
             _BROKER_SAFE_WRITES, _WORKER_ASK = False, None
-            _BROKER_DENY = ()
+            _BROKER_DENY, _GRANT_CEILING = (), None
 
 
 # ---------------------------------------------------------------------------
@@ -1367,7 +1560,7 @@ def run_resume(run_dir: Path, plan: dict, message: str, spec: dict, home_repo: s
     args = argparse.Namespace(resume=child.name, message=message, run_dir=str(child.parent), cwd=spec["cwd"],
                               home_repo=home_repo)
     started, out = _now(), io.StringIO()
-    rc, crash = _in_worker_scope(run_dir, plan["new_rid"], out, lambda: resume(args))
+    rc, crash = _in_worker_scope(run_dir, plan["new_rid"], out, lambda: resume(args), spec)
     cspec = {}
     with contextlib.suppress(OSError, ValueError):
         cspec = json.loads((child / "run.json").read_text(encoding="utf-8"))

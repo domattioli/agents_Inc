@@ -99,7 +99,7 @@ class ToolGrantTest(GrantsBase):
         want += _pair(f"python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify {snap}")
         self.assertEqual(spec["allowed_tools"], want)
         self.assertEqual(spec["disallowed_tools"], _pair("git push") + _pair("git commit") + _pair("sudo")
-                         + ["WebFetch", "WebSearch"])
+                         + ["WebFetch", "WebSearch", "Agent", "Task"])
         self.assertFalse(any("agents-inc" in r for r in spec["allowed_tools"]))
         self.assertEqual(self.calls[0]["allowed_tools"], want)
         self.assertEqual(self.calls[0]["disallowed_tools"], spec["disallowed_tools"])
