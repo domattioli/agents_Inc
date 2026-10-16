@@ -263,7 +263,7 @@ class DeriveChainTest(unittest.TestCase):
     def test_defaults_by_vendor(self):
         self.assertEqual(self.chain(model="haiku"), "haiku < sonnet < fable")
         self.assertEqual(self.chain(model="luna"), "luna < terra < astra")
-        self.assertEqual(self.chain(model="fable"), "fable < CoS < CoS")
+        self.assertEqual(self.chain(model="fable"), "fable < operator < operator")
 
     def test_setting_overrides_default(self):
         self.assertEqual(self.chain(model="haiku", settings={"chain": {"supervisor": "opus"}}), "haiku < opus < fable")

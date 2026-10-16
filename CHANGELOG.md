@@ -6,14 +6,18 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-16
+
 ### Added
 
+- Every Claude delegate prompt carries a GRANTS section: the tools, `BASH_ALLOW` prefixes and denied tools of the run. A harness "requires approval" block is a missing grant, not a policy refusal; delegates run one plain command per Bash call. `BASH_ALLOW` prefixes should bind the issue number and `-R repo` (D58 addendum, #54).
 - Codex delegates spawn Workers on the same terms as Claude delegates (D57, #68). `agents-inc dispatch` runs astra, sol or terra as a broker Lead when FAN_OUT total is above 0 and ALLOWLIST names models; the roster follows the D46.3 rung rule. A Codex Lead may now write to cwd; its broker run directory sits outside cwd.
 - Agent gate (D61): the agent-nudge hook can block Claude `Agent`/`Task` calls that bypass agents-inc. Default `advisory` blocks nothing; `agents-inc repair --agent-gate enforce` allows only foreground Explore, Plan, claude-code-guide and statusline-setup. `AGENTS_INC_AGENT_GATE` overrides per session. Install lists the hooks it adds, `agents-inc doctor` prints the gate mode, and `agents-inc unwire` removes agents-inc hooks only.
 - Claude delegates (fable, opus, sonnet) spawn Workers through the credential-blind broker when FAN_OUT allows it and ALLOWLIST names lower-rung models. The broker checks the parent run's token, roster, fan-out, permission mode and tool grants. Workers cannot lead (D60).
 
 ### Fixed
 
+- `pre_dispatch_snapshot.py verify --allow a b c` accepts several paths after one flag; it exited 2 before. The repeated `--allow` form is unchanged.
 - Report lint accepts `WORKERS SPAWNED: <n> this turn (...)` on a resume turn, and flags `verified-exit-without-code` when a `[verified]` line about an exit or gate result carries no exit code.
 - A delegate that stops on a usage limit now ends `outcome=red reason=quota-paused` instead of a misleading report reason; a quota pause counts as one failed attempt.
 - `agents-inc dispatch --resume` accepts a run-directory path as well as a run id; a path used to fail with `no run.json`.
