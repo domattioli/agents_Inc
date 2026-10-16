@@ -11,7 +11,7 @@
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue">
 <a href="https://github.com/domattioli/agents_Inc/blob/main/LICENSE"><img alt="License: PolyForm Small Business 1.0.0 + no AI training" src="https://img.shields.io/badge/license-PolyForm%20Small%20Business%201.0.0%20%2B%20no%20AI%20training-lightgrey"></a>
 <a href="https://github.com/domattioli/agents_Inc/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/domattioli/agents_Inc"></a>
-<a href="https://doi.org/10.5281/zenodo.22670100"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.22670100.svg"></a>
+<a href="https://doi.org/10.5281/zenodo.22670100"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22670100-blue"></a>
 </p>
 
 ## Table of Contents
@@ -27,7 +27,11 @@
 
 ## 1. Status & Roadmap
 
-Version 0.3.1. The project is experimental and pre-MVP. The governed path (`WORKERBEES_GOVERNANCE`) is off by default. Changes per release are in the [CHANGELOG](https://github.com/domattioli/agents_Inc/blob/main/CHANGELOG.md). The build plan and cut line are in [docs/PLAN-MVP.md](https://github.com/domattioli/agents_Inc/blob/main/docs/PLAN-MVP.md). Open work is tracked in [the issues](https://github.com/domattioli/agents_Inc/issues).
+Version 0.4.0. The project is experimental and pre-MVP. The governed path (`WORKERBEES_GOVERNANCE`) is off by default. Changes per release are in the [CHANGELOG](https://github.com/domattioli/agents_Inc/blob/main/CHANGELOG.md). The build plan and cut line are in [docs/PLAN-MVP.md](https://github.com/domattioli/agents_Inc/blob/main/docs/PLAN-MVP.md). Open work is tracked in [the issues](https://github.com/domattioli/agents_Inc/issues).
+
+- **Now:** measure the token cost of delegation against doing the work in one session.
+- **Next:** let a Worker launched by a broker lead its own Workers ([#73](https://github.com/domattioli/agents_Inc/issues/73)).
+- **Later:** route work by data classification, so unpublished work reaches only approved providers ([#19](https://github.com/domattioli/agents_Inc/issues/19)).
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 

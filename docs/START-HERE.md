@@ -1,6 +1,6 @@
 # Start here
 
-## Install (0.3.1)
+## Install (0.4.0)
 
 ```bash
 pip install agents-inc
