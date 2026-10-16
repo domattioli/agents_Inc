@@ -1,16 +1,12 @@
 """Tests for agents_inc.free_health module (spec 012)."""
 import json
-import pytest
 import subprocess
 import tempfile
 import threading
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from tests._free012 import hermetic  # noqa: F401 - imported for use in tests
-
-
-pytestmark = pytest.mark.usefixtures("hermetic")
+from tests._free012 import fixture, hermetic, parametrize, suite  # noqa: F401
 
 
 # === T003 REDO: Classify Tests ===
@@ -18,14 +14,14 @@ pytestmark = pytest.mark.usefixtures("hermetic")
 class TestFreeHealthClassify:
     """Test classify: outcome extraction from HTTP response."""
 
-    @pytest.fixture
+    @fixture
     def error_responses(self):
         """Load error responses fixture."""
         fixture_path = Path(__file__).parent / "fixtures" / "012" / "error_responses.json"
         with open(fixture_path) as f:
             return json.load(f)
 
-    @pytest.mark.parametrize("response_key", [
+    @parametrize("response_key", [
         "error_404_unavailable_for_free",
         "error_404_zdr",
         "error_429_with_delay",
@@ -799,11 +795,5 @@ class TestFreeHealthRateLimitStats:
 
 
 def load_tests(loader, tests, pattern):
-    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
-    import importlib.util
-    import pathlib
-    spec = importlib.util.spec_from_file_location(
-        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
-    bridge = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bridge)
-    return bridge.bridge_suite(__file__)
+    """Expose this fixture-style file to `unittest discover` (see _free012.suite)."""
+    return suite(globals(), autouse=("hermetic",))

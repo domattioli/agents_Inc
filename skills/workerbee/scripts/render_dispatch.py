@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -47,6 +48,86 @@ def default_fan_out(slots: dict) -> str:
                 break
     width, total, depth = FAN_OUT_BY_RUNG[rung]
     return f"width {width}, total {total}, depth {depth}"
+
+# Commands a delegate may never be granted or have dispatch run: pushes, commits, privilege, deletion, network.
+DANGER_RE = re.compile(r"\bgit\b[^;&|]*\b(?:push|commit)\b|\bsudo\b|\brm\b(?=[^;&|]*\s-\w*r)(?=[^;&|]*\s-\w*f)"
+                       r"|\brm\b[^;&|]*\s--recursive\b|\bcurl\b|\bssh\b", re.IGNORECASE)
+_GATE_KEYS = {"argv", "cwd", "timeout_s", "expect_rc"}
+_BAD_PREFIX_CHARS = ("*", "(", ")", "`", "\0")
+
+
+def _num(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def parse_gates(value) -> tuple[list | None, str | None]:
+    """Return (normalized gates, None), (None, None) when absent or empty, or (None, why). value: a list, or a
+    JSON string that decodes to a list. Entry keys: argv (required), cwd (default "."), timeout_s (600), expect_rc (0)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None, "not valid JSON"
+    if not isinstance(value, list):
+        return None, "must be a list"
+    if not value:
+        return None, None
+    out = []
+    for n, g in enumerate(value, 1):
+        who = f"entry {n}"
+        if not isinstance(g, dict) or not set(g) <= _GATE_KEYS:
+            return None, f"{who} must be an object with keys from argv, cwd, timeout_s, expect_rc"
+        argv = g.get("argv")
+        if (not isinstance(argv, list) or not argv
+                or not all(isinstance(a, str) and a and "\0" not in a and "\n" not in a for a in argv)):
+            return None, f"{who} argv must be a non-empty list of non-empty strings without NUL or newline"
+        cwd = g.get("cwd", ".")
+        if (not isinstance(cwd, str) or not cwd or "\0" in cwd or cwd.startswith("/")
+                or ".." in cwd.replace("\\", "/").split("/")):
+            return None, f"{who} cwd must be a relative path without .."
+        timeout = g.get("timeout_s", 600)
+        if not _num(timeout) or not 0 < timeout <= 3600:
+            return None, f"{who} timeout_s must be a number above 0 and at most 3600"
+        expect = g.get("expect_rc", 0)
+        if not isinstance(expect, int) or isinstance(expect, bool):
+            return None, f"{who} expect_rc must be an integer"
+        if DANGER_RE.search(" ".join(argv)):
+            return None, f"{who} argv matches the danger list"
+        out.append({"argv": list(argv), "cwd": cwd, "timeout_s": timeout, "expect_rc": expect})
+    return out, None
+
+
+def bash_allow_list(value) -> tuple[list, str | None]:
+    """Return (command prefixes, None) or ([], why). value: a list of str, or one str with a prefix per line."""
+    if value is None:
+        return [], None
+    lines = isinstance(value, str)
+    if lines:
+        value = value.splitlines()
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        return [], "must be a list of strings or one string with a prefix per line"
+    out = []
+    for raw in value:
+        prefix = raw.strip()
+        if not prefix:
+            if lines:
+                continue
+            return [], "prefix must not be empty"
+        if any(c in prefix for c in _BAD_PREFIX_CHARS) or "\n" in prefix:
+            return [], f"prefix {prefix!r} holds a forbidden character (* ( ) backtick NUL newline)"
+        if DANGER_RE.search(prefix):
+            return [], f"prefix {prefix!r} matches the danger list"
+        out.append(prefix)
+    return out, None
+
+
+def gate_text(gates: list) -> str:
+    """One sentence for SUCCESS GATE: dispatch runs each command with no shell after the delegate exits."""
+    parts = [f"`{shlex.join(g['argv'])}` in `{g['cwd']}` expecting exit code {g['expect_rc']}" for g in gates]
+    return "After you exit, dispatch runs these commands with no shell: " + "; ".join(parts) + "."
+
 
 def _text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
@@ -104,7 +185,9 @@ def derive_chain(slots: dict, model: str | None, settings: dict) -> dict:
         else:
             sources["SUPERVISOR"] = "default"
             above = None
-            if rung in LADDER and LADDER.index(rung) + 1 < len(LADDER):
+            if rung == LADDER[-1]:
+                above = "operator"
+            elif rung in LADDER and LADDER.index(rung) + 1 < len(LADDER):
                 above = _alias_on_rung(vendor, LADDER[LADDER.index(rung) + 1])
             supervisor = above or "CoS"
 
@@ -219,6 +302,17 @@ def main() -> int:
         "PLAN_CONTRACT"
     }
 
+    gates, why = parse_gates(slots_data.get("GATES"))
+    if why:
+        print(f"GATES invalid: {why}", file=sys.stderr)
+        return 2
+    _, why = bash_allow_list(slots_data.get("BASH_ALLOW"))
+    if why:
+        print(f"BASH_ALLOW invalid: {why}", file=sys.stderr)
+        return 2
+    if gates:
+        slots_data["SUCCESS_GATE"] = (_text(slots_data.get("SUCCESS_GATE")) + " " + gate_text(gates)).strip()
+
     if not (isinstance(slots_data.get("FAN_OUT"), str) and slots_data["FAN_OUT"].strip()):
         slots_data["FAN_OUT"] = default_fan_out(slots_data)
 
@@ -271,6 +365,9 @@ def main() -> int:
 
     # A top-rung supervisor is also the executive: drop the "X reports to X" link.
     result = re.sub(r"(?m)(REPORTING CHAIN: .*?)(\S+) reports to \2; ", r"\1", result)
+
+    # An executive delegate reports straight to the operator: "operator reports to the operator" collapses.
+    result = result.replace("reports to operator; operator reports to the operator", "reports to the operator")
 
     # Output filled template
     output = result

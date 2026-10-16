@@ -2,6 +2,7 @@
 import json
 
 from agents_inc import model_sync
+from tests._free012 import raises, suite
 
 ROUTING = (
     '{\n'
@@ -195,11 +196,10 @@ def test_only_tiers_block_is_edited(tmp_path):
 
 def test_set_mode_refuses_to_overwrite_corrupt_or_non_object_settings(tmp_path):
     # Data-loss guard: a corrupt or non-object settings file must survive untouched.
-    import pytest
     settings, _ = _paths(tmp_path)
     for text in ("{not json", "[1, 2]"):
         settings.write_text(text)
-        with pytest.raises(ValueError, match="not overwritten"):
+        with raises(ValueError, match="not overwritten"):
             model_sync.set_mode(settings, "auto")
         assert settings.read_text() == text
 
@@ -420,16 +420,20 @@ def test_main_apply_honours_pinned_from_settings(tmp_path, capsys):
 
 
 def test_set_pinned_keeps_keys_rejects_bad_persona_and_corrupt_file(tmp_path):
-    import pytest
     settings, _ = _paths(tmp_path)
     settings.write_text('{"model_updates": "auto"}')
     model_sync.set_pinned(settings, "sol", True)
     model_sync.set_pinned(settings, "sol", True)  # idempotent
     assert json.loads(settings.read_text()) == {"model_updates": "auto", "pinned": ["sol"]}
     assert model_sync.load_pinned(settings) == ["sol"] and model_sync.load_mode(settings) == "auto"
-    with pytest.raises(ValueError):
+    with raises(ValueError):
         model_sync.set_pinned(settings, "nova", True)
     settings.write_text("{bad")
-    with pytest.raises(ValueError, match="not overwritten"):
+    with raises(ValueError, match="not overwritten"):
         model_sync.set_pinned(settings, "sol", True)
     assert settings.read_text() == "{bad"
+
+
+def load_tests(loader, tests, pattern):
+    """Expose the module-level test_ functions to `unittest discover` (see _free012.suite)."""
+    return suite(globals())

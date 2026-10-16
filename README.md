@@ -41,7 +41,7 @@ Cheap models take routine work, and costlier models manage. An author never grad
 
 ## 3. Installation
 
-Requirements: Python 3.10 or later, Bash 3.2 or later, `jq`, and the Claude Code CLI signed in to an Anthropic subscription. The Codex CLI is optional; when present, it serves the Codex rungs and cross-vendor review.
+Requirements: Python 3.10 or later, Bash 3.2 or later, `jq`, `curl`, and the Claude Code CLI signed in to an Anthropic subscription. The Codex CLI is optional; when present, it serves the Codex rungs and cross-vendor review.
 
 ```bash
 pip install agents-inc
@@ -50,6 +50,36 @@ agents-inc doctor      # first line prints READY when the install works
 ```
 
 Restart Claude Code (and Codex, if used) after the install. `agents-inc install --without-codex` skips Codex on purpose. To install from a git checkout instead, pass `--source <checkout>`. Optional Gemini, Mistral and OpenRouter keys, the setup decision tree and key storage rules are in [docs/START-HERE.md](https://github.com/domattioli/agents_Inc/blob/main/docs/START-HERE.md).
+
+### Hooks this installs
+
+`agents-inc install` adds these hooks to `~/.claude/settings.json`. It prints the list when it runs.
+
+- `SessionStart`: loads the delegation mandate into each session.
+- `PreToolUse` on `Agent`/`Task`, dispatch-shaped `Bash` and `DelegateAgent`: adds a routing nudge, warns on duplicate dispatches, blocks persona impersonation, and runs the agent gate.
+- `PostToolUse` on `Agent`/`Task`: marks the dispatch done.
+- `UserPromptSubmit`: routes `@alias` side questions.
+
+**Agent gate.** Claude's `Agent` tool skips agents-inc routing, prompt lint, the ledger and verification. The gate decides what happens to those calls.
+
+| Mode | Effect |
+|---|---|
+| `advisory` (default) | Nothing is blocked. The session sees a nudge toward `agents-inc dispatch`. |
+| `enforce` | Blocks every `Agent`/`Task` call except foreground `Explore`, `Plan`, `claude-code-guide` and `statusline-setup`. Background runs are always blocked. |
+| `off` | Same as advisory. Doctor reports it as off. |
+
+- Switch mode: `agents-inc repair --agent-gate enforce|advisory|off`. The choice lives in `~/.config/agents-inc/settings.json`.
+- One session only: launch with `AGENTS_INC_AGENT_GATE=off claude` (or `enforce`).
+- Check: `agents-inc doctor` prints `agent gate: <mode> (<source>)`.
+- Remove every agents-inc hook: `agents-inc unwire`. Other hooks stay. `agents-inc repair` adds them back.
+
+**Using agents-inc without the gate.**
+
+- Use `Agent` only for read-only, foreground scouts.
+- Send anything that writes files, runs long, nests or belongs in the ledger through `agents-inc dispatch`.
+- Naming a model chooses the rung, not the route. "Use sonnet" still means `agents-inc dispatch --model sonnet`.
+- Subagents get no SessionStart mandate. If an `Agent` prompt may delegate, say in it: sub-delegate only via `agents-inc dispatch`.
+- Verify what an `Agent` call returns yourself, as for any delegate.
 
 <div align="right"><a href="#agents_inc"><sub>^ Back to top</sub></a></div>
 

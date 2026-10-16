@@ -228,6 +228,15 @@ class TestFanOutAndReport(unittest.TestCase):
         text = self._p("width 3, total 6, depth 2") + "RUNG: grunt\n"
         self.assertIn("fan-out-over-ceiling", cdp.check(text))
 
+    def test_decorated_fan_out_line_parses(self):
+        # #66: bullets, backticks, bold marks and trailing punctuation around a valid line.
+        for line in ("- FAN_OUT: width 2, total 4, depth 1", "`FAN_OUT: width 2, total 4, depth 1`",
+                     "**FAN_OUT:** width 2, total 4, depth 1.", "1. FAN_OUT: width 2, total 4, depth 1;"):
+            self.assertEqual(cdp.check(COMPLIANT_PROMPT + line + "\n", model="sonnet"), [], line)
+        self.assertIn("fan-out-over-ceiling",
+                      cdp.check(COMPLIANT_PROMPT + "- `FAN_OUT: width 3, total 6, depth 2`.\n", model="sonnet"))
+        self.assertIn("fan-out", cdp.check(COMPLIANT_PROMPT + "- FAN_OUT: lots.\n", model="sonnet"))
+
     def test_unknown_rung_and_missing_fan_out_accepted(self):
         self.assertEqual(cdp.check(self._p("width 9, total 9, depth 9")), [])
         self.assertEqual(cdp.check(COMPLIANT_PROMPT, model="haiku"), [])
@@ -243,6 +252,19 @@ class TestFanOutAndReport(unittest.TestCase):
         self.assertIn("workers-spawned", cdp.check_report(self.REPORT + "[verified] WORKERS SPAWNED: unknown\n"))
         self.assertIn("workers-spawned",
                       cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0\nWORKERS SPAWNED: 1\n"))
+
+    def test_resume_turn_workers_line(self):
+        self.assertEqual(cdp.check_report(self.REPORT + "WORKERS SPAWNED: 0 this turn (1 total for the run)\n"), [])
+        from agents_inc.install import dispatch
+        self.assertEqual(dispatch.parse_workers_spawned("WORKERS SPAWNED: 0 this turn (1 total for the run)\n"), 0)
+
+    def test_verified_exit_needs_code(self):
+        self.assertIn("verified-exit-without-code",
+                      cdp.check_report(self.REPORT + "[verified] gate exit code N/A\nWORKERS SPAWNED: 0\n"))
+        self.assertIn("verified-exit-without-code",
+                      cdp.check_report(self.REPORT + "the gate exited cleanly [verified]\nWORKERS SPAWNED: 0\n"))
+        self.assertEqual(cdp.check_report(self.REPORT + "[verified] gate rc=0; exited 1 earlier\nWORKERS SPAWNED: 0\n"), [])
+        self.assertEqual(cdp.check_report(self.REPORT + "[inferred] exit code not printed\nWORKERS SPAWNED: 0\n"), [])
 
 
 class TestReportingChain(unittest.TestCase):

@@ -73,7 +73,7 @@ class BrokerTest(unittest.TestCase):
         return final
 
     def _fake_launch(self, rc=0, report=GOOD_REPORT):
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             self.launches.append({"model": model, "cwd": str(cwd), "permission_mode": permission_mode})
             return {"rc": rc, "stdout": report, "stderr": "", "argv": ["claude"], "session_id": "s"}
         return fake
@@ -100,7 +100,7 @@ class BrokerTest(unittest.TestCase):
         rc, err = self._serve()
         self.assertEqual(rc, 0, err)
         res = self._result("r1")
-        self.assertEqual((res["status"], res["dispatch_exit_code"], res["outcome"]), ("green", 0, "green"), res)
+        self.assertEqual((res["status"], res["dispatch_exit_code"], res["outcome"]), ("unverified", 0, "unverified"), res)
         for key in ("schema_version", "request_id", "status", "dispatch_exit_code", "child_run_id", "outcome",
                     "reason", "report_path", "started_at", "finished_at"):
             self.assertIn(key, res)
@@ -109,7 +109,7 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(self.launches[0]["permission_mode"], "default")  # from run.json, not the request
         spec = self._spec()
         self.assertEqual(spec["workers_spawned"], 1)
-        self.assertEqual(spec["request_counts"]["green"], 1)
+        self.assertEqual(spec["request_counts"]["unverified"], 1)
         self.assertEqual(spec["broker"]["stop"], "lead-done")
         self.assertFalse((self.inbox / "r1.request.json").exists())
         # child run lives under the broker-owned workers directory
@@ -203,7 +203,7 @@ class BrokerTest(unittest.TestCase):
         self._request("a1")
         self._request("a2")
         self._serve()
-        self.assertEqual(self._result("a1")["status"], "green")
+        self.assertEqual(self._result("a1")["status"], "unverified")
         self.assertEqual(self._result("a2")["reason"], "fan-out-total-exhausted")
         self.assertEqual(len(self.launches), 1)
         self.assertEqual(self._spec()["workers_spawned"], 1)
@@ -232,7 +232,7 @@ class BrokerTest(unittest.TestCase):
         self._request("l2")
         self._serve()
         self.assertEqual(self._result("l1")["dispatch_exit_code"], 3)
-        self.assertEqual(self._result("l2")["status"], "green")
+        self.assertEqual(self._result("l2")["status"], "unverified")
         self.assertEqual(self._spec()["workers_spawned"], 1)
 
     def test_lead_edit_to_run_json_ignored(self):
@@ -262,7 +262,7 @@ class BrokerTest(unittest.TestCase):
         self.assertFalse((self.run_dir / "p1.result.json").exists())
         os.rename(self.inbox / "p1.request.json.tmp", self.inbox / "p1.request.json")
         self._serve()
-        self.assertEqual(self._result("p1")["status"], "green")
+        self.assertEqual(self._result("p1")["status"], "unverified")
 
     def test_result_never_overwritten(self):
         self._manifest()
@@ -314,7 +314,7 @@ class BrokerTest(unittest.TestCase):
         rc, _ = self._serve(launch=boom)
         self.assertEqual(rc, 0)
         self.assertEqual(self._result("e1")["status"], "red")
-        self.assertEqual(self._result("e2")["status"], "green")
+        self.assertEqual(self._result("e2")["status"], "unverified")
 
     # --- D51 hardening (sol review) -------------------------------------------------
     def test_inbox_missing_or_symlink_exit_2(self):

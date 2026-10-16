@@ -4,9 +4,11 @@ import argparse
 import contextlib
 import io
 import json
+import shutil
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,7 +19,7 @@ from agents_inc.install import cli, dispatch
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]) "
-                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+) outcome=(green|red)( reason=\S+)? out=\S+stdout\.md$")
+                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+) outcome=(green|red|unverified)( reason=\S+)? out=\S+stdout\.md$")
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
 
@@ -53,6 +55,7 @@ class DispatchCliTest(unittest.TestCase):
         data = json.loads(EXAMPLE.read_text())
         if drop:
             data.pop(drop)
+        data.setdefault("GATES", [{"argv": [sys.executable, "-c", "pass"]}])  # a passing gate keeps green paths green
         data.update(extra)
         path = self.root / "slots.json"
         path.write_text(json.dumps(data))
@@ -128,7 +131,8 @@ class DispatchCliTest(unittest.TestCase):
     def _launch(self, model, stdout=GOOD_REPORT, extra=()):
         calls = {}
 
-        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model_, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False,
+                 **_):
             calls.update(kind=kind, model=model_, cwd=cwd, prompt=prompt, permission_mode=permission_mode,
                          effort=effort, codex_write=codex_write)
             argv = dispatch.claude_argv(model_, permission_mode, effort=effort) if kind == "claude" else ["run_codex", model_]
@@ -300,7 +304,7 @@ class DispatchCliTest(unittest.TestCase):
         seen = []
 
         def fake_run_codex(*a, **kw):
-            seen.append((kw.get("tools"), kw.get("write"), kw.get("network")))
+            seen.append((kw.get("tools"), kw.get("write"), kw.get("network")) + ((kw["lead_dir"],) if kw.get("lead_dir") else ()))
             self.assertEqual(kw.get("extra_read"),
                              (self.runs / "pre_dispatch_snapshot.py", self.runs / "snapshot.json"))
             return 0
@@ -313,7 +317,55 @@ class DispatchCliTest(unittest.TestCase):
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True)
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True, codex_network=True)
             dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_network=True)
-        self.assertEqual(seen, [(False, False, False), (True, True, False), (True, True, True), (False, False, False)])
+            # #68: a Lead always has tools, writes per CODEX_WRITE, and never gets network
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, codex_write=True, codex_network=True,
+                            lead_dir=self.root / "lead")
+            dispatch.launch("codex", "sol", "medium", self.repo, "p", self.runs, lead_dir=self.root / "lead")
+        self.assertEqual(seen, [(False, False, False), (True, True, False), (True, True, True), (False, False, False),
+                                (True, True, False, self.root / "lead"), (True, False, False, self.root / "lead")])
+
+    def test_lead_roster_follows_rungs(self):
+        fan = {"width": 1, "total": 2, "depth": 1}
+        allow = {"ALLOWLIST": "sol, luna, haiku, sonnet"}
+        self.assertEqual(dispatch.lead_roster("astra", allow, fan), ["sol", "luna", "sonnet", "haiku"])
+        self.assertEqual(dispatch.lead_roster("terra", allow, fan), ["luna", "haiku"])  # Workhorse: Grunt only
+        self.assertEqual(dispatch.lead_roster("luna", allow, fan), [])
+        self.assertEqual(dispatch.lead_roster("sol", allow, {"width": 0, "total": 0, "depth": 0}), [])
+        self.assertEqual(dispatch.lead_roster("sol", allow, None), [])
+        self.assertEqual(dispatch.lead_roster("sol", {"ALLOWLIST": "none -- do all work yourself"}, fan), [])
+
+    def test_codex_dispatch_with_fan_out_runs_as_lead(self):
+        seen = {}
+
+        def fake(*a, **k):
+            lead = k.get("lead_dir")
+            seen["lead"] = lead
+            seen["run"] = json.loads((lead / "run.json").read_text())
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": None}
+        slots = self._slots(ALLOWLIST="luna, haiku", FAN_OUT="width 1, total 2, depth 1",
+                            ROLE="Workhorse terra, dispatched by CoS (opus) in repo.")
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--slots", str(slots), "--model", "terra", "--cwd", str(self.repo),
+                                    "--run-dir", str(self.runs))
+        self.assertIsNotNone(seen.get("lead"), out)
+        self.assertFalse(seen["lead"].is_relative_to(self.repo))
+        self.assertEqual(seen["run"]["worker_models"], ["luna", "haiku"])
+        self.assertEqual(seen["run"]["fan_out"], {"width": 1, "total": 2, "depth": 1})
+        spec = json.loads((self._run_dir() / "run.json").read_text())
+        self.assertEqual((spec["lead_workers"], spec["lead_dir"]), (["luna", "haiku"], str(seen["lead"])))
+        shutil.rmtree(seen["lead"], ignore_errors=True)
+
+    def test_codex_dispatch_without_fan_out_is_not_a_lead(self):
+        seen = {}
+
+        def fake(*a, **k):
+            seen["lead"] = k.get("lead_dir")
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": None}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            self._main("--slots", str(self._slots(ALLOWLIST="luna")), "--model", "terra", "--cwd", str(self.repo),
+                       "--run-dir", str(self.runs))
+        self.assertIn("lead", seen)
+        self.assertIsNone(seen["lead"])
 
     def test_parse_workers_spawned(self):
         self.assertEqual(dispatch.parse_workers_spawned("x\n- WORKERS SPAWNED: 3\n"), 3)
@@ -360,7 +412,7 @@ class DispatchCliTest(unittest.TestCase):
         (run / "run.json").write_text(json.dumps(spec))
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             seen.update(kind=kind, resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "thread-abc"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
@@ -376,7 +428,7 @@ class DispatchCliTest(unittest.TestCase):
         run = self._run_dir()
         seen = {}
 
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             seen.update(resume=resume, prompt=prompt, effort=effort)
             return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
         with mock.patch.object(dispatch, "launch", side_effect=fake):
@@ -384,6 +436,24 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen, {"resume": "sess-1", "prompt": "go on", "effort": None})
         self.assertTrue((run / "stdout.1.md").is_file())
+
+    def test_resume_accepts_run_dir_path(self):
+        self._launch("haiku")
+        run = self._run_dir()
+        seen = {}
+
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
+            seen.update(resume=resume)
+            return {"rc": 0, "stdout": GOOD_REPORT, "stderr": "", "argv": [], "session_id": "sess-1"}
+        with mock.patch.object(dispatch, "launch", side_effect=fake):
+            rc, out, _ = self._main("--resume", str(run), "--message", "go on")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, {"resume": "sess-1"})
+
+    def test_quota_pause_reason(self):
+        self.assertEqual(dispatch._outcome({}, "NON-COMPLIANT", 0, 1, "workers-spawned-missing", quota=True), ("red", "quota-paused"))
+        self.assertEqual(dispatch._outcome({}, "NON-COMPLIANT", 0, 1, None), ("red", "rc-nonzero"))
+        self.assertTrue(dispatch.QUOTA_RE.search("You've hit your session limit \u00b7 resets 2:50pm"))
 
     def test_allow_paths(self):
         self.assertEqual(dispatch.allow_paths("none (read-only scout)"), [])

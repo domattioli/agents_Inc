@@ -1,6 +1,6 @@
 # Releasing agents_Inc
 
-This runbook covers release 0.3.1: a GitHub tag and release, a Zenodo archive, and the PyPI upload of the `agents-inc` package (import name `agents_inc`). 0.2.0 was the first PyPI upload; 0.3.0 is the first release that installs from pip alone, with no `--source` checkout. Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo archives the GitHub release on its own once its integration is on.
+This runbook covers release 0.3.1: a GitHub tag and release, a Zenodo archive, and the PyPI upload of the `agents-inc` package (import name `agents_inc`). 0.2.0 was the first PyPI upload; 0.3.0 is the first release that installs from pip alone, with no `--source` checkout. Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds, publishes to PyPI, and then creates the GitHub release. Zenodo versions are deposited by hand under the concept DOI (see Zenodo concept DOI below).
 
 ## Decisions
 
@@ -39,13 +39,13 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 ### DOI handling
 
 - `10.5281/zenodo.22670100` is the concept DOI ("Cite all versions"). The operator confirmed it on 2026-10-07 from Zenodo record 23092581, the v0.1.0 version record.
-- Every release keeps that DOI in `CITATION.cff` and the README badge. Zenodo's GitHub integration adds each new GitHub release as a new version under the same concept, with its own version DOI. Version DOIs never go in the citation.
+- Every release keeps that DOI in `CITATION.cff` and the README badge. Each release is a new version under that concept, with its own version DOI. Version DOIs never go in the citation.
 - `.zenodo.json` carries no `doi` or concept field, because one would file the release outside the concept record.
 - `tests/test_release_metadata.py` enforces all three rules. The release workflow runs the suite before it builds, so a changed DOI stops the release.
 
 ## Operator steps (before the tag)
 
-1. Turn on the Zenodo GitHub integration for `domattioli/agents_Inc`, and flip the repository switch on in Zenodo's GitHub settings page.
+1. Keep the Zenodo GitHub integration switch for `domattioli/agents_Inc` off. See the stray record note below.
 2. On PyPI, create a pending trusted publisher with these values:
    - Project name: `agents-inc`
    - Owner: `domattioli`
@@ -66,14 +66,22 @@ The `LICENSE` file is the PolyForm Small Business License 1.0.0, unmodified, fol
 5. Push the tag: `git push origin v0.3.1`.
 6. Watch the `release` workflow in the Actions tab. The `publish` job waits for the `pypi` environment approval if a reviewer was set.
 7. Confirm that https://pypi.org/project/agents-inc/0.3.1/ exists and that the GitHub release lists the wheel and the sdist.
-8. Confirm that Zenodo minted a version DOI for 0.3.1 under the concept DOI.
+8. Deposit the Zenodo version by hand: from a DomI checkout, `python3 skills/zenodo-publish/scripts/zenodo_publish.py --new-version-of <latest record id> --draft`; the operator reviews and publishes the draft. The workflow's `zenodo-concept` job (`tools/check_zenodo_concept.py`) retries for 20 minutes and goes red if the version is missing or sits under another concept; rerun it with `gh run rerun <id> --failed` after the deposit, or run the script locally.
 9. Confirm that the `README.md` DOI badge still shows the concept DOI `10.5281/zenodo.22670100`. Version DOIs never go in the README.
+
+## Stray Zenodo record (0.3.1)
+
+On 2026-10-10 the Zenodo GitHub integration archived v0.3.1 as record 23288172 under a new concept, `10.5281/zenodo.23286662`, instead of `10.5281/zenodo.22670100`.
+
+- Cite `10.5281/zenodo.22670100` only.
+- Fix: the owner deletes record 23288172 from its Zenodo page (owners may delete a record within 30 days of publishing; after that only Zenodo support can). Then deposit 0.3.1 under 22670100 with `--new-version-of 23286808 --draft` and publish the draft.
+- The integration switch stays off, so it cannot start another concept.
 
 ## Rollback
 
 - PyPI: yank the release on pypi.org. Never delete it to reuse the number. PyPI never accepts the same version twice, so fix forward with 0.3.2.
 - GitHub: delete the release with `gh release delete v0.3.1`, then delete the tag with `git push origin :refs/tags/v0.3.1` and `git tag -d v0.3.1`.
-- Zenodo: published records cannot be deleted. Leave the 0.3.1 record and publish 0.3.2 with the fix.
+- Zenodo: the owner may delete a record within 30 days of publishing; after that only Zenodo support can.
 
 ## README EDIT PLAN
 

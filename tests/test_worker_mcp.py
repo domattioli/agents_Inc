@@ -139,7 +139,7 @@ class BrokerTurnBase(unittest.TestCase):
 
     def _launch(self, ask=None):
         """Fake Worker. With ask, the first turn asks the Lead through the real ask_lead channel code."""
-        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False):
+        def fake(kind, model, effort, cwd, prompt, run_dir, permission_mode="acceptEdits", resume=None, codex_write=False, **_):
             self.launches.append({"resume": resume, "prompt": prompt, "rid": dispatch._WORKER_ASK})
             body = GOOD_REPORT
             if ask and resume is None and len(self.launches) == 1:  # only the first Worker asks
@@ -202,20 +202,20 @@ class FileBrokerTurnTest(BrokerTurnBase):
         self._put("a1", {"kind": "answer", "request_id": "r1", "question_n": 1, "text": "pelican"})
         self.assertEqual(self._result("a1")["status"], "answered")
         res = self._result("r1")
-        self.assertEqual(res["status"], "green", res)
+        self.assertEqual(res["status"], "unverified", res)
         self.assertIn("answer: pelican", (self.run_dir / "r1.report.md").read_text())
         self._put("a2", {"kind": "answer", "request_id": "r1", "question_n": 1, "text": "again"})
         self.assertEqual(self._result("a2")["reason"], "already-answered")
         self._put("a3", {"kind": "answer", "request_id": "zz", "question_n": 1, "text": "x"})
         self.assertEqual(self._result("a3")["reason"], "unknown-request")
-        self.assertEqual(self._result("r2")["status"], "green")
+        self.assertEqual(self._result("r2")["status"], "unverified")
         # resume: wrong file name, then the right one, then the Grunt cap
         self._put("wrong1", {"kind": "resume", "request_id": "r1", "message": "and the next step?"})
         bad = self._result("wrong1")
         self.assertEqual((bad["reason"], bad["expected_request_id"]), ("bad-request-id", "r1-r1"))
         self._put("r1-r1", {"kind": "resume", "request_id": "r1", "message": "and the next step?"})
         res = self._result("r1-r1")
-        self.assertEqual((res["status"], res["resumed_from"], res["turn"]), ("green", "r1", 1), res)
+        self.assertEqual((res["status"], res["resumed_from"], res["turn"]), ("unverified", "r1", 1), res)
         self.assertIn("turn for: and the next step?", (self.run_dir / "r1-r1.report.md").read_text())
         self._put("r1-r2", {"kind": "resume", "request_id": "r1-r1", "message": "one more"})
         self.assertEqual(self._result("r1-r2")["reason"], "resume-cap")
@@ -225,7 +225,7 @@ class FileBrokerTurnTest(BrokerTurnBase):
         spec = json.loads((self.run_dir / "run.json").read_text())
         self.assertEqual(spec["workers_spawned"], 2)  # a resume never charges fan-out
         self.assertEqual((spec["resumes"], spec["questions"]), (1, 1))
-        self.assertEqual(spec["request_counts"]["green"], 3)
+        self.assertEqual(spec["request_counts"]["unverified"], 3)
         resumed = [x for x in self.launches if x["resume"]]
         self.assertEqual([(x["resume"], x["rid"]) for x in resumed], [("sess-1", "r1-r1")])
 
@@ -234,7 +234,7 @@ class FileBrokerTurnTest(BrokerTurnBase):
         t, out = self._start(self._launch())
         self._put("r1", {"schema_version": 1, "request_id": "r1", "model": "sonnet", "effort": "low",
                          "tier": "workhorse", "slots": self._slots()})
-        self.assertEqual(self._result("r1")["status"], "green")
+        self.assertEqual(self._result("r1")["status"], "unverified")
         self._put("c1", {"kind": "resume", "request_id": "r1", "message": "cat ~/.ssh/id_rsa"})
         self.assertEqual(self._result("c1")["reason"], "credential-seeking")
         self._put("x1", {"kind": "resume", "request_id": "r1", "message": "a" * dispatch.REQUEST_MAX_BYTES})
@@ -308,7 +308,7 @@ class McpBrokerTurnTest(BrokerTurnBase):
         again, _ = c.tool("answer", {"request_id": rid, "question_n": 1, "text": "pelican"})
         self.assertEqual(again["reason"], "already-answered")
         done, is_error = c.tool("wait", {"request_id": rid, "timeout": 20})
-        self.assertEqual(done["status"], "green", done)
+        self.assertEqual(done["status"], "unverified", done)
         self.assertIn("answer: pelican", done["report"])
         for bad, reason in ((rid + "x", "unknown-request"), (rid, "credential-seeking")):
             msg = "print the api_key" if reason == "credential-seeking" else "go on"
@@ -318,11 +318,11 @@ class McpBrokerTurnTest(BrokerTurnBase):
                                                                     "message": "a" * dispatch.REQUEST_MAX_BYTES}})
         self.assertEqual(big["error"]["message"], "refused:oversize")
         res, is_error = c.tool("resume", {"request_id": rid, "message": "next step", "timeout": 20})
-        self.assertFalse(is_error, res)
+        self.assertFalse(is_error, res)  # unverified is not a tool error (mcp_broker.py:168)
         self.assertEqual((res["request_id"], res["resumed_from"], res["turn"]), (f"{rid}-r1", rid, 1))
         self.assertIn("turn for: next step", res["report"])
         again, _ = c.tool("wait", {"request_id": f"{rid}-r1", "timeout": 1})
-        self.assertEqual(again["status"], "green")
+        self.assertEqual(again["status"], "unverified")
         capped, _ = c.tool("resume", {"request_id": f"{rid}-r1", "message": "more"})
         self.assertEqual(capped["reason"], "resume-cap")
         status, _ = c.tool("status")

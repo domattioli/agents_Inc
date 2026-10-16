@@ -6,8 +6,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import pytest
-
 from agents_inc.install import catalog, models_cmd
 
 ROOT = Path(__file__).resolve().parents[1]

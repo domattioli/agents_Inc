@@ -77,8 +77,8 @@ REPORT_KEYWORDS: dict[str, list[str]] = {
     "gate-exit-codes": ["exit code", "exit=", "rc=", "exit 0", "exit 1"],
 }
 
-# D48: exactly one report line `WORKERS SPAWNED: <integer>`.
-WORKERS_LINE_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*\d+\W*$", re.IGNORECASE)
+# D48: exactly one report line `WORKERS SPAWNED: <integer>`; a resume turn may add ` this turn (<n> total ...)`.
+WORKERS_LINE_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*\d+(?:\s+this turn\b.*)?\W*$", re.IGNORECASE)
 
 # D48 ceilings per rung and model-to-rung table: dispatch_rungs.py.
 _SCRIPT_DIR = str(Path(__file__).resolve().parent)
@@ -132,10 +132,16 @@ def known_rung(text: str, model: str | None = None) -> str | None:
 FAN_OUT_RE = re.compile(r"^fan_out:\s*width\s+(\d+),\s*total\s+(\d+),\s*depth\s+(\d+)\s*$")
 
 
+def _fan_out_line(ln: str) -> str:
+    """Lowercased line without list bullets, backticks, bold marks or trailing punctuation (#66)."""
+    ln = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", ln.lower())
+    return ln.replace("`", "").replace("**", "").strip().rstrip(".;,").strip()
+
+
 def parse_fan_out(text: str) -> tuple[int, int, int] | None:
     """Return (width, total, depth) from the first well-formed FAN_OUT line, else None."""
-    for ln in text.lower().splitlines():
-        m = FAN_OUT_RE.match(ln.strip())
+    for ln in text.splitlines():
+        m = FAN_OUT_RE.match(_fan_out_line(ln))
         if m:
             return int(m.group(1)), int(m.group(2)), int(m.group(3))
     return None
@@ -162,12 +168,19 @@ def parse_contract_line(line: str) -> tuple[str, str | None]:
     return path, (sha.group(1).lower() if sha else None)
 
 
+# A `[verified]` claim about an exit or gate result must carry the exit code it saw.
+VERIFIED_EXIT_RE = re.compile(r"\[verified\].*\b(?:exit(?:ed|s)?|rc)\b|\b(?:exit(?:ed|s)?|rc)\b.*\[verified\]", re.IGNORECASE)
+EXIT_CODE_RE = re.compile(r"\b(?:exit(?:ed|s)?(?:\s+code)?|rc)\s*[=:]?\s*-?\d+", re.IGNORECASE)
+
+
 def check_report(text: str) -> list[str]:
     """Return missing report elements (names from REPORT_KEYWORDS)."""
     lower = text.lower()
     missing = [name for name, kws in REPORT_KEYWORDS.items() if not any(k in lower for k in kws)]
     if sum(1 for ln in text.splitlines() if WORKERS_LINE_RE.match(ln.strip())) != 1:
         missing.append("workers-spawned")
+    if any(VERIFIED_EXIT_RE.search(ln) and not EXIT_CODE_RE.search(ln) for ln in text.splitlines()):
+        missing.append("verified-exit-without-code")
     return missing
 
 
@@ -224,7 +237,7 @@ def check(text: str, tier: str | None = None, prompt_text: str | None = None,
 
     # D48 fan-out: a prompt that carries a `FAN_OUT:` line must give three
     # integers. Prompts written before D48 carry no such line and pass.
-    if any(ln.strip().startswith("fan_out:") for ln in lower.splitlines()):
+    if any(_fan_out_line(ln).startswith("fan_out:") for ln in text.splitlines()):
         if parse_fan_out(text) is None:
             missing.append("fan-out")
         else:

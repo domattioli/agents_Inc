@@ -5,10 +5,12 @@ Supervisor-owned acceptance tests. Fixture payloads and a fake home only.
 import contextlib
 import io
 import json
+import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agents_inc.install import hook, host_wiring
 from agents_inc.install.paths import InstallPaths
@@ -30,6 +32,7 @@ def payload(description, tool="Agent", session="s1", prompt="do the thing", back
 
 class _Home(unittest.TestCase):
     def setUp(self):
+        gate = mock.patch.dict(os.environ, {"AGENTS_INC_AGENT_GATE": "advisory"}); gate.start(); self.addCleanup(gate.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.paths = InstallPaths.for_home(Path(self.tmp.name))
 

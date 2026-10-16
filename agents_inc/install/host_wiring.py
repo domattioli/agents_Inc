@@ -201,6 +201,22 @@ def remove_host_wiring(paths: InstallPaths, receipt: InstallReceipt, journal=Non
             config = _load_json(item.path); updated = _dump_json(strip_hooks(json.loads(json.dumps(config)), paths))
             if updated != _dump_json(config): write_file(item.path, updated, paths, journal)
 
+def unwire_hooks(paths: InstallPaths, host_name: str) -> list[str]:
+    """Remove only owned hook entries from one host's hooks file (backup kept); returns one line per removed handler."""
+    host = next(h for h in HOSTS if h.name == host_name)
+    target = paths.home / host.hooks_file if host.hooks_file else None
+    if target is None or not target.exists(): return []
+    config = _load_json(target)
+    hooks, removed = config.get("hooks"), []
+    for event, groups in (hooks.items() if isinstance(hooks, dict) else ()):
+        for group in groups if isinstance(groups, list) else ():
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list): continue
+            removed += [f"{event} {group.get('matcher') or '*'}: {h['command']}" for h in group["hooks"]
+                        if isinstance(h, dict) and _owned(h.get("command"), paths)]
+    if not removed: return []
+    write_file(target, _dump_json(strip_hooks(config, paths)), paths)
+    return removed
+
 def wiring_problems(paths: InstallPaths) -> list[str]:
     problems = []
     for host in detected(paths.home):

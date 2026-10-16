@@ -5,7 +5,7 @@ Short form of `SKILL.md` for routine dispatch. Read the full `SKILL.md` and `ski
 ## Before any dispatch
 
 1. Dispatch gate. Estimate the direct tool calls the task needs. Three or fewer: do it yourself. Exceptions: one of three or more parallel tasks, large output you should not hold, or code work under a repo dispatch policy. Bare-API wrappers (`gask.sh`, `mask.sh`, `oask.sh`) have no filesystem, shell or repo access. Paste real source into the prompt or pick a delegate that has them.
-2. Vendor gate. Claude (`Agent` tool) is the default. Codex (astra, sol, terra, luna), Gemini, Mistral and OpenRouter open only when the operator names one, a stated capability needs it, or the operator declared budget mode (free grunts only). State one line: `vendor gate: <gate> -> <delegate>`.
+2. Vendor gate picks the rung; the route is always `agents-inc dispatch`. Naming a model chooses the rung, not the route. The `Agent` tool is only for read-only foreground scouts (Explore, Plan); the agent gate may block other uses (D61). Claude is the default vendor. Codex (astra, sol, terra, luna), Gemini, Mistral and OpenRouter open only when the operator names one, a stated capability needs it, or the operator declared budget mode (free grunts only). State one line: `vendor gate: <gate> -> <delegate>`.
 3. Chain resolves by ladder (D46): higher rung manages; same rung, ask the operator one question. State the chain only when surprising.
 
 4. Dispatch through `agents-inc dispatch --slots <json> --model <slug>` (D47). The CoS writes the slots file and pastes nothing: the command renders, lints, snapshots, launches, and verifies, and returns one status line. Files stay in the run directory.
@@ -28,7 +28,8 @@ Pick the cheapest rung that will not get the answer wrong. Escalate on evidence 
 - The supervisor owns the verifier. Do not let a delegate grade its own work.
 - Unknown is not zero. Leave an unestablished price or count absent.
 - Poll every dispatch that outlives one tool call. Exit 0 means returned, not verified.
-- Codex supervisors cannot spawn Claude `Agent` subagents. If the operator asks for that chain, say so and relay from the supervising session.
+- Dispatching from a git worktree: a Codex delegate cannot run git there, because the worktree's metadata sits in the main checkout's `.git`, outside the sandbox. Save the diff to a git-ignored file inside cwd (for example `.scratch/<task>/pr.diff`) and tell the delegate not to run git.
+- A Codex delegate (astra, sol, terra) spawns Workers through the broker when its FAN_OUT total is above 0 and ALLOWLIST names models, on the same terms as a Claude delegate (D57). Its Workers may be Claude or Codex.
 
 ## Dispatch prompt: 14 required elements
 
@@ -40,7 +41,7 @@ MUST lines that are easy to drop:
 
 - State out loud which Step 0 exception you are using, when you use one.
 - Caveman absent: the prompt says `caveman NOT installed -> checked by hand`.
-- Sub-delegation follows D46 ruling 3. A Lead on the Executive or Orchestrator rung may sub-delegate to any lower rung, including Agent-tool Claude models. A Workhorse delegate sub-delegates only to the Grunt rung, with an enumerated allowlist. A Grunt never sub-delegates. The delegate echoes `SUB-DELEGATE MODEL: <slug> -- allowlist match: yes` before any nested call.
+- Sub-delegation follows D46 ruling 3. A Lead on the Executive or Orchestrator rung may sub-delegate to any lower rung, only via `agents-inc dispatch`; never the Agent tool (D59). A Workhorse delegate sub-delegates only to the Grunt rung, with an enumerated allowlist. A Grunt never sub-delegates. The delegate echoes `SUB-DELEGATE MODEL: <slug> -- allowlist match: yes` before any nested call.
 - `LESSON-CANDIDATE` relays one rung up, never skipping. A scout check for duplicates and contradictions runs before it reaches the Executive. Only the Executive presents it to the operator.
 - Dispatch work that touches an agents_Inc issue: fetch SKILL.md Step 11 first.
 - `poll.sh` reports state, never content. Do not pipe a delegate's log into context.
@@ -56,4 +57,5 @@ Lint (mandatory, D41): `agents-inc dispatch` lints every prompt it renders; by h
 - GREEN with no supervisor harness output: treat as RED.
 - Ambiguous gate: treat as RED.
 - Permission classifier blocks a dispatch: report it, do not rephrase around it.
+- Harness "requires approval" on a delegate call is a missing grant (#54, D58), not a policy refusal: stop, record the exact command, hand back, never route around it. One plain command per Bash call (no `cd`, `&&`, `;`, pipes, loops, shell variables); a compound command matches no grant.
 - Operator changes the premise: stop the running delegate first.
