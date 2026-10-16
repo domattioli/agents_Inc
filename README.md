@@ -41,7 +41,7 @@ Cheap models take routine work, and costlier models manage. An author never grad
 
 ## 3. Installation
 
-Requirements: Python 3.10 or later, Bash 3.2 or later, `jq`, and the Claude Code CLI signed in to an Anthropic subscription. The Codex CLI is optional; when present, it serves the Codex rungs and cross-vendor review.
+Requirements: Python 3.10 or later, Bash 3.2 or later, `jq`, `curl`, and the Claude Code CLI signed in to an Anthropic subscription. The Codex CLI is optional; when present, it serves the Codex rungs and cross-vendor review.
 
 ```bash
 pip install agents-inc

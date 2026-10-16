@@ -11,6 +11,7 @@ import http.client
 import http.server
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -179,6 +180,7 @@ class BridgeThreadIdTest(unittest.TestCase):
         self.assertIn(global_before, called_cmd)
 
 
+@unittest.skipUnless(shutil.which("curl"), "needs curl")
 class AskShBodyShapeTest(unittest.TestCase):
     """T046: ask.sh's POST body omits thread_id entirely when --thread is absent."""
 

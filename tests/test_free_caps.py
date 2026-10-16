@@ -3,11 +3,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-import pytest
-from tests._free012 import hermetic  # noqa: F401 - imported for use in tests
-
-
-pytestmark = pytest.mark.usefixtures("hermetic")
+from tests._free012 import fixture, hermetic, parametrize, suite  # noqa: F401
 
 
 class TestCallsToday:
@@ -451,11 +447,5 @@ class TestProbeOpenRouterFreeTier:
 
 
 def load_tests(loader, tests, pattern):
-    """Expose this pytest-style file to `unittest discover` (see _pytest_bridge)."""
-    import importlib.util
-    import pathlib
-    spec = importlib.util.spec_from_file_location(
-        "_pytest_bridge", pathlib.Path(__file__).with_name("_pytest_bridge.py"))
-    bridge = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bridge)
-    return bridge.bridge_suite(__file__)
+    """Expose this fixture-style file to `unittest discover` (see _free012.suite)."""
+    return suite(globals(), autouse=("hermetic",))
