@@ -1,6 +1,6 @@
 ---
 name: consensus-debate
-version: 0.2.0
+version: 0.2.1
 benchmark: rounds_to_consensus_and_fake_consensus_rate
 description: Run a moderated two-model debate (e.g. fable vs astra) on a fixed set of questions until both sign the same consensus block or the moderator calls deadlock. Use when the operator asks two models to "discuss until they agree", wants a cross-vendor second opinion that converges, or needs a decision stress-tested by two strong reviewers. Covers brief writing, round protocol, crossed-round repair, wheel-spin and scope-creep stops, resume-not-rebrief transport, and transcript capture for lessons learned.
 ---
@@ -25,11 +25,11 @@ Evidence base: 1 run (ollama in agents_Inc, fable vs astra @ medium, 2026-09-22)
 | debater B | other vendor preferred (Codex astra/sol) | same |
 | operator | human | settles deadlock |
 
-Vendor gate: non-Claude debater needs `workerbee` Step 0.5 gate line (normally (a) operator asked). Effort default medium both sides unless operator names level.
+Vendor gate: non-Claude debater needs `workerbee` Step 0.5 gate line (normally (a) operator asked). Effort default medium for every debater, every vendor (opus included), unless operator names level for this debate.
 
 ## Transport — resume, never re-brief
 
-- Claude: `Agent(model=...)` R1 → `SendMessage` same agent R2+.
+- Claude: `Agent(subagent_type=opus-medium)` (or sonnet/haiku with no effort pin) R1 → `SendMessage` same agent R2+. `Agent` has no effort param → effort comes from the agent def; never use an effort-pinned def (e.g. `opus-xhigh`) unless operator named that level.
 - Codex: `agents-inc` launcher if installed. Else R1 `codex exec -m <slug> -c model_reasoning_effort=<lvl> -s read-only -C <repo> --json -o <out.md> - < prompt.md` → grab `thread_id` from first JSON line. R2+ `codex exec resume <thread_id> -m <slug> -c model_reasoning_effort=<lvl> -c sandbox_mode=read-only --json -o <out.md> - < next.md`, run from repo dir (resume has no `-s`, no `-C`).
 - Each round sends ONLY moderator notes + peer's latest msg.
 - Token accounting: Codex `turn.completed` usage + Claude `subagent_tokens` = CUMULATIVE per thread, not per turn → subtract prior round. Resume replays whole thread each turn (mostly cache hits); input grows ~thread size per round.
