@@ -1,7 +1,7 @@
 """Pre-dispatch baseline: capture and verify the working tree a delegate inherits.
 
 Usage: python3 pre_dispatch_snapshot.py capture <out.json>
-       python3 pre_dispatch_snapshot.py verify <out.json> [--allow <path>]...
+       python3 pre_dispatch_snapshot.py verify <out.json> [--allow <path>...]...
 
 Run from inside the repository. capture writes JSON with keys time, head,
 porcelain (`git status --porcelain`), and sha256 (repo-relative path -> hex
@@ -134,11 +134,14 @@ def main(argv: list[str]) -> int:
     elif len(argv) >= 2 and argv[0] == "verify":
         cmd, path, rest, allow = "verify", argv[1], argv[2:], []
         while rest:
-            if rest[0] != "--allow" or len(rest) < 2:
+            # `--allow a b c` and `--allow a --allow b` both work; each --allow needs a path.
+            if rest[0] != "--allow" or len(rest) < 2 or rest[1] == "--allow":
                 print(__doc__, file=sys.stderr)
                 return 2
-            allow.append(rest[1])
-            rest = rest[2:]
+            rest = rest[1:]
+            while rest and rest[0] != "--allow":
+                allow.append(rest[0])
+                rest = rest[1:]
     else:
         print(__doc__, file=sys.stderr)
         return 2

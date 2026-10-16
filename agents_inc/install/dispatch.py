@@ -203,6 +203,19 @@ def tool_grants(spec: dict, gates: list | None, bash_allow: list, run_dir) -> tu
     return list(dict.fromkeys(allowed)), list(dict.fromkeys(disallowed))
 
 
+def grants_section(allowed: list, disallowed: list, bash_allow: list) -> str:
+    """The GRANTS block rendered into every Claude delegate prompt so a missing grant reads as one (#54)."""
+    prefixes = ", ".join(f"`{p}`" for p in bash_allow) or "none"
+    return ("\nGRANTS (fixed by dispatch for this run; the harness allows exactly these tools):\n"
+            f"ALLOWED: {', '.join(allowed) or 'none'}\n"
+            f"BASH_ALLOW prefixes (each also allowed with arguments): {prefixes}\n"
+            f"DENIED: {', '.join(disallowed) or 'none'}\n"
+            "A call outside ALLOWED stops with a harness message such as \"This command requires approval\": that is a "
+            "missing grant, not a policy refusal. Stop, record the exact command, and hand back; never route around it. "
+            "One plain command per Bash call: no cd, &&, ;, pipes, loops, or shell variables; a compound command "
+            "matches no grant.\n")
+
+
 def ceiling_violation(allowed: list, own: list = ()) -> str | None:
     """D60: the first allowed rule the Lead does not hold, else None. own: this run's verifier rules (run-specific)."""
     if _GRANT_CEILING is None:
@@ -874,6 +887,8 @@ def run(args) -> int:
     verifier = run_dir / "pre_dispatch_snapshot.py"
     _wtext(verifier, (SCRIPTS / "pre_dispatch_snapshot.py").read_text(encoding="utf-8"))
     prompt = prompt.rstrip("\n") + f"\nSNAPSHOT VERIFIER: `python3 {verifier} verify {spec['snapshot']}` (use this copy)\n"
+    if kind == "claude":
+        prompt += grants_section(spec["allowed_tools"], spec["disallowed_tools"], bash_allow)
     if _BROKER_SAFE_WRITES and _WORKER_ASK:
         prompt += ASK_LEAD_NOTE
     spec["fan_out"] = parse_fan_out(prompt)
