@@ -57,4 +57,5 @@ Lint (mandatory, D41): `agents-inc dispatch` lints every prompt it renders; by h
 - GREEN with no supervisor harness output: treat as RED.
 - Ambiguous gate: treat as RED.
 - Permission classifier blocks a dispatch: report it, do not rephrase around it.
+- Harness "requires approval" on a delegate call is a missing grant (#54, D58), not a policy refusal: stop, record the exact command, hand back, never route around it. One plain command per Bash call (no `cd`, `&&`, `;`, pipes, loops, shell variables); a compound command matches no grant.
 - Operator changes the premise: stop the running delegate first.

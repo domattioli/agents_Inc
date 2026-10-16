@@ -78,6 +78,29 @@ class SnapshotPathTests(unittest.TestCase):
         r = _run(self.repo, "verify", self.snap, "--allow", "new/out.md")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def _two_new_files(self):
+        self._commit("f")
+        self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)
+        (self.repo / "a.md").write_text("x\n", encoding="utf-8")
+        (self.repo / "b.md").write_text("x\n", encoding="utf-8")
+
+    def test_allow_accepts_multiple_paths_after_one_flag(self):
+        self._two_new_files()
+        r = _run(self.repo, "verify", self.snap, "--allow", "a.md", "b.md")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("UNCHANGED", r.stdout)
+
+    def test_allow_repeated_flag_still_works(self):
+        self._two_new_files()
+        r = _run(self.repo, "verify", self.snap, "--allow", "a.md", "--allow", "b.md")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_allow_without_path_is_usage_error(self):
+        self._two_new_files()
+        self.assertEqual(_run(self.repo, "verify", self.snap, "--allow").returncode, 2)
+        r = _run(self.repo, "verify", self.snap, "--allow", "--allow", "a.md")
+        self.assertEqual(r.returncode, 2)
+
     def test_unallowed_file_in_new_directory_detected(self):
         self._commit("f")
         self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)

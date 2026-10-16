@@ -223,6 +223,62 @@ class ToolGrantTest(GrantsBase):
         self.assertEqual(self.calls, [])
 
 
+class GrantsSectionTest(GrantsBase):
+    """#54: dispatch renders the fixed grants into every Claude delegate prompt."""
+    HEADER = "GRANTS (fixed by dispatch for this run; the harness allows exactly these tools):"
+    PREFIX = "gh issue view 54 -R domattioli/agents_Inc"
+
+    def _prompt(self) -> str:
+        return (self._run_dir() / "prompt.md").read_text()
+
+    def test_prompt_lists_every_allowed_and_denied_rule(self):
+        rc, out, _ = self._dispatch()
+        self.assertEqual(rc, 0, out)
+        spec, prompt = self._spec(), self._prompt()
+        self.assertIn(self.HEADER, prompt)
+        for rule in spec["allowed_tools"] + spec["disallowed_tools"]:
+            self.assertIn(rule, prompt)
+        self.assertIn("ALLOWED: " + ", ".join(spec["allowed_tools"]), prompt)
+        self.assertIn("DENIED: " + ", ".join(spec["disallowed_tools"]), prompt)
+        self.assertIn("requires approval", prompt)
+
+    def test_bash_allow_prefix_rendered_with_its_rules(self):
+        self._dispatch(BASH_ALLOW=[self.PREFIX])
+        prompt = self._prompt()
+        self.assertIn(f"`{self.PREFIX}`", prompt)
+        self.assertIn(f"Bash({self.PREFIX} *)", prompt)
+        self.tearDown(), self.setUp()
+        rc, out, _ = self._main("--slots", str(self._slots(BASH_ALLOW=[self.PREFIX])), "--model", "sonnet",
+                                "--cwd", str(self.repo), "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 0, out)
+        prompt = self._prompt()
+        self.assertIn(f"`{self.PREFIX}`", prompt)
+        self.assertIn(f"Bash({self.PREFIX} *)", prompt)
+
+    def test_empty_grants_render_none(self):
+        text = dispatch.grants_section([], [], [])
+        self.assertIn("ALLOWED: none", text)
+        self.assertIn("prefixes (each also allowed with arguments): none", text)
+        self.assertIn("DENIED: none", text)
+        self._dispatch()
+        line = next(ln for ln in self._prompt().splitlines() if ln.startswith("BASH_ALLOW prefixes"))
+        self.assertTrue(line.endswith(": none"), line)
+
+    def test_codex_prompt_has_no_grants(self):
+        rc, out, _ = self._dispatch("terra")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("GRANTS (", self._prompt())
+
+    def test_broker_child_prompt_has_grants(self):
+        dispatch._BROKER_SAFE_WRITES = True
+        try:
+            rc, out, _ = self._dispatch()
+        finally:
+            dispatch._BROKER_SAFE_WRITES = False
+        self.assertEqual(rc, 0, out)
+        self.assertIn(self.HEADER, self._prompt())
+
+
 class GateParseTest(unittest.TestCase):
     def test_parse_gates_defaults_and_forms(self):
         self.assertEqual(RD.parse_gates(None), (None, None))

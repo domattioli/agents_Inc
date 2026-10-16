@@ -602,6 +602,14 @@ rephrase to slip past. A supervisor's value is that its reports are true;
 a workaround that evades a user's guardrail destroys that for one task's
 convenience.
 
+Under `agents-inc dispatch` a Claude delegate's tools are the GRANTS section of
+its prompt (#54, D58). A harness "requires approval" block means a missing
+grant. It is not a policy refusal and not a reason to try another tool. Run
+one plain command per Bash call, with no `cd`, `&&`, `;`, pipes, loops, or
+shell variables, because a compound command matches no grant. On a block the
+delegate stops, records the exact command, hands back, and never routes around
+it. The dispatcher adds the prefix to BASH_ALLOW and resumes or redispatches.
+
 Same for a delegate's RED. A RED reported honestly is a good outcome. Say
 so **in the dispatch prompt** — delegates round up to GREEN when they
 believe RED is failure. The gate wording that worked:
