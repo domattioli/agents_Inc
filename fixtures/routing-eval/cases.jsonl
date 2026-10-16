@@ -33,7 +33,7 @@
 {"id": "r033", "task": "Scout: does the rl-quadmesh repo have a requirements.txt or a pyproject.toml?", "source": "written", "category": "scouting", "vague": false, "suggested_rung": "grunt", "rung": null}
 {"id": "r034", "task": "Reformat all shell scripts in scripts/ with shfmt, no logic changes.", "source": "written", "category": "routine_coding", "vague": false, "suggested_rung": "grunt", "rung": null}
 {"id": "r035", "task": "Tell me the last 5 commits on the development branch of DomI.", "source": "written", "category": "agentic_tool_use", "vague": false, "suggested_rung": "grunt", "rung": null}
-{"id": "r036", "task": "Replace the hard-coded path /Users/domattioli in scripts/*.sh with $HOME.", "source": "written", "category": "routine_coding", "vague": false, "suggested_rung": "grunt", "rung": null}
+{"id": "r036", "task": "Replace the hard-coded home path in scripts/*.sh with $HOME.", "source": "written", "category": "routine_coding", "vague": false, "suggested_rung": "grunt", "rung": null}
 {"id": "r037", "task": "Delete the stale branch feat/old-statusline on origin.", "source": "written", "category": "agentic_tool_use", "vague": false, "suggested_rung": "grunt", "rung": null}
 {"id": "r038", "task": "clean up the scripts folder", "source": "written", "category": "routine_coding", "vague": true, "suggested_rung": "grunt", "rung": null}
 {"id": "r039", "task": "Write a unit test for the parse_signature function covering the parse_error case.", "source": "written", "category": "routine_coding", "vague": false, "suggested_rung": "grunt", "rung": null}
