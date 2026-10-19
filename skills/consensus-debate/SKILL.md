@@ -21,7 +21,7 @@ Evidence base: 1 run (ollama in agents_Inc, fable vs astra @ medium, 2026-09-22)
 | role | who | job |
 |---|---|---|
 | moderator | this session | brief, relay, verify, stop |
-| debater A | Claude via `Agent`, resumed w/ `SendMessage` | answer, rebut, revise |
+| debater A | Claude (transport below: `agents-inc dispatch` when installed) | answer, rebut, revise |
 | debater B | other vendor preferred (Codex astra/sol) | same |
 | operator | human | settles deadlock |
 
@@ -29,7 +29,8 @@ Vendor gate: non-Claude debater needs `workerbee` Step 0.5 gate line (normally (
 
 ## Transport — resume, never re-brief
 
-- Claude: `Agent(subagent_type=opus-medium)` (or sonnet/haiku with no effort pin) R1 → `SendMessage` same agent R2+. `Agent` has no effort param → effort comes from the agent def; never use an effort-pinned def (e.g. `opus-xhigh`) unless operator named that level.
+- Claude, agents-inc installed: R1 `agents-inc dispatch --slots <json> --model <opus|sonnet|haiku|fable> --effort <lvl>` → R2+ `agents-inc dispatch --resume <run> --message <text>` (same session, ledgered; D61 enforce blocks `Agent` for debaters, `opus-xhigh` never allowed). Effort = `--effort`, default medium, other level only if operator named it.
+- Claude, no agents-inc: `Agent(subagent_type=opus-medium)` (or sonnet/haiku with no effort pin) R1 → `SendMessage` same agent R2+. `Agent` has no effort param → effort comes from the agent def; never use an effort-pinned def (e.g. `opus-xhigh`) unless operator named that level.
 - Codex: `agents-inc` launcher if installed. Else R1 `codex exec -m <slug> -c model_reasoning_effort=<lvl> -s read-only -C <repo> --json -o <out.md> - < prompt.md` → grab `thread_id` from first JSON line. R2+ `codex exec resume <thread_id> -m <slug> -c model_reasoning_effort=<lvl> -c sandbox_mode=read-only --json -o <out.md> - < next.md`, run from repo dir (resume has no `-s`, no `-C`).
 - Each round sends ONLY moderator notes + peer's latest msg.
 - Token accounting: Codex `turn.completed` usage + Claude `subagent_tokens` = CUMULATIVE per thread, not per turn → subtract prior round. Resume replays whole thread each turn (mostly cache hits); input grows ~thread size per round.

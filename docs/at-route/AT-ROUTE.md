@@ -18,6 +18,22 @@ Default is the hook form. It is the only form that costs the session model nothi
 
 Shell note for the `!` form: zsh expands `?` and `*` before the command runs, so `! @luna ready?` fails with `no matches found`. Quote the question, or add `setopt no_nomatch` to `~/.zshrc`.
 
+## Names
+
+The names below follow D63. The family name is consult; "side question" is the old name.
+
+| Form | Name | Status |
+|---|---|---|
+| `@a q` | Sidebar | Works today |
+| `@@a q` | Sync | Claude aliases: works today, one persistent side session. Codex aliases: one fresh tool-free run per question today; the persistent thread is planned, D62 PR A |
+| `@@a /new` | Ends a Codex Sync | Planned, D62 PR A; Claude aliases reject slash commands |
+| `@a! q` | Follow-up | Planned, D62 PR A |
+| `@inbox` | In-tray | Planned, D62 PR A |
+| `@<handle> q` | Sidebar with a live Worker | Proposed, D63 |
+| `@@<handle> q` | Sync with a live Worker | Proposed, D63 |
+| `@<handle>! note` | Memo | Proposed, D63 |
+| `@standup` | Stand-up | Proposed, D63 |
+
 ## Which form saves the most session-model tokens
 
 Measured 2026-09-23 from this session's transcript, about 195k tokens of context at the time. The delegate does not matter here; only whether the session model takes a turn.
@@ -56,7 +72,7 @@ Default is the single `@` form. Use `@@` only when the next thing you ask the se
 Added 2026-10-01. `@@haiku`, `@@sonnet`, `@@opus`, and `@@fable` no longer start a fresh `claude -p` per question. The hook prints instructions, and the session model:
 
 1. Looks for a peer session named `at-<alias>` with Claude Code's native `ListAgents` tool.
-2. Starts one if it is missing: `claude --bg -n at-<alias> --model <id> --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit" "<bootstrap prompt>"`.
+2. Starts one if it is missing: `claude --bg -n at-<alias> --model <id> --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit,Bash" "<bootstrap prompt>"`. Bash is denied so a side session cannot write files through the shell (fixed 2026-10-18).
 3. Sends the question with `SendMessage` and ends its turn.
 4. Relays the reply, which arrives as a cross-session message, with the `<alias> ▸` prefix.
 
