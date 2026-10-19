@@ -6,6 +6,18 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Dispatch fails loud (spec 022, D64). New red reasons: `blocked`, `timeout`, `rc-nonzero`, `launch-failed`, `snapshot-tampered`, `snapshot-error`. The status line gains `detail=`, `report=none`, `snapshot=none` and `snapshot=TAMPERED`.
+- `agents-inc dispatch` exits 69 when blocked and 75 on quota pause. The broker still reports both as red.
+- Scope gate verifies against a trusted snapshot copy outside the delegate's cwd (`<state>/dispatch-runs/<run-id>/`, mode 0700).
+- Every dispatched turn (Claude and Codex) runs under a deadline: `AGENTS_INC_TURN_TIMEOUT_S`, default 3600, `0` for none.
+- Doctor reports `WB_CLAUDE_NOT_FOUND` and warns `WB_SANDBOX_NESTED`; the session-start hook shows warnings.
+- `FILES_IN_SCOPE` glob patterns are refused (`refused-scope`).
+- Snapshot trust fails closed: a failed trusted copy, a relabelled or mismatched run.json, or a missing private record turns the run red. Cancelled runs kill and reap the delegate's process group.
+- The gate and BASH_ALLOW credential screen refuses `.env` files of any name, key files with suffixes, secret basenames, secret env-var names and token flags. `test_token_refresh.py` still passes.
+- A Codex 429 or "model is at capacity" exits 75. A stray 429 on a clean turn no longer counts as a quota pause.
+
 ## [0.4.0] — 2026-10-16
 
 ### Added

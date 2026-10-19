@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -401,13 +402,59 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
     return [base[0], "exec", "resume", thread_id] + flags + [(" " + message) if message.startswith("-") else message]
 
 
+# One quota/rate-limit pattern for run_codex and for `agents-inc dispatch` (which adds the Claude phrases).
+QUOTA_PATTERN = r"usage limit|rate limit|too many requests|\b429\b|model is at capacity"
+QUOTA_RE = re.compile(QUOTA_PATTERN, re.IGNORECASE)
+
+
+def kill_and_reap(proc) -> None:
+    """Kill the child's whole process group and wait for the child (cancellation cleanup)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        proc.wait()
+    except Exception:
+        pass
+
+
+def _run_with_deadline(argv, prompt, env, timeout_s, extra) -> subprocess.CompletedProcess:
+    """Run argv in its own session; on expiry kill the whole group and return rc 124. Any other exception during
+    communicate (KeyboardInterrupt included) kills the group and reaps the child before it propagates."""
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=env, start_new_session=True, **extra)
+    try:
+        out, err = proc.communicate(input=prompt, timeout=timeout_s)
+        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            out, err = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:  # a grandchild holds the pipes open: give up on the output
+            for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
+            out, err = "", ""
+        return subprocess.CompletedProcess(argv, 124, out or "", f"{err or ''}turn timeout after {timeout_s:g} s")
+    except BaseException:
+        kill_and_reap(proc)
+        raise
+
+
 def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]],
               no_tools: bool = False, write: bool = False, tools: bool = False, write_dir: Path | None = None,
               env: dict | None = None, lead_dir: Path | None = None, home_repo: str | None = None,
               extra_deny: tuple = (), isolate_home: bool = False, thread_out: dict | None = None,
               resume_thread: str | None = None, worker: tuple | None = None, extra_read: tuple = (),
-              network: bool = False) -> int:
-    """thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
+              network: bool = False, timeout_s: float | None = None) -> int:
+    """timeout_s: kill the child's process group after that many seconds and return 124 (None: no deadline).
+    thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
     message, not the JSONL, to stdout. resume_thread: continue that thread with the prompt as the next turn."""
     if receipt.codex_path is None:
         raise FileNotFoundError("WB_CLI_NOT_FOUND: Codex not installed (receipt has no codex_path); install codex, then run agents-inc repair")
@@ -477,16 +524,19 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
             argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
                                     lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read,
                                     network=network, tool_tmp=tool_tmp)
-        result = subprocess.run(
-            argv,
-            input=prompt,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-            env=env,  # None inherits (CLI default); the D51 broker passes a scrubbed env
-            **extra,
-        )
+        if timeout_s:
+            result = _run_with_deadline(argv, prompt, env, timeout_s, extra)
+        else:
+            result = subprocess.run(
+                argv,
+                input=prompt,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                env=env,  # None inherits (CLI default); the D51 broker passes a scrubbed env
+                **extra,
+            )
         stdout, json_errors = result.stdout, []
         if json_mode:
             tid = parse_thread_id(result.stdout)
@@ -531,7 +581,7 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         stripped = line.lstrip()
         if stripped.startswith('ERROR:'):
             # Case-insensitive regex match for rate limit patterns
-            if re.search(r'usage limit|rate limit|too many requests|\b429\b', stripped, re.IGNORECASE):
+            if QUOTA_RE.search(stripped):
                 # Extract retry time from this ERROR line
                 match = re.search(r'try again at ([^\.\n]+)', line)
                 retry_time = match.group(1) if match else "unknown"

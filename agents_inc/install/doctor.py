@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from . import catalog
@@ -60,7 +61,10 @@ def _install_stale(paths: InstallPaths, release_hash: str) -> list[str]:
     return ["INSTALL_STALE"] if digest != release_hash else []
 
 def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run,
-                  models: list[dict] | None = None, catalog_path: Path | None = None) -> DoctorReport:
+                  models: list[dict] | None = None, catalog_path: Path | None = None,
+                  which=shutil.which, sandbox_probe=None) -> DoctorReport:
+    from .dispatch import WORKER_PATH, sandbox_available, worker_env  # lazy: dispatch is heavy and optional here
+    sandbox_probe = sandbox_probe or sandbox_available
     codes = []; warnings = []
     try: receipt = InstallReceipt.load(paths.receipt)
     except (OSError, ValueError):
@@ -77,6 +81,9 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
             if not (root / name).is_symlink(): codes.append("WB_SKILL_MISSING")
     # Skills load lazily; without the always-on block and hooks no session learns to delegate.
     if wiring_problems(paths): codes.append("WB_HOST_UNWIRED")
+    # Claude is the required provider: a Worker launch needs the CLI on the same PATH worker_env gives it.
+    if which("claude", path=WORKER_PATH + os.pathsep + os.environ.get("PATH", "")) is None: codes.append("WB_CLAUDE_NOT_FOUND")
+    if sys.platform == "darwin" and not sandbox_probe(): warnings.append("WB_SANDBOX_NESTED")  # inside another sandbox
     warnings.extend(_hook_drift(paths))
     if models is None:  # the catalog of the home being checked; CODEX_HOME still wins. [] stops a re-read of the default.
         default = catalog.cache_path({**os.environ, "HOME": str(paths.home)})
@@ -88,7 +95,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
         models = json.loads((release / "agents_inc/models.json").read_text()).get("models", {})
         efforts = {slug: row["supported_efforts"] for slug, row in models.items() if row.get("provider") == "codex" and "supported_efforts" in row}
         argv = build_codex_argv(receipt.codex_path, live_model, "medium", Path.cwd(), efforts)
-        completed = runner(argv, input="Reply PONG", text=True, capture_output=True, env={}, check=False)
+        completed = runner(argv, input="Reply PONG", text=True, capture_output=True, env=worker_env(str(receipt.codex_path)), check=False)
         output = (completed.stdout or "") + (completed.stderr or "")
         code = "READY" if completed.returncode == 0 and "PONG" in output else ("WB_AUTH_REQUIRED" if "auth" in output.lower() or "login" in output.lower() else "WB_MODEL_UNAVAILABLE")
         live = {"code": code, "executable": str(receipt.codex_path), "isolated": True}

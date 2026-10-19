@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from agents_inc.install import cli, dispatch
+from tests.test_dispatch_broker import popen_from_run
 
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
@@ -158,7 +159,8 @@ class ToolGrantTest(GrantsBase):
         fake = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "ok", "session_id": "s"}), stderr="")
         child = self.root / "child"
         child.mkdir(exist_ok=True)
-        with mock.patch.object(dispatch.subprocess, "run", return_value=fake) as run, \
+        run = mock.Mock(return_value=fake)
+        with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(run)), \
                 mock.patch.object(dispatch, "sandbox_available", return_value=True):
             dispatch.launch("claude", "haiku", "low", self.repo, "p", child, **kw)
         seen["argv"] = run.call_args.args[0]
@@ -332,8 +334,12 @@ class GateRefusalTest(GrantsBase):
         (self.repo / "link").symlink_to(outside)
         cases = {
             "danger": [{"argv": ["git", "push"]}],
-            "credential": [{"argv": [sys.executable, "-c", "print('token')"]}],
+            "credential": [{"argv": [sys.executable, "-c", "print(open('.env').read())"]}],  # 022: paths, not words
             "credential-path": [{"argv": ["cat", "~/.ssh/id_rsa"]}],
+            "credential-basename-1": [{"argv": ["cat", "credentials.json"]}],
+            "credential-basename-2": [{"argv": ["cat", "/tmp/token"]}],
+            "credential-basename-3": [{"argv": ["cat", "api_key.txt"]}],
+            "credential-basename-4": [{"argv": ["cat", ".secrets"]}],
             "absolute-cwd": [{"argv": PASS, "cwd": "/tmp"}],
             "dotdot-cwd": [{"argv": PASS, "cwd": "../x"}],
             "symlink-cwd": [{"argv": PASS, "cwd": "link"}],

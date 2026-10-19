@@ -22,6 +22,7 @@ from agents_inc.install.transaction import TransactionJournal
 ALIASES = ("haiku", "sonnet", "opus", "fable", "astra", "sol", "terra", "luna", "gemini", "mistral", "openrouter")
 HOOK_TEXT = "#!/usr/bin/env bash\n# at_route.sh - UserPromptSubmit hook. Routes \"@<alias> <question>\" to a cheap model.\nexit 0\n"
 LEGACY_COMMAND = "bash ~/.claude/scripts/at_route.sh"
+HOST = {"which": lambda *a, **k: "/usr/bin/claude", "sandbox_probe": lambda: True}  # results must not depend on the host
 
 
 class AtRouteInstallTest(unittest.TestCase):
@@ -168,11 +169,11 @@ class AtRouteInstallTest(unittest.TestCase):
     # FR-006
     def test_doctor_warns_on_drift_only(self):
         self._install()
-        clean = check_install(self.paths)
+        clean = check_install(self.paths, **HOST)
         self.assertNotIn("WB_HOOK_DRIFT", clean.warnings)
         self.assertNotIn("WB_HOOK_DRIFT_UNCHECKED", clean.warnings)
         (self.source / "skills/codex-bridge/scripts/at_route.sh").write_text(HOOK_TEXT + "# edited\n")
-        drift = check_install(self.paths)
+        drift = check_install(self.paths, **HOST)
         self.assertIn("WB_HOOK_DRIFT", drift.warnings)
         self.assertNotIn("WB_HOOK_DRIFT", drift.codes)
         self.assertEqual(drift.ready, clean.ready)
@@ -182,7 +183,7 @@ class AtRouteInstallTest(unittest.TestCase):
         record = self.paths.state / "source-checkout"
         self.assertEqual(record.read_text().strip(), str(self.source.resolve()))
         record.unlink()
-        report = check_install(self.paths)
+        report = check_install(self.paths, **HOST)
         self.assertIn("WB_HOOK_DRIFT_UNCHECKED", report.warnings)
         self.assertNotIn("WB_HOOK_DRIFT", report.warnings)
 
@@ -229,6 +230,14 @@ class AtRouteCodexRouteTest(unittest.TestCase):
         args, prompt = self.log.read_text().split("\n", 1)
         self.assertEqual(args, f"run --model terra --no-tools --cwd {work}")
         self.assertEqual(prompt, "what is two plus two")
+
+    def test_persistent_side_session_cannot_run_bash(self):
+        payload = json.dumps({"prompt": "@@haiku what is two plus two", "cwd": str(self.root)})
+        res = self._route(stdin=payload)
+        text = res.stdout + res.stderr
+        self.assertIn("claude --bg -n at-haiku", text, text)
+        self.assertIn('--disallowedTools "Edit,Write,NotebookEdit,Bash"', text)
+        self.assertIn('--allowedTools "Read,Grep,Glob"', text)
 
     def test_resolve_prints_pinned_slug(self):
         res = self._route("--resolve", "luna")

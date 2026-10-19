@@ -212,7 +212,8 @@ class Broker:
         else:
             req, reason = D._validate_fields(req, self.spec, rid)
         if req is None:
-            self.spec["request_counts"]["refused"] += 1
+            with D._SPEC_LOCK:
+                self.spec["request_counts"]["refused"] += 1
             now = D._now()
             D._write_request_result(self.run_dir, rid, {
                 "status": "refused", "dispatch_exit_code": D.REQ_REFUSED, "child_run_id": None, "outcome": None,
@@ -353,7 +354,8 @@ def serve(run_dir: Path, stdin, stdout, log_env_keys: bool = True, home_repo: st
         if oversize:
             with contextlib.suppress(Exception):
                 broker.ensure()
-                broker.spec["request_counts"]["refused"] += 1
+                with D._SPEC_LOCK:
+                    broker.spec["request_counts"]["refused"] += 1
                 broker.save()
             log_line(run_dir, "frame refused:oversize")
             stdout.write(json.dumps(_reply(None, error={"code": -32600, "message": "refused:oversize"})) + "\n")

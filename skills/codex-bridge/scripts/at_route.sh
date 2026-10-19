@@ -134,7 +134,7 @@ if [[ "$prefix" == "@@" && "$kind" == "claude" && "$CLI" != "1" && "${AT_ROUTE_P
 [at_route] Persistent-session route for @@${alias_name}. Do only these steps:
 1. If ListAgents or SendMessage are deferred, load both with ToolSearch "select:ListAgents,SendMessage".
 2. Call ListAgents. If no peer session is named at-${alias_name}, start one with Bash:
-   claude --bg -n at-${alias_name} --model ${model} --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
+   claude --bg -n at-${alias_name} --model ${model} --allowedTools "Read,Grep,Glob" --disallowedTools "Edit,Write,NotebookEdit,Bash" "You are the at-${alias_name} side session. Wait for questions sent to you by message. Answer each briefly. Do not edit files. Send each answer back with SendMessage to the session named in the message's from attribute. Reply now with exactly: ready"
    Then call ListAgents again to confirm.
 3. SendMessage to at-${alias_name}, message = the question between the --- lines, verbatim.
 4. End your turn with one line: sent to at-${alias_name}. When the reply arrives as a cross-session message from at-${alias_name}, answer with the literal prefix "${alias_name} ▸ " followed by the reply verbatim. Do not re-answer, reason, or comment.

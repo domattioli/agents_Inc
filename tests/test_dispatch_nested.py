@@ -17,6 +17,7 @@ from unittest import mock
 
 from agents_inc.install import dispatch, mcp_broker, runtime
 from tests.test_dispatch_grants import EXAMPLE, GOOD_REPORT, GrantsBase
+from tests.test_dispatch_broker import popen_from_run
 from tests.test_mcp_broker import PipeClient
 
 FAN = "width 1, total 2, depth 1"
@@ -136,7 +137,8 @@ class LeadSetupTest(NestedBase):
         p = self._parts()
         lead, mcp = p["lead"], p["call"]["mcp"]
         done = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "r", "session_id": "s"}), stderr="")
-        with mock.patch.object(dispatch.subprocess, "run", return_value=done) as run:
+        run = mock.Mock(return_value=done)
+        with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(run)):
             dispatch.launch("claude", "opus", None, self.repo, "P", self.runs, "acceptEdits", lead_dir=lead,
                             allowed_tools=["Read"], disallowed_tools=["Agent"])
         argv, env = run.call_args.args[0], run.call_args.kwargs["env"]

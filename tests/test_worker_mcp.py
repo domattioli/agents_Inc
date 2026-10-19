@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from agents_inc.install import cli, dispatch, mcp_broker, runtime, worker_mcp
+from tests.test_dispatch_broker import popen_from_run
 
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
@@ -343,7 +344,7 @@ class LaunchChannelTest(BrokerTurnBase):
         dispatch._BROKER_SAFE_WRITES, dispatch._WORKER_ASK = True, "r1"
         dispatch._BROKER_DENY = (self.run_dir.resolve(),)
         try:
-            with mock.patch.object(dispatch.subprocess, "run", side_effect=fake_run):
+            with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(fake_run)):
                 res = dispatch.launch("claude", "haiku", "low", self.repo, "p", child)
         finally:
             dispatch._BROKER_SAFE_WRITES, dispatch._WORKER_ASK, dispatch._BROKER_DENY = False, None, ()
@@ -389,7 +390,7 @@ class LaunchChannelTest(BrokerTurnBase):
         def fake_run(argv, **kw):
             seen["argv"] = argv
             return SimpleNamespace(stdout="{}", stderr="", returncode=0)
-        with mock.patch.object(dispatch.subprocess, "run", side_effect=fake_run):
+        with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(fake_run)):
             dispatch.launch("claude", "haiku", None, self.repo, "p", self.root)
         self.assertNotIn("--mcp-config", seen["argv"])
         self.assertFalse((self.root / "ask").exists())

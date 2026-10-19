@@ -15,6 +15,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,8 @@ import urllib.parse
 from pathlib import Path
 
 from agents_inc.datafiles import repo_file, repo_root
+
+from .runtime import QUOTA_PATTERN, kill_and_reap
 
 REPO_ROOT = repo_root()
 SCRIPTS = repo_file("skills/workerbee/scripts")
@@ -37,6 +40,7 @@ SNAPSHOT_PLACEHOLDER = "<snapshot>"
 FREE_SLUGS = ("gemini", "mistral", "openrouter")
 DEFAULT_PERMISSION_MODE = "acceptEdits"
 EXIT_OK, EXIT_RED, EXIT_USAGE, EXIT_REFUSED = 0, 1, 2, 3
+EXIT_BLOCKED, EXIT_QUOTA = 69, 75  # sysexits EX_UNAVAILABLE; the Codex usage-limit code of runtime.run_codex
 
 
 def _load(name: str):
@@ -143,9 +147,15 @@ def allow_paths(files_in_scope: str) -> list[str]:
     out = []
     for token in re.split(r"[\s,;]+", files_in_scope or ""):
         token = token.strip("`'\"()")
-        if token and ("/" in token or "." in token) and not token.endswith(":"):
+        if token and ("/" in token or "." in token) and not token.endswith((":", ".")):  # "Read:", "file." are prose
             out.append(token)
     return out
+
+
+def scope_globs(files_in_scope: str) -> list[str]:
+    """Tokens of FILES_IN_SCOPE that hold a glob character. The scope gate compares exact paths, so a glob never matches."""
+    tokens = (t.strip("`'\"()") for t in re.split(r"[\s,;]+", files_in_scope or ""))
+    return [t for t in tokens if t and any(ch in t for ch in "*?[")]
 
 
 def claude_argv(model: str, permission_mode: str, resume: str | None = None, effort: str | None = None,
@@ -259,8 +269,32 @@ CLAUDE_HOME_ALLOW = ("projects", "todos", "statsig")
 CLAUDE_HOME_READ = ("scripts", "settings.json")
 
 
+_SANDBOX_OK: bool | None = None  # probe result, cached for the process
+
+
 def sandbox_available() -> bool:
-    return sys.platform == "darwin" and os.access(SANDBOX_EXEC, os.X_OK)
+    """True when sandbox-exec exists and can start a process. Inside another sandbox it exists but fails."""
+    global _SANDBOX_OK
+    if sys.platform != "darwin" or not os.access(SANDBOX_EXEC, os.X_OK):
+        return False
+    if _SANDBOX_OK is None:
+        try:
+            probe = subprocess.run([SANDBOX_EXEC, "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                                   capture_output=True, timeout=10)
+            _SANDBOX_OK = probe.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _SANDBOX_OK = False
+    return _SANDBOX_OK
+
+
+def _turn_timeout() -> float | None:
+    """Per-turn deadline in seconds: AGENTS_INC_TURN_TIMEOUT_S, default 3600; 0 (or a bad value) means none."""
+    raw = os.environ.get("AGENTS_INC_TURN_TIMEOUT_S", "3600")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 3600.0
+    return value if value > 0 else None
 
 
 def claude_scratch_dir() -> str:
@@ -514,14 +548,34 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                 Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"], _BROKER_DENY,
                 (channel["ask"],) if channel else (), (channel["script"], channel["config"]) if channel else ()))
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
-        res = subprocess.run(argv, input=prompt, cwd=str(cwd), capture_output=True, text=True, **extra)
-        text, session = res.stdout, None
+        limit = _turn_timeout()
+        proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                cwd=str(cwd), text=True, start_new_session=True, **extra)
         try:
-            data = json.loads(res.stdout)
-            text, session = str(data.get("result", "")), data.get("session_id")
+            stdout, stderr = proc.communicate(input=prompt, timeout=limit)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:  # a grandchild holds the pipes open: give up on the output
+                for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                    with contextlib.suppress(Exception):
+                        pipe.close()
+                stdout, stderr = "", ""
+            rc, stderr = 124, f"{stderr or ''}{TIMEOUT_MARK} {limit:g} s"
+        except BaseException:  # cancellation (KeyboardInterrupt included): no detached delegate survives the supervisor
+            kill_and_reap(proc)
+            raise
+        text, session, is_error = stdout, None, False
+        try:
+            data = json.loads(stdout)
+            text, session, is_error = str(data.get("result", "")), data.get("session_id"), bool(data.get("is_error"))
         except (ValueError, AttributeError):
             pass
-        return {"rc": res.returncode, "stdout": text, "stderr": res.stderr, "argv": argv, "session_id": session}
+        return {"rc": rc, "stdout": text, "stderr": stderr, "argv": argv, "session_id": session,
+                "is_error": is_error}
     from .cli import _efforts, _paths
     from .receipt import InstallReceipt
     from .runtime import run_codex
@@ -539,14 +593,14 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                        extra_deny=_BROKER_DENY if _BROKER_SAFE_WRITES else (), isolate_home=_BROKER_SAFE_WRITES,
                        thread_out=None if lead_dir else thread, resume_thread=resume, worker=worker,
                        tools=codex_write or lead_dir is not None, write=codex_write, lead_dir=lead_dir,
-                       network=codex_write and codex_network and lead_dir is None,
+                       network=codex_write and codex_network and lead_dir is None, timeout_s=_turn_timeout(),
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
                        # the verifier copy too, so the delegate can run its own FAILURE GATE check (#66)
                        extra_read=(Path(run_dir) / "pre_dispatch_snapshot.py",) + (
                            () if _BROKER_SAFE_WRITES else (Path(run_dir) / "snapshot.json",)))
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
-            "session_id": thread.get("thread_id") or resume}
+            "session_id": thread.get("thread_id") or resume, "is_error": False}
 
 
 def _kind(model: str) -> str | None:
@@ -593,6 +647,57 @@ def _write_json(path: Path, data: dict) -> None:
         path.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
 
 
+def _trust_path(run_id: str) -> Path:
+    """Trusted snapshot directory of one top-level run: derived from the run id only, outside cwd (022 FR-001)."""
+    from .cli import _paths
+    return _paths().state / "dispatch-runs" / Path(run_id).name
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _record_trust(spec: dict, run_dir: Path, prompt: str) -> bool:
+    """Once, just before launch: keep the captured snapshot bytes and the launched prompt's hash where the delegate
+    cannot write. A broker child already runs in a broker-owned run directory outside cwd, so it keeps trust.json there.
+    Fails closed: on an OSError spec["trust_error"] says why and False is returned; the caller must not launch."""
+    try:
+        data = (run_dir / "snapshot.json").read_bytes()
+        record = json.dumps({"schema_version": 1, "snapshot_sha256": _sha256_bytes(data),
+                             "prompt_sha256": _sha256_bytes(prompt.encode("utf-8"))}, indent=1) + "\n"
+        if _BROKER_SAFE_WRITES:
+            spec["snapshot_trust"] = "broker"
+            _wtext(run_dir / "trust.json", record)
+            return True
+        spec["snapshot_trust"] = "private"
+        trust = _trust_path(run_dir.name)
+        trust.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(trust, 0o700)
+        (trust / "snapshot.json").write_bytes(data)
+        (trust / "trust.json").write_text(record, encoding="utf-8")
+        return True
+    except OSError as exc:
+        spec["trust_error"] = f"{type(exc).__name__}: {exc}"
+        return False
+
+
+def _trust_record(spec: dict, run_dir: Path) -> tuple[dict | None, Path | None]:
+    """(trust.json content, directory holding it) for a run, located by the run directory's name (never by run.json's
+    own run_id) and the run's trust mode."""
+    mode = spec.get("snapshot_trust")
+    if mode == "broker":
+        folder = run_dir
+    elif mode == "private":
+        folder = _trust_path(run_dir.name)
+    else:
+        return None, None
+    try:
+        record = json.loads((folder / "trust.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, folder
+    return (record if isinstance(record, dict) else None), folder
+
+
 def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt") -> tuple[str, str, int]:
     missing, log = lint_report(out_path)
     report = "COMPLIANT" if not missing else f"NON-COMPLIANT:{missing}"
@@ -602,12 +707,28 @@ def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt")
         allow.append(str(run_dir.resolve().relative_to(cwd.resolve())))
     except ValueError:
         pass
-    args = ["verify", spec["snapshot"]]
-    for a in allow:
-        args += ["--allow", a]
-    src, slog = snapshot(*args, cwd=cwd)
-    changed = [ln[8:] for ln in slog.splitlines() if ln.startswith("CHANGED ")]
-    snap = "clean" if src == 0 else ("CHANGED:" + ",".join(changed) if changed else f"ERROR:rc={src}")
+    snap_file, verdict = spec["snapshot"], None
+    if spec.get("snapshot_trust") in ("private", "broker"):
+        record, folder = _trust_record(spec, run_dir)
+        try:
+            actual = _sha256_bytes(Path(spec["snapshot"]).read_bytes())
+        except OSError:
+            actual = None
+        if record is None or not (folder / "snapshot.json").is_file() and spec["snapshot_trust"] == "private":
+            verdict = (1, "trusted snapshot record missing\n", "ERROR:trust-missing")
+        elif actual != record.get("snapshot_sha256"):
+            verdict = (1, "run-dir snapshot.json differs from the trusted record\n", "TAMPERED")
+        elif spec["snapshot_trust"] == "private":
+            snap_file = str(folder / "snapshot.json")
+    if verdict is not None:
+        src, slog, snap = verdict
+    else:
+        args = ["verify", snap_file]
+        for a in allow:
+            args += ["--allow", a]
+        src, slog = snapshot(*args, cwd=cwd)
+        changed = [ln[8:] for ln in slog.splitlines() if ln.startswith("CHANGED ")]
+        snap = "clean" if src == 0 else ("CHANGED:" + ",".join(changed) if changed else f"ERROR:rc={src}")
     _wtext(run_dir / name, f"report: {report}\n{log}\nsnapshot rc={src}\n{slog}")
     return report, snap, src
 
@@ -654,7 +775,8 @@ def _run_gates(spec: dict) -> tuple[list, str | None]:
         row = {"argv": g["argv"], "cwd": g["cwd"], "expect_rc": g["expect_rc"], "rc": None, "excerpt": ""}
         joined = " ".join(g["argv"])
         wd = (Path(spec["cwd"]) / g["cwd"]).resolve()  # re-checked here: the delegate may have planted a link
-        if danger.search(joined) or CREDENTIAL_RE.search(joined) or CREDENTIAL_RE.search(g["cwd"]):
+        if (danger.search(joined) or GATE_CREDENTIAL_RE.search(joined) or GATE_CREDENTIAL_RE.search(g["cwd"])
+                or names_credential(g["argv"])):
             row["error"] = "refused"
         elif not wd.is_relative_to(Path(spec["cwd"]).resolve()):
             row["error"] = "cwd-outside"
@@ -677,20 +799,40 @@ def _run_gates(spec: dict) -> tuple[list, str | None]:
     return results, None
 
 
-QUOTA_RE = re.compile(r"hit your (?:session |usage )?limit|usage limit reached|rate limit exceeded|quota exceeded", re.I)
+# The Claude phrases plus run_codex's own pattern (429, too many requests, usage/rate limit), shared from runtime.py.
+_CLAUDE_QUOTA = r"hit your (?:session |usage )?limit|usage limit reached|rate limit exceeded|quota exceeded"
+CLAUDE_QUOTA_RE = re.compile(_CLAUDE_QUOTA, re.I)
+QUOTA_RE = re.compile(_CLAUDE_QUOTA + "|" + QUOTA_PATTERN, re.I)
+
+
+BLOCKED_RE = re.compile(r"Couldn't connect|ERR_PROXY_TUNNEL|API Error: Connection|ECONNREFUSED|ENOTFOUND", re.I)
+TIMEOUT_MARK = "turn timeout after"  # launch() puts this in stderr with rc 124 when the turn deadline kills the child
+# Reasons whose status line carries the first stderr line (022 FR-008).
+DETAIL_REASONS = frozenset({"rc-nonzero", "quota-paused", "blocked", "timeout", "launch-failed"})
 
 
 def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None, gate_reason: str | None = None,
-             gated: bool = False, quota: bool = False) -> tuple[str, str | None]:
-    """Return (outcome, reason): a quota pause first, then red checks, then a failed gate; green only when gates ran and passed."""
-    if rc != 0 and quota:
+             gated: bool = False, quota: bool = False, snap: str = "", blocked: bool = False, is_error: bool = False,
+             timed_out: bool = False) -> tuple[str, str | None]:
+    """Return (outcome, reason). Order: quota pause, blocked, timeout, rc-nonzero, fan-out, report, snapshot (tampered,
+    error, not clean), gate; green only when gates ran and passed. The caller scopes quota and blocked to the text
+    it may trust (see _finish)."""
+    if quota:
         return "red", "quota-paused"
+    if blocked:
+        return "red", "blocked"
+    if timed_out:
+        return "red", "timeout"
+    if rc != 0 or is_error:
+        return "red", "rc-nonzero"
     if fan_reason:
         return "red", fan_reason
-    if rc != 0:
-        return "red", "rc-nonzero"
     if report != "COMPLIANT":
         return "red", "report-noncompliant"
+    if snap == "TAMPERED":
+        return "red", "snapshot-tampered"
+    if snap.startswith("ERROR:"):
+        return "red", "snapshot-error"
     if vrc != 0:
         return "red", "snapshot-not-clean"
     if gate_reason:
@@ -700,27 +842,76 @@ def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None,
     return "unverified", "no-gates"
 
 
+def _stderr_detail(stderr: str | None) -> str:
+    """First non-empty stderr line, screened, at most 200 bytes, whitespace replaced by `_` (one status-line token)."""
+    for line in (stderr or "").splitlines():
+        if line.strip():
+            return re.sub(r"\s+", "_", screen_text(line.strip(), 200).strip())
+    return ""
+
+
 def _status(spec: dict, report: str, snap: str, out_path: Path) -> str:
     reason = f" reason={spec['reason']}" if spec.get("reason") else ""
+    detail = f" detail={spec['reason_detail']}" if spec.get("reason_detail") else ""
     return (f"dispatch {spec['run_id']} {spec['model']} rc={spec['rc']} report={report} snapshot={snap} "
-            f"outcome={spec['outcome']}{reason} out={out_path}")
+            f"outcome={spec['outcome']}{reason}{detail} out={out_path}")
 
 
-def _mirror(spec: dict, run_dir: Path, home_repo: str | None) -> None:
-    """D46: copy run.json and prompt.md to <home>/specs/consumers/<repo>/runs/<run-id>/."""
+def _mirror(spec: dict, run_dir: Path, home_repo: str | None, prompt: str | None = None) -> str | None:
+    """D46: write run.json (from the in-memory spec) and prompt.md to <home>/specs/consumers/<repo>/runs/<run-id>/.
+    prompt.md is the launched prompt on the first turn; on resume it is the run-dir copy only when its sha256 matches
+    the trusted record (022 FR-003), else it is skipped and spec["mirror_error"] says so. Never creates a missing home
+    repo. Return an error string (also for an OSError), else None."""
     home = resolve_home_repo(home_repo, Path(spec["cwd"]) if spec.get("cwd") else None)
     if not home:
         print("run spec not mirrored: no home repo", file=sys.stderr)
-        return
-    dest = Path(home) / "specs" / "consumers" / Path(spec["cwd"]).name / "runs" / spec["run_id"]
-    dest.mkdir(parents=True, exist_ok=True)
-    for name in ("run.json", "prompt.md"):
-        if (run_dir / name).is_file():
-            shutil.copyfile(run_dir / name, dest / name)
+        return None
+    if not Path(home).is_dir():
+        return "home-repo-missing"
+    try:
+        if prompt is None and (run_dir / "prompt.md").is_file():
+            record, _ = _trust_record(spec, run_dir)
+            text = (run_dir / "prompt.md").read_bytes()
+            protected = spec.get("snapshot_trust") in ("private", "broker")
+            if record is None and protected:  # a protected run with no readable record has nothing to check the prompt against
+                spec["mirror_error"] = "trust-record-missing"
+            elif record is None or _sha256_bytes(text) == record.get("prompt_sha256"):
+                prompt = text.decode("utf-8", "replace")
+            else:
+                spec["mirror_error"] = "prompt-tampered"
+        dest = Path(home) / "specs" / "consumers" / Path(spec["cwd"]).name / "runs" / run_dir.name
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "run.json").write_text(json.dumps(spec, indent=1) + "\n", encoding="utf-8")
+        if prompt is not None:
+            (dest / "prompt.md").write_text(prompt, encoding="utf-8")
+    except OSError as exc:
+        return f"OSError: {exc}"
+    return None
+
+
+def _mirror_and_note(spec: dict, run_dir: Path, home_repo: str | None, prompt: str | None) -> None:
+    """Mirror; a mirror error is recorded in run.json and stderr and never changes the exit code (022 FR-010)."""
+    spec.pop("mirror_error", None)
+    err = _mirror(spec, run_dir, home_repo, prompt) or spec.get("mirror_error")
+    if err:
+        spec["mirror_error"] = err
+        _write_json(run_dir / "run.json", spec)
+        print(f"run spec not mirrored: {err}", file=sys.stderr)
+
+
+def _exit_code(outcome: str | None, reason: str | None, rc) -> int:
+    """022 exit map: 0 green or unverified; 75 quota-paused; 69 blocked; 2 child usage error; 1 any other red."""
+    if outcome != "red":
+        return EXIT_OK
+    if reason == "quota-paused":
+        return EXIT_QUOTA
+    if reason == "blocked":
+        return EXIT_BLOCKED
+    return EXIT_USAGE if rc == EXIT_USAGE else EXIT_RED  # keep a child usage error distinct from red
 
 
 def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: str | None,
-            verify_name: str = "verify.txt") -> int:
+            verify_name: str = "verify.txt", prompt: str | None = None) -> int:
     report, snap, vrc = _verify(spec, run_dir, out_path, verify_name)
     fan_reason = _fan_out_check(spec, out_path)
     gated, skipped, gate_reason = bool(spec.get("gate_commands")), False, None
@@ -730,18 +921,52 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
         spec["gate_results"], gate_reason = _run_gates(spec)
         if spec.get("resumes"):
             spec["resumes"][-1]["gate_results"] = spec["gate_results"]
-    quota = bool(QUOTA_RE.search((result.get("stdout") or "")[-4000:] + (result.get("stderr") or "")[-4000:]))
-    outcome, reason = _outcome(spec, report, vrc, result["rc"], fan_reason, gate_reason, gated, quota)
+    stdout, stderr = result.get("stdout") or "", result.get("stderr") or ""
+    is_error = bool(result.get("is_error"))
+    spec["is_error"] = is_error
+    failed = result["rc"] != 0 or is_error
+    # stderr always; stdout only when the child failed or sent no WORKERS SPAWNED line (a compliant report may quote the text)
+    text = stderr[-4000:] + ("\n" + stdout[-4000:] if failed or parse_workers_spawned(stdout) is None else "")
+    if failed or parse_workers_spawned(stdout) is None:
+        quota = bool(QUOTA_RE.search(text))
+    else:  # clean turn with a report: only an anchored stderr line counts, not an incidental 429 or "rate limit"
+        quota = any(("hit a usage or rate limit" in ln or CLAUDE_QUOTA_RE.search(ln)
+                     or (ln.startswith("ERROR:") and QUOTA_RE.search(ln))) for ln in stderr[-4000:].splitlines())
+    blocked = bool(BLOCKED_RE.search(text))
+    timed_out = result["rc"] == 124 and TIMEOUT_MARK in stderr
+    outcome, reason = _outcome(spec, report, vrc, result["rc"], fan_reason, gate_reason, gated, quota, snap, blocked,
+                               is_error, timed_out)
     if skipped and outcome == "unverified":
         reason = "gates-skipped-broker"
     spec["outcome"] = outcome
     spec["reason"] = reason
+    detail = _stderr_detail(stderr) if outcome == "red" and (reason in DETAIL_REASONS or not stdout.strip()) else ""
+    if detail:
+        spec["reason_detail"] = detail
+    else:
+        spec.pop("reason_detail", None)
     _write_json(run_dir / "run.json", spec)
     print(_status(spec, report, snap, out_path))
-    _mirror(spec, run_dir, home_repo)
-    if outcome == "red" and result["rc"] == EXIT_USAGE:
-        return EXIT_USAGE  # keep a child usage error distinct from red (broker request status 2)
-    return EXIT_RED if outcome == "red" else EXIT_OK
+    _mirror_and_note(spec, run_dir, home_repo, prompt)
+    return _exit_code(outcome, reason, result["rc"])
+
+
+def _red_before_run(spec: dict, run_dir: Path, reason: str, detail: str, home_repo: str | None,
+                    out_name: str = "stdout.md", snap: str = "none") -> int:
+    """No child ran. Record red/<reason>, print one status line, return 1."""
+    out_path = run_dir / out_name
+    _wtext(out_path, "")
+    spec.update(rc=-1, outcome="red", reason=reason,
+                reason_detail=re.sub(r"\s+", "_", screen_text(detail, 200).strip()))
+    _write_json(run_dir / "run.json", spec)
+    print(_status(spec, "none", snap, out_path))
+    _mirror_and_note(spec, run_dir, home_repo, None)
+    return EXIT_RED
+
+
+def _launch_failed(spec: dict, run_dir: Path, exc: Exception, home_repo: str | None, out_name: str = "stdout.md") -> int:
+    """022 FR-009: launch() raised, so no child ran. Record red/launch-failed, print one status line, return 1."""
+    return _red_before_run(spec, run_dir, "launch-failed", f"{type(exc).__name__}: {exc}", home_repo, out_name)
 
 
 def _record_ledger_node(spec: dict, slots: dict) -> None:
@@ -764,7 +989,7 @@ def _grants_from_slots(slots: dict, cwd: Path) -> tuple[list | None, list, tuple
         return None, [], ("refused-gates", why)
     for g in gates or []:
         joined = " ".join(g["argv"])
-        if CREDENTIAL_RE.search(joined) or CREDENTIAL_RE.search(g["cwd"]):
+        if GATE_CREDENTIAL_RE.search(joined) or GATE_CREDENTIAL_RE.search(g["cwd"]) or names_credential(g["argv"]):
             return None, [], ("refused-gates", f"credential-seeking gate {joined!r}")
         if not (cwd / g["cwd"]).resolve().is_relative_to(cwd):
             return None, [], ("refused-gates", f"gate cwd {g['cwd']!r} resolves outside --cwd")
@@ -772,7 +997,7 @@ def _grants_from_slots(slots: dict, cwd: Path) -> tuple[list | None, list, tuple
     if why:
         return None, [], ("refused-bash-allow", why)
     for prefix in bash_allow:
-        if CREDENTIAL_RE.search(prefix):
+        if GATE_CREDENTIAL_RE.search(prefix) or names_credential(prefix.split()):
             return None, [], ("refused-bash-allow", f"credential-seeking prefix {prefix!r}")
     return gates, bash_allow, None
 
@@ -847,7 +1072,10 @@ def run(args) -> int:
             "codex_network": codex_network(slots),
             "rc": None, "outcome": None, "session_id": None}
     lint = run_dir / "lint.txt"
+    globs = scope_globs(str(slots.get("FILES_IN_SCOPE", "")))
     gates, bash_allow, why = _grants_from_slots(slots, cwd)
+    if globs:
+        why = ("refused-scope", f"FILES_IN_SCOPE has glob patterns the scope gate cannot match: {' '.join(globs)}; list exact paths")
     if why:
         _wtext(lint, why[1] + "\n")
         spec["outcome"] = why[0]; _write_json(run_dir / "run.json", spec)
@@ -927,23 +1155,28 @@ def run(args) -> int:
         prompt += (LEAD_NOTE_CLAUDE if kind == "claude" else LEAD_NOTE_CODEX).format(roster=", ".join(roster))
         _wtext(prompt_path, prompt)
     _record_ledger_node(spec, slots)
+    if not _record_trust(spec, run_dir, prompt):  # fail closed: no trusted copy, no delegate
+        return _red_before_run(spec, run_dir, "snapshot-error", spec["trust_error"], getattr(args, "home_repo", None))
     if token is not None:
         _write_json(run_dir / "run.json", spec)  # before launch: the broker reads the parent run.json
     global _LAUNCHES
     _LAUNCHES += 1
-    result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
-                    **({"codex_write": True} if spec["codex_write"] else {}),
-                    **({"codex_network": True} if spec["codex_network"] else {}),
-                    **({"lead_dir": lead_dir} if lead_dir is not None else {}),
-                    **({"allowed_tools": spec["allowed_tools"], "disallowed_tools": spec["disallowed_tools"]}
-                       if kind == "claude" else {}))
+    try:
+        result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
+                        **({"codex_write": True} if spec["codex_write"] else {}),
+                        **({"codex_network": True} if spec["codex_network"] else {}),
+                        **({"lead_dir": lead_dir} if lead_dir is not None else {}),
+                        **({"allowed_tools": spec["allowed_tools"], "disallowed_tools": spec["disallowed_tools"]}
+                           if kind == "claude" else {}))
+    except Exception as exc:
+        return _launch_failed(spec, run_dir, exc, getattr(args, "home_repo", None))
     if lead_dir is not None:
         _record_lead(spec, lead_dir)
     out_path = run_dir / "stdout.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])
     spec.update(rc=result["rc"], session_id=result.get("session_id"), argv=result.get("argv"))
-    return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None))
+    return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None), prompt=prompt)
 
 
 def resume(args) -> int:
@@ -963,6 +1196,33 @@ def resume(args) -> int:
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
+    home = getattr(args, "home_repo", None)
+    n = len(spec.get("resumes", [])) + 1
+    # 022: the trusted snapshot is found from the run directory the caller selected (its name is the run id); run.json
+    # is delegate-writable, so its run_id must agree with that name and is never used to locate the record.
+    # A mismatch is never healed: run.json keeps the forged run_id and every later resume is red again.
+    if spec.get("run_id") != run_dir.name:
+        spec.setdefault("resumes", []).append({"rc": -1, "out": str(run_dir / f"stdout.{n}.md")})
+        return _red_before_run(spec, run_dir, "snapshot-tampered",
+                               f"run.json run_id {spec.get('run_id')!r} differs from run directory {run_dir.name!r}",
+                               home, f"stdout.{n}.md", "TAMPERED")
+    # Trust mode comes from the context, not from run.json (delegate-writable): a private record always wins.
+    claimed = spec.get("snapshot_trust")
+    if not _BROKER_SAFE_WRITES and (_trust_path(run_dir.name) / "trust.json").is_file():
+        spec["snapshot_trust"] = "private"
+    elif claimed == "private":
+        pass  # no private record: _verify reports snapshot-error, never a run-dir fallback
+    elif claimed == "broker" and _BROKER_SAFE_WRITES:
+        pass
+    elif claimed is not None:  # broker claim outside a broker context, or an unknown value
+        spec.setdefault("resumes", []).append({"rc": -1, "out": str(run_dir / f"stdout.{n}.md")})
+        return _red_before_run(spec, run_dir, "snapshot-tampered",
+                               f"run.json snapshot_trust {claimed!r} does not match this context",
+                               home, f"stdout.{n}.md", "TAMPERED")
+    elif _BROKER_SAFE_WRITES and (run_dir / "trust.json").is_file():
+        spec["snapshot_trust"] = "broker"
+    else:
+        spec["snapshot_trust"] = "run-dir"  # legacy run: run.json has no snapshot_trust key
     lead_dir = Path(spec["lead_dir"]) if kind == "claude" and spec.get("lead_dir") else None
     if lead_dir is not None:  # D60: re-attach the Lead's broker; its counters reload from lead_dir/run.json
         cfg = lead_dir / "lead_mcp.json"
@@ -970,14 +1230,18 @@ def resume(args) -> int:
             print(f"dispatch: lead-dir-missing: {lead_dir}; cannot resume a Lead without its broker run directory",
                   file=sys.stderr)
             return EXIT_USAGE
-    result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
-                    spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
-                    **({"lead_dir": lead_dir} if lead_dir is not None else {}),
-                    **({"codex_write": True} if spec.get("codex_write") is True else {}),
-                    **({"codex_network": True} if spec.get("codex_network") is True else {}),
-                    **({"allowed_tools": spec.get("allowed_tools"), "disallowed_tools": spec.get("disallowed_tools")}
-                       if kind == "claude" else {}))
-    n = len(spec.get("resumes", [])) + 1
+    try:
+        result = launch(kind, spec["model"], spec["effort"], Path(spec["cwd"]), args.message, run_dir,
+                        spec.get("permission_mode", DEFAULT_PERMISSION_MODE), resume=spec["session_id"],
+                        **({"lead_dir": lead_dir} if lead_dir is not None else {}),
+                        **({"codex_write": True} if spec.get("codex_write") is True else {}),
+                        **({"codex_network": True} if spec.get("codex_network") is True else {}),
+                        **({"allowed_tools": spec.get("allowed_tools"), "disallowed_tools": spec.get("disallowed_tools")}
+                           if kind == "claude" else {}))
+    except Exception as exc:
+        # the failed attempt is a turn: the broker reads it back as outcome red / reason launch-failed
+        spec.setdefault("resumes", []).append({"rc": -1, "out": str(run_dir / f"stdout.{n}.md")})
+        return _launch_failed(spec, run_dir, exc, home, f"stdout.{n}.md")
     out_path = run_dir / f"stdout.{n}.md"
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / f"stderr.{n}.txt", result["stderr"])
@@ -1011,10 +1275,45 @@ INBOX = "inbox"  # the only Lead-writable path in a run directory (D51)
 LEAD_DONE = "lead.done"
 SCOPE_LINE = "SCOPE BOILERPLATE: repo-scoped writes only"
 # Request text that points the credential-bearing Worker at secrets is refused.
+_HOME_CRED = r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude|codex|ssh|config|aws|gnupg|netrc|local|codex-bridge)\b"
 CREDENTIAL_RE = re.compile(
-    r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude|codex|ssh|config|aws|gnupg|netrc|local|codex-bridge)\b"
-    r"|\.env\b|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials|token|api[_-]?key",
+    _HOME_CRED + r"|\.env\b|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials|token|api[_-]?key", re.IGNORECASE)
+# Gate and BASH_ALLOW screen: names a credential path, not a word. test_token_refresh.py and check_credentials_schema.py pass.
+GATE_CREDENTIAL_RE = re.compile(
+    _HOME_CRED + r"|(?:^|[\s/='\"])(?:\.env(?:\.[\w.-]+)?|id_rsa|id_ed25519|[^\s/]*\.(?:pem|key))(?=$|[\s/'\"])",
     re.IGNORECASE)
+# A gate argv element or BASH_ALLOW token whose basename is a secret file name: credentials.json, /tmp/token, api_key.txt,
+# .secrets. A leading word such as test_ or check_ keeps test_token_refresh.py and check_credentials_schema.py legal.
+CREDENTIAL_BASENAME_RE = re.compile(r"^\.?(?:credentials?|tokens?|api[_-]?key|secrets?)(?:$|[._-])", re.IGNORECASE)
+
+
+_KEYPEM_RE = re.compile(r"\.(?:pem|key)(?:\.|$)")
+_TOKEN_START_RE = re.compile(r"^\.?tokens?(?:$|[._-])")
+_SECRET_WORD_RE = re.compile(r"(?:^|[._-])(?:credentials?|api[_-]?key|secrets?)(?:$|[._-])")
+_SECRET_ENV_RE = re.compile(r"^[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*$")
+_SECRET_FLAG_RE = re.compile(r"token|secret|password|api[_-]?key")
+
+
+def _part_names_credential(part: str) -> bool:
+    if _SECRET_ENV_RE.match(part):
+        return True
+    if part.startswith("-") and _SECRET_FLAG_RE.search(part.lower()):
+        return True
+    b = part.rstrip("/").rsplit("/", 1)[-1].lower()
+    if b.endswith(".env") or ".env." in b or _KEYPEM_RE.search(b) or _TOKEN_START_RE.match(b):
+        return True
+    return not b.startswith(("test_", "check_")) and bool(_SECRET_WORD_RE.search(b))
+
+
+def names_credential(tokens) -> bool:
+    """True when any token (or a value after `=`) names a secret file, env var or flag.
+
+    Rules: basename ends in .env or has .env.; has .pem/.key followed by end or a dot; starts with token(s);
+    has credential(s), api_key or secret(s) at a word boundary (not after test_/check_); env-var name with
+    KEY/TOKEN/SECRET/PASSWORD; flag naming token, secret, password or api-key."""
+    return any(_part_names_credential(p) for t in tokens for p in str(t).split("="))
+
+
 BROKER_OK, BROKER_FATAL, BROKER_USAGE = 0, 1, 2
 REQ_GREEN, REQ_RED, REQ_USAGE, REQ_REFUSED = 0, 1, 2, 3
 REQ_STATUS = {REQ_GREEN: "green", REQ_RED: "red", REQ_USAGE: "usage-error", REQ_REFUSED: "refused"}
@@ -1267,7 +1566,8 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
     inbox = run_dir / INBOX
     req_path = inbox / name
     if rid and (rid in seen or os.path.lexists(str(run_dir / f"{rid}.result.json"))):
-        counts["duplicate"] += 1
+        with _SPEC_LOCK:
+            counts["duplicate"] += 1
         _set_aside(req_path, f"{name}.duplicate-{secrets.token_hex(3)}")
         return None
     raw, reason = _read_request(inbox, name)
@@ -1312,7 +1612,8 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
     if rid:
         seen.add(rid)
     if req is None:
-        counts["refused"] += 1
+        with _SPEC_LOCK:
+            counts["refused"] += 1
         if rid:
             _write_request_result(run_dir, rid, dict({"status": "refused", "dispatch_exit_code": REQ_REFUSED,
                                                       "child_run_id": None, "outcome": None, "reason": reason,
@@ -1702,7 +2003,7 @@ def wait(run_dir: str | Path, request_id: str, timeout: float = 600.0, sleep=tim
          clock=time.monotonic) -> int:
     """Lead waiter: poll once per second for <run-dir>/<id>.result.json.
     Exit 0 and print the path when found, 10 and print the needs-lead JSON when the Worker asked a question the
-    Lead has not answered (D54), 124 on timeout, 2 on a bad request id or timeout."""
+    Lead has not answered (D54), 124 on timeout, 2 on a bad request id or non-positive timeout."""
     if not isinstance(request_id, str) or not REQUEST_ID_RE.match(request_id) or timeout <= 0:
         print("dispatch --wait: bad request id or timeout", file=sys.stderr)
         return BROKER_USAGE

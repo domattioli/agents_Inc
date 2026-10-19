@@ -1,0 +1,47 @@
+"""022 US4: the SessionStart hook shows doctor warnings and the repair line."""
+from __future__ import annotations
+import json
+import os
+import unittest
+from pathlib import Path
+from unittest import mock
+
+os.environ.setdefault("AGENTS_INC_NO_UPDATE_CHECK", "1")  # no PyPI request from tests
+
+from agents_inc.install import hook
+from agents_inc.install.doctor import DoctorReport
+from agents_inc.install.paths import InstallPaths
+
+
+class SessionStartWarningsTest(unittest.TestCase):
+    def _text(self, warnings, host="claude", ready=True, codes=()):
+        paths = InstallPaths.for_home(Path("/nonexistent-home"))
+        report = DoctorReport(ready, codes, None, warnings)
+        with mock.patch.object(hook, "check_install", return_value=report), \
+                mock.patch("agents_inc.install.update_check.notice", return_value=None):
+            out = hook.session_start(paths, host)
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if host == "claude" else out
+
+    def test_warnings_and_repair_line_are_listed(self):
+        text = self._text(("INSTALL_STALE", "MODEL_DRIFT luna: pinned a, newest b"))
+        self.assertIn("doctor: READY", text)
+        self.assertIn("WARNING: INSTALL_STALE", text)
+        self.assertIn("WARNING: MODEL_DRIFT luna", text)
+        self.assertIn("agents-inc repair", text)
+
+    def test_no_warnings_adds_nothing(self):
+        text = self._text(())
+        self.assertNotIn("WARNING", text)
+        self.assertNotIn("agents-inc repair", text)
+
+    def test_other_warning_has_no_repair_line(self):
+        text = self._text(("WB_SANDBOX_NESTED",))
+        self.assertIn("WARNING: WB_SANDBOX_NESTED", text)
+        self.assertNotIn("Run `agents-inc repair", text)
+
+    def test_plain_host_gets_the_same_text(self):
+        self.assertIn("WARNING: INSTALL_STALE", self._text(("INSTALL_STALE",), host="codex"))
+
+
+if __name__ == "__main__":
+    unittest.main()
