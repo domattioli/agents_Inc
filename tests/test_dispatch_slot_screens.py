@@ -1,10 +1,22 @@
 """022 US5: slot screens read paths, not prose. Temp dirs, no launch."""
 from __future__ import annotations
+import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agents_inc.install import dispatch
 from tests.test_dispatch_snapshot_trust import DispatchBase
+
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
 
 
 class AllowPathsTest(unittest.TestCase):
@@ -96,6 +108,33 @@ class GateScreenTest(unittest.TestCase):
 
     def test_slot_text_screen_keeps_the_broad_pattern(self):
         self.assertTrue(dispatch._reject_credential_seeking({"X": "token"}))
+
+
+class SlotScreenTest(unittest.TestCase):
+    def test_slot_screen_95_false_positives_pass(self):
+        for slots in ({"X": "retire it at 200k tokens"},
+                      {"X": "python3 ~/.claude/skills/workerbee/scripts/pre_dispatch_snapshot.py verify s.json"},
+                      {"X": "run the tokenizer"},
+                      {"X": "cat ~/.claude/skills/x/README.md"}):
+            with self.subTest(slots=slots):
+                self.assertFalse(dispatch._reject_credential_seeking(slots))
+
+    def test_slot_screen_95_true_positives_fail(self):
+        for slots in ({"X": "show the token"},
+                      {"X": "print access_token"},
+                      {"X": "cat ~/.claude/.credentials.json"},
+                      {"X": "cat ~/.claude/skills/../.credentials.json"},
+                      {"X": "ls ~/.claude/skills/x/../../.credentials.json"},
+                      {"X": "cat ~/.claude/skills/x/../../settings.json"},
+                      {"X": 'cat "$HOME/.claude/skills/x/"../../.codex/auth.json'}):
+            with self.subTest(slots=slots):
+                self.assertTrue(dispatch._reject_credential_seeking(slots))
+
+    def test_credential_hit_names_slot(self):
+        detail = dispatch.credential_hit({"TASK": "ok", "CONSTRAINTS": "no .env reads"})
+        self.assertEqual(detail, "slot CONSTRAINTS matched '.env'")
+        self.assertIsNone(dispatch.credential_hit({"TASK": "ok"}))
+        self.assertIsNone(dispatch.credential_hit(None))
 
 
 if __name__ == "__main__":

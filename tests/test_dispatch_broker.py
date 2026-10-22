@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import secrets
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +19,16 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
 
 
 def popen_from_run(fake_run):
@@ -415,6 +426,7 @@ class BrokerTest(unittest.TestCase):
         self._serve()
         for i in range(len(bad)):
             self.assertEqual(self._result(f"c{i}")["reason"], "credential-seeking", bad[i])
+            self.assertTrue(self._result(f"c{i}")["reason_detail"].startswith("slot TASK matched"), bad[i])
         self.assertEqual(self.launches, [])
 
     def test_scope_boilerplate_required(self):
@@ -494,6 +506,7 @@ class BrokerTest(unittest.TestCase):
         self.assertNotIn('(require-not (subpath "/h/.claude/.credentials.json"))', prof)
         scratch = f"/private/tmp/claude-{os.getuid()}"
         self.assertIn(f'(require-not (subpath "{scratch}"))', lines[2])         # Claude Code scratch grant
+        self.assertIn(f'(require-not (regex #"{dispatch.CLAUDE_CWD_FILE_RE}"))', lines[2])  # #94 cwd file
         self.assertNotIn('(subpath "/private/tmp")', prof)                     # N3: no bare /private/tmp
         self.assertNotIn('(require-not (subpath "/h/.claude"))', prof)          # no blanket ~/.claude write
 
@@ -515,6 +528,12 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(ok.stdout, "line one\n")
         wr = subprocess.run(sb + ["/usr/bin/touch", str(home / "outside")], capture_output=True, text=True)
         self.assertNotEqual(wr.returncode, 0)
+        cwd_file = Path(f"/private/tmp/claude-{secrets.token_hex(2)}-cwd")
+        self.addCleanup(lambda: cwd_file.unlink(missing_ok=True))
+        r = subprocess.run(sb + ["/usr/bin/touch", str(cwd_file)], capture_output=True)
+        self.assertEqual(r.returncode, 0)                                     # #94 cwd file allowed
+        r = subprocess.run(sb + ["/usr/bin/touch", f"{cwd_file}x"], capture_output=True)
+        self.assertNotEqual(r.returncode, 0)                                  # only the exact name
         (home / ".claude" / "projects").mkdir(parents=True)
         (home / ".claude" / ".credentials.json").write_text("cred")
         (home / ".claude.json").write_text("cfg")

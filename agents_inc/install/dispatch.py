@@ -213,10 +213,10 @@ def tool_grants(spec: dict, gates: list | None, bash_allow: list, run_dir) -> tu
     return list(dict.fromkeys(allowed)), list(dict.fromkeys(disallowed))
 
 
-def grants_section(allowed: list, disallowed: list, bash_allow: list) -> str:
+def grants_section(allowed: list, disallowed: list, bash_allow: list, permission_mode: str | None = None) -> str:
     """The GRANTS block rendered into every Claude delegate prompt so a missing grant reads as one (#54)."""
     prefixes = ", ".join(f"`{p}`" for p in bash_allow) or "none"
-    return ("\nGRANTS (fixed by dispatch for this run; the harness allows exactly these tools):\n"
+    text = ("\nGRANTS (fixed by dispatch for this run; the harness allows exactly these tools):\n"
             f"ALLOWED: {', '.join(allowed) or 'none'}\n"
             f"BASH_ALLOW prefixes (each also allowed with arguments): {prefixes}\n"
             f"DENIED: {', '.join(disallowed) or 'none'}\n"
@@ -224,6 +224,9 @@ def grants_section(allowed: list, disallowed: list, bash_allow: list) -> str:
             "missing grant, not a policy refusal. Stop, record the exact command, and hand back; never route around it. "
             "One plain command per Bash call: no cd, &&, ;, pipes, loops, or shell variables; a compound command "
             "matches no grant.\n")
+    if permission_mode == "acceptEdits":
+        text += "Edit and Write on files under --cwd come from PERMISSION_MODE acceptEdits: they work though ALLOWED does not list them.\n"
+    return text
 
 
 def ceiling_violation(allowed: list, own: list = ()) -> str | None:
@@ -241,6 +244,30 @@ SECRET_ENV_RE = re.compile(r"KEY|TOKEN|SECRET", re.IGNORECASE)
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 # Same-vendor exception: ~/.claude stays readable and writable for the Claude Worker; ~/.codex is denied.
 CLAUDE_WORKER_DENY = (".ssh", ".config", ".codex-bridge", ".codex", ".local", ".aws", ".gnupg", ".netrc")
+
+# #94: a broker Claude Worker already runs under our seatbelt. Its own Claude Code Bash sandbox would nest sandbox-exec
+# (rc 71, sandbox_apply: Operation not permitted), so the Worker turns that sandbox off for itself.
+WORKER_SETTINGS = '{"sandbox": {"enabled": false}}'
+# #94: AGENTS_INC_ALLOW_SANDBOXED=1 lets dispatch start inside another sandbox (tests, a caller that knows better).
+ALLOW_SANDBOXED_ENV = "AGENTS_INC_ALLOW_SANDBOXED"
+SANDBOX_FIX = ('rerun outside the sandbox (sandbox.excludedCommands "agents-inc *" or dangerouslyDisableSandbox); '
+               "do not retry unchanged")
+
+
+class CallerSandboxed(RuntimeError):
+    """#94: dispatch itself runs inside another sandbox: the delegate would lose its network, so no child starts."""
+
+
+def caller_sandbox(env=None) -> str | None:
+    """#94: name the sandbox this dispatch process runs in, else None. ALLOW_SANDBOXED_ENV=1 skips the check."""
+    env = os.environ if env is None else env
+    if env.get(ALLOW_SANDBOXED_ENV) == "1":
+        return None
+    if env.get("SANDBOX_RUNTIME"):
+        return "SANDBOX_RUNTIME is set (Claude Code Bash sandbox)"
+    if env.get("CODEX_SANDBOX"):
+        return "CODEX_SANDBOX is set (Codex sandbox)"
+    return None
 
 
 def worker_env(exe: str, base: dict | None = None) -> dict:
@@ -302,10 +329,15 @@ def claude_scratch_dir() -> str:
     return f"/private/tmp/claude-{os.getuid()}"
 
 
+# #94: with the Worker's Bash sandbox off (WORKER_SETTINGS), Claude Code writes its shell cwd file to /tmp/claude-<hex>-cwd.
+CLAUDE_CWD_FILE_RE = r"^/private/tmp/claude-[0-9a-f]+-cwd$"
+
+
 def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = (), write_ok: tuple = (),
                            read_ok: tuple = ()) -> str:
-    """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain, and the
-    CLAUDE_HOME_ALLOW subpaths; reads and writes denied under the D49 home deny list, ~/.claude.json*,
+    """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain,
+    Claude Code's /tmp/claude-<hex>-cwd file, and the CLAUDE_HOME_ALLOW subpaths; reads and writes denied under the
+    D49 home deny list, ~/.claude.json*,
     and ~/.claude outside CLAUDE_HOME_ALLOW. deny_paths (the broker run directory, the Lead's isolated CODEX_HOME) are
     unreadable and unwritable except the child's own tmpdir, even when they sit under a granted cwd.
     D54: write_ok (the ask_lead channel) is also readable and writable; read_ok files (the ask_lead server and its
@@ -315,6 +347,7 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple
     writable = [_sb(cwd), _sb(tmpdir), claude_scratch_dir(), f"{h}/Library/Keychains", "/dev"] + claude_ok
     writable += [_sb(w) for w in write_ok]
     keep = " ".join(f'(require-not (subpath "{w}"))' for w in writable)
+    keep += f' (require-not (regex #"{CLAUDE_CWD_FILE_RE}"))'
     deny = " ".join(f'(subpath "{h}/{name}")' for name in CLAUDE_WORKER_DENY)
     claude_read = claude_ok + [f"{h}/.claude/{name}" for name in CLAUDE_HOME_READ]
     claude_keep = " ".join(f'(require-not (subpath "{w}"))' for w in claude_read)
@@ -521,6 +554,10 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     """Run the delegate. Return {"rc", "stdout", "stderr", "argv", "session_id"}. resume: the Claude session id
     or the Codex thread id to continue. Under the broker, every Worker also gets the ask_lead server (D54).
     lead_dir (#68, D60): run a Codex or Claude delegate as a Lead with the broker MCP tools over that run directory."""
+    if not _BROKER_SAFE_WRITES:
+        where = caller_sandbox()
+        if where:
+            raise CallerSandboxed(where)
     channel = _ask_channel(run_dir, _WORKER_ASK) if (_BROKER_SAFE_WRITES and _WORKER_ASK) else None
     if kind == "claude":
         if lead_dir is not None and channel is not None:
@@ -547,6 +584,7 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
             _wtext(profile, claude_sandbox_profile(
                 Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"], _BROKER_DENY,
                 (channel["ask"],) if channel else (), (channel["script"], channel["config"]) if channel else ()))
+            argv += ["--settings", WORKER_SETTINGS]
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
         limit = _turn_timeout()
         proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -952,8 +990,8 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
 
 
 def _red_before_run(spec: dict, run_dir: Path, reason: str, detail: str, home_repo: str | None,
-                    out_name: str = "stdout.md", snap: str = "none") -> int:
-    """No child ran. Record red/<reason>, print one status line, return 1."""
+                    out_name: str = "stdout.md", snap: str = "none", code: int = EXIT_RED) -> int:
+    """No child ran. Record red/<reason>, print one status line, return code (default 1)."""
     out_path = run_dir / out_name
     _wtext(out_path, "")
     spec.update(rc=-1, outcome="red", reason=reason,
@@ -961,11 +999,14 @@ def _red_before_run(spec: dict, run_dir: Path, reason: str, detail: str, home_re
     _write_json(run_dir / "run.json", spec)
     print(_status(spec, "none", snap, out_path))
     _mirror_and_note(spec, run_dir, home_repo, None)
-    return EXIT_RED
+    return code
 
 
 def _launch_failed(spec: dict, run_dir: Path, exc: Exception, home_repo: str | None, out_name: str = "stdout.md") -> int:
     """022 FR-009: launch() raised, so no child ran. Record red/launch-failed, print one status line, return 1."""
+    if isinstance(exc, CallerSandboxed):  # #94: blocked, exit 69, the fix in the detail
+        return _red_before_run(spec, run_dir, "blocked", f"caller-sandboxed: {exc}; {SANDBOX_FIX}", home_repo, out_name,
+                               code=EXIT_BLOCKED)
     return _red_before_run(spec, run_dir, "launch-failed", f"{type(exc).__name__}: {exc}", home_repo, out_name)
 
 
@@ -1116,7 +1157,7 @@ def run(args) -> int:
     _wtext(verifier, (SCRIPTS / "pre_dispatch_snapshot.py").read_text(encoding="utf-8"))
     prompt = prompt.rstrip("\n") + f"\nSNAPSHOT VERIFIER: `python3 {verifier} verify {spec['snapshot']}` (use this copy)\n"
     if kind == "claude":
-        prompt += grants_section(spec["allowed_tools"], spec["disallowed_tools"], bash_allow)
+        prompt += grants_section(spec["allowed_tools"], spec["disallowed_tools"], bash_allow, spec["permission_mode"])
     if _BROKER_SAFE_WRITES and _WORKER_ASK:
         prompt += ASK_LEAD_NOTE
     spec["fan_out"] = parse_fan_out(prompt)
@@ -1275,9 +1316,11 @@ INBOX = "inbox"  # the only Lead-writable path in a run directory (D51)
 LEAD_DONE = "lead.done"
 SCOPE_LINE = "SCOPE BOILERPLATE: repo-scoped writes only"
 # Request text that points the credential-bearing Worker at secrets is refused.
-_HOME_CRED = r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude|codex|ssh|config|aws|gnupg|netrc|local|codex-bridge)\b"
+# #95: ~/.claude/skills/ paths (workerbee scripts) pass unless a later .. climbs out.
+_HOME_CRED = r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude(?!/skills/(?!\S*\.\.))|codex|ssh|config|aws|gnupg|netrc|local|codex-bridge)\b"
+# #95: the word token, not tokens or tokenizer.
 CREDENTIAL_RE = re.compile(
-    _HOME_CRED + r"|\.env\b|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials|token|api[_-]?key", re.IGNORECASE)
+    _HOME_CRED + r"|\.env\b|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials|(?<![a-z])token(?![a-z])|api[_-]?key", re.IGNORECASE)
 # Gate and BASH_ALLOW screen: names a credential path, not a word. test_token_refresh.py and check_credentials_schema.py pass.
 GATE_CREDENTIAL_RE = re.compile(
     _HOME_CRED + r"|(?:^|[\s/='\"])(?:\.env(?:\.[\w.-]+)?|id_rsa|id_ed25519|[^\s/]*\.(?:pem|key))(?=$|[\s/'\"])",
@@ -1464,9 +1507,18 @@ def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, st
     return req, None
 
 
+def credential_hit(slots) -> str | None:
+    """#95: `slot <KEY> matched '<text>'` for the first slot value the D51 screen refuses, else None."""
+    for key, value in (slots.items() if isinstance(slots, dict) else ()):
+        match = CREDENTIAL_RE.search(value) if isinstance(value, str) else None
+        if match:
+            return f"slot {key} matched {match.group(0)!r}"
+    return None
+
+
 def _reject_credential_seeking(slots: dict) -> bool:
     """True when any slot value names a credential location or secret (D51 screen; not a sandbox)."""
-    return any(CREDENTIAL_RE.search(v) for v in slots.values() if isinstance(v, str))
+    return credential_hit(slots) is not None
 
 
 # Broker effort allowlist; ultra auto-delegates outside the control loop (SKILL.md:313) and xhigh stays refused.
@@ -1609,6 +1661,10 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
                         lambda: _atomic_write_json(run_dir / "run.json", spec, overwrite=True), (OSError, BrokerFatal))
     else:
         req, reason = (None, reason) if raw is None else _validate_fields(raw, spec, rid)
+        if reason == "credential-seeking":  # #95: name the slot and the matched text so the Lead fixes it once
+            detail = credential_hit(raw.get("slots"))
+            if detail:
+                extra = dict(extra, reason_detail=detail)
     if rid:
         seen.add(rid)
     if req is None:

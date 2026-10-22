@@ -24,6 +24,16 @@ PASS = [sys.executable, "-c", "pass"]
 RD = dispatch._load("render_dispatch")
 CHECK = dispatch._load("check_dispatch_prompt")
 
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
+
 
 def _git_repo(root: Path) -> Path:
     repo = root / "repo"
@@ -193,6 +203,16 @@ class ToolGrantTest(GrantsBase):
         self.assertEqual(argv[argv.index("--allowedTools") + 1], dispatch.ASK_TOOL)
         self.assertEqual(argv.count("--allowedTools"), 1)
 
+    def test_broker_worker_turns_off_nested_sandbox(self):
+        dispatch._BROKER_SAFE_WRITES = True
+        try:
+            argv = self._launch_argv()
+        finally:
+            dispatch._BROKER_SAFE_WRITES, dispatch._WORKER_ASK, dispatch._BROKER_DENY = False, None, ()
+        self.assertEqual(argv[0], dispatch.SANDBOX_EXEC)
+        self.assertEqual(argv[argv.index("--settings") + 1], dispatch.WORKER_SETTINGS)
+        self.assertNotIn("--settings", self._launch_argv())
+
     def test_run_json_records_grants_and_gates(self):
         self._dispatch(GATES=[{"argv": PASS}])
         spec = self._spec()
@@ -279,6 +299,12 @@ class GrantsSectionTest(GrantsBase):
             dispatch._BROKER_SAFE_WRITES = False
         self.assertEqual(rc, 0, out)
         self.assertIn(self.HEADER, self._prompt())
+
+    def test_grants_section_mentions_acceptEdits(self):
+        text = dispatch.grants_section(["Read"], [], [], "acceptEdits")
+        self.assertIn("PERMISSION_MODE acceptEdits", text)
+        text = dispatch.grants_section(["Read"], [], [], "plan")
+        self.assertNotIn("PERMISSION_MODE acceptEdits", text)
 
 
 class GateParseTest(unittest.TestCase):

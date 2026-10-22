@@ -23,6 +23,16 @@ from tests.test_mcp_broker import PipeClient
 FAN = "width 1, total 2, depth 1"
 ZERO = {"width": 0, "total": 0, "depth": 0}
 
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
+
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()

@@ -13,6 +13,16 @@ from agents_inc.install import dispatch, mcp_broker
 from tests.test_dispatch_failloud import launch_result
 from tests.test_dispatch_snapshot_trust import DispatchBase
 
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
+
 
 class SandboxProbeTest(unittest.TestCase):
     def setUp(self):

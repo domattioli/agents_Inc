@@ -17,6 +17,14 @@ All notable changes to this project are recorded here. The format follows
 - Snapshot trust fails closed: a failed trusted copy, a relabelled or mismatched run.json, or a missing private record turns the run red. Cancelled runs kill and reap the delegate's process group.
 - The gate and BASH_ALLOW credential screen refuses `.env` files of any name, key files with suffixes, secret basenames, secret env-var names and token flags. `test_token_refresh.py` still passes.
 - A Codex 429 or "model is at capacity" exits 75. A stray 429 on a clean turn no longer counts as a quota pause.
+- A dispatch started inside the Claude Code Bash sandbox or a Codex sandbox stops before any child starts: red `blocked`, `detail=caller-sandboxed:...` with the fix, exit 69 (D65, #94). `AGENTS_INC_ALLOW_SANDBOXED=1` turns the check off.
+- A credential-seeking refusal names the slot and the matched text in `reason_detail`, in dispatch and in the broker result (#95).
+- The GRANTS section says that Edit and Write under `--cwd` come from `PERMISSION_MODE acceptEdits`.
+
+### Fixed
+
+- A broker Claude Worker no longer nests its own Bash sandbox inside the broker's `sandbox-exec` profile, which failed with rc 71. Its profile allows Claude Code's `/tmp/claude-<hex>-cwd` file, so Bash works with the Worker's sandbox off (D65, #94).
+- The credential slot screen no longer refuses "200k tokens", "tokenizer" or `~/.claude/skills/` paths. `token` as a word and `~/.claude/skills/../` still match (#95).
 
 ## [0.4.0] — 2026-10-16
 

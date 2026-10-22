@@ -10,9 +10,20 @@ from unittest import mock
 from agents_inc.install import dispatch
 from tests.test_dispatch_cli import GOOD_REPORT, STATUS_RE
 from tests.test_dispatch_snapshot_trust import DispatchBase
+from tests.test_dispatch_broker import popen_from_run
 
 QUOTA = "You've hit your session limit · resets 8:10pm"
 PROXY = "API Error: Couldn't connect through your proxy (ERR_PROXY_TUNNEL)"
+
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
 
 
 def launch_result(stdout="", rc=0, stderr="", is_error=False, session="sess-1"):
@@ -193,6 +204,61 @@ class LaunchFailTest(DispatchBase):
         with mock.patch.object(dispatch, "launch", side_effect=self._raiser(RuntimeError("no-sandbox-backend"))):
             rc, out, _ = self.main("--resume", run.name, "--message", "go", "--run-dir", str(self.runs))
         self._assert_failed(rc, out, "no-sandbox-backend")
+
+
+class CallerSandboxTest(DispatchBase):
+    """#94: dispatch started inside another sandbox stops before any child, red/blocked, exit 69."""
+
+    def _sandboxed(self):
+        env = {k: v for k, v in os.environ.items() if k != dispatch.ALLOW_SANDBOXED_ENV}
+        return mock.patch.dict(os.environ, dict(env, SANDBOX_RUNTIME="1"), clear=True)
+
+    def _raiser(self, *a, **k):
+        raise dispatch.CallerSandboxed("SANDBOX_RUNTIME is set (Claude Code Bash sandbox)")
+
+    def test_caller_sandbox_signals(self):
+        self.assertIsNone(dispatch.caller_sandbox({}))
+        self.assertIn("SANDBOX_RUNTIME", dispatch.caller_sandbox({"SANDBOX_RUNTIME": "1"}))
+        self.assertIn("CODEX_SANDBOX", dispatch.caller_sandbox({"CODEX_SANDBOX": "seatbelt"}))
+        self.assertIsNone(dispatch.caller_sandbox({"SANDBOX_RUNTIME": "1", dispatch.ALLOW_SANDBOXED_ENV: "1"}))
+
+    def test_launch_refuses_before_any_child(self):
+        run_dir = self.root / "rd"
+        run_dir.mkdir()
+        with self._sandboxed(), mock.patch.object(dispatch.subprocess, "Popen") as popen:
+            for kind, model in (("claude", "sonnet"), ("codex", "luna")):
+                with self.subTest(kind=kind), self.assertRaises(dispatch.CallerSandboxed):
+                    dispatch.launch(kind, model, None, self.repo, "p", run_dir)
+        popen.assert_not_called()
+
+    def test_broker_worker_skips_check(self):
+        run_dir = self.root / "rd"
+        run_dir.mkdir()
+        fake = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "ok", "session_id": "s"}), stderr="")
+        run = mock.Mock(return_value=fake)
+        with self._sandboxed(), mock.patch.object(dispatch, "_BROKER_SAFE_WRITES", True), \
+                mock.patch.object(dispatch, "sandbox_available", return_value=True), \
+                mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(run)):
+            res = dispatch.launch("claude", "haiku", "low", self.repo, "p", run_dir)
+        self.assertEqual(res["rc"], 0)
+        run.assert_called_once()
+
+    def test_run_exits_69(self):
+        rc, out, _ = self.dispatch(self._raiser)
+        self.assertEqual(rc, 69, out)
+        self.assertRegex(out.strip(), STATUS_RE)
+        spec = self.spec()
+        self.assertEqual((spec["outcome"], spec["reason"]), ("red", "blocked"))
+        self.assertIn("caller-sandboxed", spec["reason_detail"])
+        self.assertIn("do_not_retry_unchanged", spec["reason_detail"])
+
+    def test_resume_exits_69(self):
+        self.dispatch(launch_result(GOOD_REPORT))
+        run = self.run_dir()
+        with mock.patch.object(dispatch, "launch", side_effect=self._raiser):
+            rc, out, _ = self.main("--resume", run.name, "--message", "go", "--run-dir", str(self.runs))
+        self.assertEqual(rc, 69, out)
+        self.assertEqual(self.spec()["reason"], "blocked")
 
 
 class MirrorTest(DispatchBase):
