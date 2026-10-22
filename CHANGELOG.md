@@ -6,7 +6,7 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.4.0] — 2026-10-16
+## [0.4.0] — 2026-10-21
 
 ### Added
 
@@ -14,6 +14,25 @@ All notable changes to this project are recorded here. The format follows
 - Codex delegates spawn Workers on the same terms as Claude delegates (D57, #68). `agents-inc dispatch` runs astra, sol or terra as a broker Lead when FAN_OUT total is above 0 and ALLOWLIST names models; the roster follows the D46.3 rung rule. A Codex Lead may now write to cwd; its broker run directory sits outside cwd.
 - Agent gate (D61): the agent-nudge hook can block Claude `Agent`/`Task` calls that bypass agents-inc. Default `advisory` blocks nothing; `agents-inc repair --agent-gate enforce` allows only foreground Explore, Plan, claude-code-guide and statusline-setup. `AGENTS_INC_AGENT_GATE` overrides per session. Install lists the hooks it adds, `agents-inc doctor` prints the gate mode, and `agents-inc unwire` removes agents-inc hooks only.
 - Claude delegates (fable, opus, sonnet) spawn Workers through the credential-blind broker when FAN_OUT allows it and ALLOWLIST names lower-rung models. The broker checks the parent run's token, roster, fan-out, permission mode and tool grants. Workers cannot lead (D60).
+- Dispatch fails loud (spec 022, D64). New red reasons: `blocked`, `timeout`, `rc-nonzero`, `launch-failed`, `snapshot-tampered`, `snapshot-error`. The status line gains `detail=`, `report=none`, `snapshot=none` and `snapshot=TAMPERED`.
+- `agents-inc dispatch` exits 69 when blocked and 75 on quota pause. The broker still reports both as red.
+- Scope gate verifies against a trusted snapshot copy outside the delegate's cwd (`<state>/dispatch-runs/<run-id>/`, mode 0700).
+- Every dispatched turn (Claude and Codex) runs under a deadline: `AGENTS_INC_TURN_TIMEOUT_S`, default 3600, `0` for none.
+- Doctor reports `WB_CLAUDE_NOT_FOUND` and warns `WB_SANDBOX_NESTED`; the session-start hook shows warnings.
+- `FILES_IN_SCOPE` glob patterns are refused (`refused-scope`).
+- Snapshot trust fails closed: a failed trusted copy, a relabelled or mismatched run.json, or a missing private record turns the run red. Cancelled runs kill and reap the delegate's process group.
+- The gate and BASH_ALLOW credential screen refuses `.env` files of any name, key files with suffixes, secret basenames, secret env-var names and token flags. `test_token_refresh.py` still passes.
+- A Codex 429 or "model is at capacity" exits 75. A stray 429 on a clean turn no longer counts as a quota pause.
+- A dispatch started inside the Claude Code Bash sandbox or a Codex sandbox stops before any child starts: red `blocked`, `detail=caller-sandboxed:...` with the fix, exit 69 (D65, #94). `AGENTS_INC_ALLOW_SANDBOXED=1` turns the check off.
+- A credential-seeking refusal names the slot and the matched text in `reason_detail`, in dispatch and in the broker result (#95).
+- The GRANTS section says that Edit and Write under `--cwd` come from `PERMISSION_MODE acceptEdits`.
+
+### Changed
+
+- Sub-delegation no longer allows Agent-tool Claude models; Leads sub-delegate only via `agents-inc dispatch` (D59). Future examination: Agent-tool scouts can be watched live in Claude Code like native agents, which dispatch runs cannot yet. Revisit once dispatch offers the same live view.
+- `agents-inc doctor` prints a note that Codex delegates have no network unless a dispatch opts in (#66).
+- `slots.md`: a Codex delegate writes only inside `--cwd`; dispatch with `--cwd <repo>` to edit another repository (#66).
+- Release workflow checks that Zenodo archived the release under concept DOI 10.5281/zenodo.22670100.
 
 ### Fixed
 
@@ -22,13 +41,8 @@ All notable changes to this project are recorded here. The format follows
 - A delegate that stops on a usage limit now ends `outcome=red reason=quota-paused` instead of a misleading report reason; a quota pause counts as one failed attempt.
 - `agents-inc dispatch --resume` accepts a run-directory path as well as a run id; a path used to fail with `no run.json`.
 - `check_dispatch_prompt.py` reads a `FAN_OUT:` line wrapped in a list bullet, backticks or bold marks, or ending in punctuation (#66).
-
-### Changed
-
-- Sub-delegation no longer allows Agent-tool Claude models; Leads sub-delegate only via `agents-inc dispatch` (D59). Future examination: Agent-tool scouts can be watched live in Claude Code like native agents, which dispatch runs cannot yet. Revisit once dispatch offers the same live view.
-- `agents-inc doctor` prints a note that Codex delegates have no network unless a dispatch opts in (#66).
-- `slots.md`: a Codex delegate writes only inside `--cwd`; dispatch with `--cwd <repo>` to edit another repository (#66).
-- Release workflow checks that Zenodo archived the release under concept DOI 10.5281/zenodo.22670100.
+- A broker Claude Worker no longer nests its own Bash sandbox inside the broker's `sandbox-exec` profile, which failed with rc 71. Its profile allows Claude Code's `/tmp/claude-<hex>-cwd` file, so Bash works with the Worker's sandbox off (D65, #94).
+- The credential slot screen no longer refuses "200k tokens", "tokenizer" or `~/.claude/skills/` paths. `token` as a word and `~/.claude/skills/../` still match (#95).
 
 ## [0.3.1] — 2026-10-10
 

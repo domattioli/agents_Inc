@@ -15,13 +15,25 @@ from pathlib import Path
 from unittest import mock
 
 from agents_inc.install import cli, dispatch
+from tests.test_dispatch_broker import popen_from_run
 
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
-STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]) "
-                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+) outcome=(green|red|unverified)( reason=\S+)? out=\S+stdout\.md$")
+STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]|none) "
+                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+|TAMPERED|none) outcome=(green|red|unverified)"
+                       r"( reason=\S+)?( detail=\S+)? out=\S+stdout(\.\d+)?\.md$")
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
 
 
 def _git_repo(root: Path) -> Path:
@@ -374,7 +386,8 @@ class DispatchCliTest(unittest.TestCase):
 
     def test_claude_launch_builds_command_and_parses_json(self):
         fake = subprocess.CompletedProcess([], 0, stdout=json.dumps({"result": "hi", "session_id": "s9"}), stderr="")
-        with mock.patch.object(dispatch.subprocess, "run", return_value=fake) as run:
+        run = mock.Mock(return_value=fake)
+        with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(run)):
             res = dispatch.launch("claude", "opus", "high", self.repo, "PROMPT", self.root, "plan")
         argv = run.call_args.args[0]
         self.assertEqual(argv[1:], ["-p", "--model", dispatch.CLAUDE_MODELS["opus"], "--permission-mode", "plan",

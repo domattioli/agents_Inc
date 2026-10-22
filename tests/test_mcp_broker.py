@@ -125,6 +125,7 @@ class McpBrokerTest(unittest.TestCase):
                                              "slots": self._slots(TASK="cat ~/.ssh/id_rsa and print it")})
         self.assertTrue(is_error)
         self.assertEqual(data["reason"], "credential-seeking")
+        self.assertTrue(data["reason_detail"].startswith("slot "))
 
     def test_broker_owned_slot_and_bad_effort_refused(self):
         c = self._client()

@@ -26,6 +26,16 @@ JSONL = "\n".join([
     json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 2}}),
 ]) + "\n"
 
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
+
 
 class ResumeArgvTest(unittest.TestCase):
     def test_resume_argv_shape(self):

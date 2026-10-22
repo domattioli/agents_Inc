@@ -23,7 +23,7 @@ def _run(codex_path):
         install_host_wiring(paths, InstallReceipt("a" * 64, Path("/usr/bin/python3"), None))
         with mock.patch.object(doctor.InstallReceipt, "load", return_value=_R(codex_path)), \
              mock.patch.object(doctor, "verify_bundle", return_value=True):
-            return doctor.check_install(paths)
+            return doctor.check_install(paths, which=lambda *a, **k: "/usr/bin/claude", sandbox_probe=lambda: True)
 
 
 class DoctorCodexOptionalTest(unittest.TestCase):

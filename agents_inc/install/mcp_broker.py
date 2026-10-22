@@ -207,18 +207,23 @@ class Broker:
         req = {"schema_version": D.REQUEST_SCHEMA_VERSION, "request_id": rid, "model": model,
                "effort": args.get("effort"), "tier": D._load("dispatch_rungs").MODEL_RUNG.get(model)
                if isinstance(model, str) else None, "slots": args.get("slots")}
+        detail = None
         if len(json.dumps(req).encode("utf-8")) > D.REQUEST_MAX_BYTES:
             req, reason = None, "oversize"
         else:
             req, reason = D._validate_fields(req, self.spec, rid)
+            if reason == "credential-seeking":
+                detail = D.credential_hit(args.get("slots"))  # #95
         if req is None:
-            self.spec["request_counts"]["refused"] += 1
+            with D._SPEC_LOCK:
+                self.spec["request_counts"]["refused"] += 1
             now = D._now()
-            D._write_request_result(self.run_dir, rid, {
+            extra = {"reason_detail": detail} if detail else {}
+            D._write_request_result(self.run_dir, rid, dict({
                 "status": "refused", "dispatch_exit_code": D.REQ_REFUSED, "child_run_id": None, "outcome": None,
-                "reason": reason, "started_at": now, "finished_at": now}, f"refused: {reason}\n")
+                "reason": reason, "started_at": now, "finished_at": now}, **extra), f"refused: {reason}\n")
             self.save()
-            return {"status": "refused", "reason": reason, "request_id": rid}, True, f"refused:{reason}"
+            return dict({"status": "refused", "reason": reason, "request_id": rid}, **extra), True, f"refused:{reason}"
         if self.busy():
             return self._refuse(rid, "worker-running")
         self.start(rid, lambda: D._run_validated(self.run_dir, rid, req, self.spec, self.home_repo))
@@ -353,7 +358,8 @@ def serve(run_dir: Path, stdin, stdout, log_env_keys: bool = True, home_repo: st
         if oversize:
             with contextlib.suppress(Exception):
                 broker.ensure()
-                broker.spec["request_counts"]["refused"] += 1
+                with D._SPEC_LOCK:
+                    broker.spec["request_counts"]["refused"] += 1
                 broker.save()
             log_line(run_dir, "frame refused:oversize")
             stdout.write(json.dumps(_reply(None, error={"code": -32600, "message": "refused:oversize"})) + "\n")

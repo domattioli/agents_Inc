@@ -16,12 +16,13 @@ from agents_inc.install.receipt import InstallReceipt
 from agents_inc.install.runtime import MODEL_ALIASES
 
 CATALOG_DIR = Path(__file__).parent / "fixtures/catalog"
+HOST = {"which": lambda *a, **k: "/usr/bin/claude", "sandbox_probe": lambda: True}  # results must not depend on the host
 
 
 class DoctorTest(unittest.TestCase):
     def test_missing_receipt_is_not_ready(self):
         with tempfile.TemporaryDirectory() as raw:
-            report = check_install(InstallPaths.for_home(Path(raw) / "home"))
+            report = check_install(InstallPaths.for_home(Path(raw) / "home"), **HOST)
             self.assertFalse(report.ready)
             self.assertIn("WB_RELEASE_UNTRUSTED", report.codes)
 
@@ -55,7 +56,7 @@ class DoctorWarningsTest(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def test_model_drift_is_a_warning_not_a_code(self):
-        report = check_install(self.paths, models=self.models)
+        report = check_install(self.paths, models=self.models, **HOST)
         self.assertEqual(report.codes, ())
         self.assertTrue(report.ready)
         self.assertIn(self.drift, report.warnings)
@@ -67,17 +68,19 @@ class DoctorWarningsTest(unittest.TestCase):
         stub = mock.Mock(release_hash=real.release_hash, codex_path=codex)
         with mock.patch("agents_inc.install.doctor.InstallReceipt.load", return_value=stub), \
              mock.patch("agents_inc.install.runtime.tempfile.gettempdir", return_value=str(tmp)):
-            report = check_install(self.paths, models=[])
+            report = check_install(self.paths, models=[], **HOST)
         self.assertIn("WB_CLI_TEMP_PATH", report.warnings)
         self.assertTrue(report.ready); self.assertEqual(report.codes, ())
 
     def test_no_cache_means_no_drift_warning(self):
-        report = check_install(self.paths, catalog_path=self.home / "missing.json")
+        report = check_install(self.paths, catalog_path=self.home / "missing.json", **HOST)
         self.assertFalse([w for w in report.warnings if w.startswith("MODEL_DRIFT")])
 
     def test_cli_text_puts_ready_first_and_warnings_after(self):
         out = io.StringIO()
-        env = {"CODEX_HOME": str(self.codex_home)}
+        stub_bin = Path(self.tmp.name) / "stub-bin"; stub_bin.mkdir()
+        (stub_bin / "claude").write_text("#!/bin/sh\nexit 0\n"); (stub_bin / "claude").chmod(0o755)
+        env = {"CODEX_HOME": str(self.codex_home), "PATH": str(stub_bin) + os.pathsep + os.environ.get("PATH", "")}  # doctor needs a claude CLI; CI has none
         with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out):
             code = cli.main(["doctor"])
         lines = out.getvalue().splitlines()
@@ -93,22 +96,22 @@ class DoctorWarningsTest(unittest.TestCase):
         self.assertEqual(set(json.loads(out.getvalue())), {"ready", "codes", "live", "warnings"})
 
     def test_install_stale_absent_when_checkout_matches(self):
-        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models).warnings)
+        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models, **HOST).warnings)
 
     def test_install_stale_present_when_checkout_changed(self):
         (self.source / "agents_inc" / "extra.txt").write_text("new")
-        report = check_install(self.paths, models=self.models)
+        report = check_install(self.paths, models=self.models, **HOST)
         self.assertIn("INSTALL_STALE", report.warnings)
         self.assertEqual(report.codes, ())
 
     def test_install_stale_silent_without_record(self):
         (self.paths.state / "source-checkout").unlink()
-        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models).warnings)
+        self.assertNotIn("INSTALL_STALE", check_install(self.paths, models=self.models, **HOST).warnings)
 
     def test_stale_check_writes_nothing_under_releases(self):
         before = sorted(p.name for p in self.paths.releases.iterdir())
         (self.source / "agents_inc" / "extra.txt").write_text("new")
-        check_install(self.paths, models=self.models)
+        check_install(self.paths, models=self.models, **HOST)
         self.assertEqual(sorted(p.name for p in self.paths.releases.iterdir()), before)
 
     def _warnings_with_packaged_hook(self, text):
@@ -116,7 +119,7 @@ class DoctorWarningsTest(unittest.TestCase):
         pkg = Path(self.tmp.name) / "pkg_at_route.sh"; pkg.write_text(text)
         from agents_inc.install import doctor
         with mock.patch.object(doctor.datafiles, "repo_file", return_value=pkg):
-            return check_install(self.paths, models=self.models).warnings
+            return check_install(self.paths, models=self.models, **HOST).warnings
 
     def test_packaged_record_matching_hook_has_no_drift_or_stale(self):
         warnings = self._warnings_with_packaged_hook("#!/usr/bin/env bash\nexit 0\n")

@@ -13,9 +13,10 @@ REPO = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO / "scripts" / "agents-inc"
 
 
-def _run(args, home, cwd, stdin=""):
+def _run(args, home, cwd, stdin="", path_prefix=None):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     env["HOME"] = str(home)
+    if path_prefix: env["PATH"] = str(path_prefix) + os.pathsep + env.get("PATH", "")
     return subprocess.run(args, cwd=cwd, env=env, input=stdin, text=True, capture_output=True, timeout=120)
 
 
@@ -39,12 +40,14 @@ class LauncherSmokeTest(unittest.TestCase):
     def test_install_then_installed_launcher_is_ready(self):
         with tempfile.TemporaryDirectory() as raw:
             home = Path(raw)
+            stub_bin = home / "stub-bin"; stub_bin.mkdir()
+            (stub_bin / "claude").write_text("#!/bin/sh\nexit 0\n"); (stub_bin / "claude").chmod(0o755)  # doctor needs a claude CLI; CI has none
             result = _run([str(LAUNCHER), "install", "--source", str(REPO), "--without-codex"], home, cwd=raw)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((home / ".config/agents-inc/install.json").is_file())
             installed = home / ".local/bin/agents-inc"
             self.assertTrue(installed.resolve().is_file())
-            doctor = _run([str(installed), "doctor"], home, cwd=raw)
+            doctor = _run([str(installed), "doctor"], home, cwd=raw, path_prefix=stub_bin)
             self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
             self.assertIn("READY", doctor.stdout)
 

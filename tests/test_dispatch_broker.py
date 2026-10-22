@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import secrets
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +19,30 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+
+_ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
+
+
+def setUpModule():
+    _ALLOW.start()  # #94: real launch() calls stay allowed when the suite runs inside a sandbox
+
+
+def tearDownModule():
+    _ALLOW.stop()
+
+
+def popen_from_run(fake_run):
+    """Adapt a subprocess.run-style fake to the Popen + communicate calls launch uses (022 turn deadline)."""
+    def factory(argv, stdin=None, stdout=None, stderr=None, **kw):
+        proc = SimpleNamespace(pid=0, returncode=None)
+
+        def communicate(input=None, timeout=None):
+            res = fake_run(argv, input=input, **kw)
+            proc.returncode = res.returncode
+            return res.stdout, res.stderr
+        proc.communicate = communicate
+        return proc
+    return factory
 
 
 def _git_repo(root: Path) -> Path:
@@ -401,6 +426,7 @@ class BrokerTest(unittest.TestCase):
         self._serve()
         for i in range(len(bad)):
             self.assertEqual(self._result(f"c{i}")["reason"], "credential-seeking", bad[i])
+            self.assertTrue(self._result(f"c{i}")["reason_detail"].startswith("slot TASK matched"), bad[i])
         self.assertEqual(self.launches, [])
 
     def test_scope_boilerplate_required(self):
@@ -435,7 +461,8 @@ class BrokerTest(unittest.TestCase):
         def fake_run(argv, **kw):
             captured.update(kw, argv=argv)
             return SimpleNamespace(returncode=0, stdout=json.dumps({"result": "ok", "session_id": "s"}), stderr="")
-        with mock.patch.dict("os.environ", canary), mock.patch.object(dispatch.subprocess, "run", side_effect=fake_run), \
+        with mock.patch.dict("os.environ", canary), \
+                mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(fake_run)), \
                 mock.patch.object(dispatch.shutil, "which", return_value="/opt/x/bin/claude"), \
                 mock.patch.object(dispatch.os, "access", return_value=True):
             dispatch._BROKER_SAFE_WRITES = True
@@ -456,9 +483,8 @@ class BrokerTest(unittest.TestCase):
 
     def test_non_broker_launch_keeps_env(self):
         captured = {}
-        with mock.patch.object(dispatch.subprocess, "run",
-                               side_effect=lambda argv, **kw: captured.update(kw) or SimpleNamespace(
-                                   returncode=0, stdout="{}", stderr="")):
+        with mock.patch.object(dispatch.subprocess, "Popen", side_effect=popen_from_run(
+                lambda argv, **kw: captured.update(kw) or SimpleNamespace(returncode=0, stdout="{}", stderr=""))):
             dispatch.launch("claude", "haiku", "low", self.repo, "p", self.run_dir)
         self.assertNotIn("env", captured)
 
@@ -480,6 +506,7 @@ class BrokerTest(unittest.TestCase):
         self.assertNotIn('(require-not (subpath "/h/.claude/.credentials.json"))', prof)
         scratch = f"/private/tmp/claude-{os.getuid()}"
         self.assertIn(f'(require-not (subpath "{scratch}"))', lines[2])         # Claude Code scratch grant
+        self.assertIn(f'(require-not (regex #"{dispatch.CLAUDE_CWD_FILE_RE}"))', lines[2])  # #94 cwd file
         self.assertNotIn('(subpath "/private/tmp")', prof)                     # N3: no bare /private/tmp
         self.assertNotIn('(require-not (subpath "/h/.claude"))', prof)          # no blanket ~/.claude write
 
@@ -501,6 +528,12 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(ok.stdout, "line one\n")
         wr = subprocess.run(sb + ["/usr/bin/touch", str(home / "outside")], capture_output=True, text=True)
         self.assertNotEqual(wr.returncode, 0)
+        cwd_file = Path(f"/private/tmp/claude-{secrets.token_hex(2)}-cwd")
+        self.addCleanup(lambda: cwd_file.unlink(missing_ok=True))
+        r = subprocess.run(sb + ["/usr/bin/touch", str(cwd_file)], capture_output=True)
+        self.assertEqual(r.returncode, 0)                                     # #94 cwd file allowed
+        r = subprocess.run(sb + ["/usr/bin/touch", f"{cwd_file}x"], capture_output=True)
+        self.assertNotEqual(r.returncode, 0)                                  # only the exact name
         (home / ".claude" / "projects").mkdir(parents=True)
         (home / ".claude" / ".credentials.json").write_text("cred")
         (home / ".claude.json").write_text("cfg")
@@ -781,7 +814,7 @@ class BrokerTest(unittest.TestCase):
                         mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt), \
                         mock.patch.object(runtime, "load_model_map", return_value={"luna": "gpt-5.6-luna"}), \
                         mock.patch.object(runtime, "lead_codex_home", return_value=home), \
-                        mock.patch.object(runtime.subprocess, "run", side_effect=fake_run), \
+                        mock.patch.object(runtime.subprocess, "Popen", side_effect=popen_from_run(fake_run)), \
                         mock.patch.object(runtime.os, "access", return_value=True), \
                         mock.patch.object(runtime.Path, "is_file", return_value=True), \
                         mock.patch.dict(os.environ, {"HOME": str(self.root)}):
@@ -815,7 +848,7 @@ class BrokerTest(unittest.TestCase):
                     mock.patch("agents_inc.install.receipt.InstallReceipt.load", return_value=receipt), \
                     mock.patch.object(runtime, "load_model_map", return_value={"luna": "gpt-5.6-luna"}), \
                     mock.patch.object(runtime, "lead_codex_home", return_value=home), \
-                    mock.patch.object(runtime.subprocess, "run", side_effect=fake_run), \
+                    mock.patch.object(runtime.subprocess, "Popen", side_effect=popen_from_run(fake_run)), \
                     mock.patch.object(runtime.os, "access", return_value=True), \
                     mock.patch.object(runtime.Path, "is_file", return_value=True), \
                     mock.patch.dict(os.environ, {"HOME": str(self.root)}):
