@@ -168,6 +168,8 @@ scripts/watch.sh <stderr>
     - Outside a git repo, use `--skip-git-repo-check`.
   - **Review**
     - Use `--sandbox read-only` for review-only work.
+  - **Caller sandbox**
+    - `agents-inc dispatch` refuses to start from inside the Claude Code Bash sandbox or a Codex sandbox, because that sandbox blocks the provider API. It exits 69 with `detail=caller-sandboxed`. Rerun it outside the sandbox, for example by adding `"agents-inc *"` to `sandbox.excludedCommands` (D65).
 
 ## Irreversible actions
 
