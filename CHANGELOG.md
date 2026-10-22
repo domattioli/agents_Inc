@@ -6,7 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.4.0] — 2026-10-21
+## [0.4.1] — 2026-10-21
+
+0.4.0 was published and withdrawn on the same day; 0.4.1 replaces it. The only change from 0.4.0 is the software title ("Cross-Vendor Governance for an Agentic-AI Workforce") and the matching PyPI summary.
 
 ### Added
 

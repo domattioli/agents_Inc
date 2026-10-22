@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agents-inc"
 dynamic = ["version"]
-description = "Governed multi-agent dispatch and verification layer"
+description = "Cross-vendor governance for an agentic-AI workforce"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "LicenseRef-PolyForm-Small-Business-1.0.0-NoAI-Training"
