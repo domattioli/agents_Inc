@@ -78,7 +78,9 @@ class DoctorWarningsTest(unittest.TestCase):
 
     def test_cli_text_puts_ready_first_and_warnings_after(self):
         out = io.StringIO()
-        env = {"CODEX_HOME": str(self.codex_home)}
+        stub_bin = Path(self.tmp.name) / "stub-bin"; stub_bin.mkdir()
+        (stub_bin / "claude").write_text("#!/bin/sh\nexit 0\n"); (stub_bin / "claude").chmod(0o755)
+        env = {"CODEX_HOME": str(self.codex_home), "PATH": str(stub_bin) + os.pathsep + os.environ.get("PATH", "")}  # doctor needs a claude CLI; CI has none
         with mock.patch.object(cli, "_paths", return_value=self.paths), mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out):
             code = cli.main(["doctor"])
         lines = out.getvalue().splitlines()
