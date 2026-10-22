@@ -56,7 +56,9 @@ def arm_home(out: Path, arm: str) -> Path:
 
 
 def trial_env(home: Path) -> dict:
-    env = {k: v for k, v in os.environ.items() if k not in SCRUB}
+    # Drop every CLAUDE_* variable: the calling host's flags (auto background tasks, effort, remote-session
+    # wiring) otherwise leak into the trial and add ~25k tokens of host context. Auth survives without them.
+    env = {k: v for k, v in os.environ.items() if k not in SCRUB and not k.startswith("CLAUDE")}
     env["HOME"] = str(home)
     env["PATH"] = f"{home / '.local/bin'}:{env.get('PATH', '')}"
     env.setdefault("AGENTS_INC_TURN_TIMEOUT_S", "1800")

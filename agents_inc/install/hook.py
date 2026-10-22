@@ -5,9 +5,15 @@ from datetime import datetime
 from .doctor import check_install
 from .paths import InstallPaths
 
-NUDGE = ("agents-inc reminder: the Agent tool spawns Claude subagents only. Before delegating, route the task "
-         "through agents-inc (workerbee skill): it picks the cheapest capable rung across Claude, Codex, Gemini, "
-         "Mistral, and OpenRouter. Keep this Agent call only if routing selects a Claude rung.")
+# The rung is the model; the route is always `agents-inc dispatch` (D59, QUICKREF step 2). The earlier wording
+# ("keep this Agent call only if routing selects a Claude rung") approved every Agent call on a Claude-only
+# install, since sonnet and haiku are Claude rungs (token bench dry run, 2026-10-22).
+NUDGE = ("agents-inc reminder: this Agent call bypasses agents-inc routing, the ledger and verification. Use Agent "
+         "only for a read-only foreground scout (Explore, Plan). Any other delegation, including to a Claude rung "
+         "such as sonnet or haiku, goes through `agents-inc dispatch --slots <json> --model <rung>`: naming a model "
+         "picks the rung, not the route.")
+ROUTE_RULE = ("Naming a model (opus, sonnet, haiku) picks the rung, not the route: delegate through "
+              "`agents-inc dispatch`, and use the Agent tool only for read-only foreground scouts (Explore, Plan).")
 # Spec 015 FR-002: a Codex persona name at the start of a Claude subagent description mislabels the model.
 PERSONA_RE = re.compile(r"(?i)\A(?:astra|sol|terra|luna)(?=\s|:|/|\Z)")
 PERSONA_DENY_REASON = ("FR-002: Agent/Task descriptions cannot begin with a Codex persona name. For Codex execution, "
@@ -35,9 +41,13 @@ def session_start(paths: InstallPaths, host: str) -> str:
     status = "READY" if report.ready else " ".join(report.codes)
     skill = paths.current / "skills/workerbee/SKILL.md"
     text = (f"agents-inc is installed (doctor: {status}). Every delegation in this session routes through agents-inc; "
-            f"read {skill} before the first dispatch. Launcher: {paths.launcher}.")
+            f"read {skill} before the first dispatch. {ROUTE_RULE} Launcher: {paths.launcher}.")
     if not report.ready: text += " Tell the operator doctor is not READY and suggest `agents-inc repair --source <agents_Inc checkout>`."
-    for warning in report.warnings: text += f" WARNING: {warning}."
+    for warning in report.warnings:
+        # An install made --without-codex reports WB_CLI_NOT_FOUND as a warning; say what it means so a session
+        # does not read "CLI not found" as "dispatch is broken" and avoid it.
+        text += (" Codex is not installed (WB_CLI_NOT_FOUND): Codex rungs are unavailable; Claude rungs dispatch normally."
+                 if warning == "WB_CLI_NOT_FOUND" else f" WARNING: {warning}.")
     if "INSTALL_STALE" in report.warnings: text += " Run `agents-inc repair --source <agents_Inc checkout>`."
     from .update_check import notice  # at most one PyPI request a day; silent on any failure
     update = notice(paths.state)
