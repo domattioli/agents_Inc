@@ -2,7 +2,7 @@
 
 # agents_Inc
 
-<p align="center"><strong>A corporate org chart for AI agents: you ask, the session you talk to dispatches a Lead model, and the Lead runs cheaper Worker models. The aim is more checked work from the AI subscriptions you already pay for.</strong></p>
+<p align="center"><strong>Cross-vendor governance for an agentic-AI workforce. It works like a corporate org chart: you ask, the session you talk to dispatches a Lead model, and the Lead runs cheaper Worker models. The aim is more checked work from the AI subscriptions you already pay for.</strong></p>
 
 <p align="center">
 <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-orange">
@@ -137,6 +137,7 @@ The full description, including the delegation limits, the 14-element prompt con
 - The governed path is off by default, so a fresh install does not run the enforced cross-vendor review.
 - Cross-vendor review catches disagreement between models. It does not catch a blind spot that both vendors share.
 - Deterministic checks cover what a script can express, such as a file, a quote or an exit code. They do not replace human judgment on scope or design.
+- `agents-inc dispatch` must run outside the Claude Code or Codex sandbox, because the sandbox blocks the provider API. Inside it, dispatch exits 69 before any delegate starts and prints the fix: add `"agents-inc *"` to `sandbox.excludedCommands`.
 - Free-model capacity varies: a probe on 2026-09-29 found 429 or capacity errors on several free models ([docs/BENCH.md](https://github.com/domattioli/agents_Inc/blob/main/docs/BENCH.md)). Artifacts stay local; remote publication (Bindle Backend B) is not built.
 
 Updates: new sessions and `agents-inc doctor` tell you when a newer release is on PyPI (one check a day; `AGENTS_INC_NO_UPDATE_CHECK=1` turns it off).
@@ -162,6 +163,8 @@ Found a bug or want a feature? `agents-inc report bug --title "..." --body "..."
 ## 8. Citation and license
 
 The DOI for all versions is [10.5281/zenodo.22670100](https://doi.org/10.5281/zenodo.22670100). GitHub's "Cite this repository" button reads [CITATION.cff](https://github.com/domattioli/agents_Inc/blob/main/CITATION.cff).
+
+> Cite as: DO Mattioli (2026). agents_Inc: Cross-Vendor Governance for an Agentic-AI Workforce. Zenodo. https://doi.org/10.5281/zenodo.22670100
 
 agents_Inc is licensed under the PolyForm Small Business License 1.0.0, with one added term that forbids use for AI or machine-learning training. The full terms are in [LICENSE](https://github.com/domattioli/agents_Inc/blob/main/LICENSE).
 
