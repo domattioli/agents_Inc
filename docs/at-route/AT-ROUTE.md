@@ -53,8 +53,8 @@ Aliases, case-insensitive:
 
 | Alias | Model | Path |
 |---|---|---|
-| `haiku` | `claude-haiku-4-5-20251001` | `claude -p` |
-| `sonnet` | `claude-sonnet-5` | `claude -p` |
+| `haiku` | `claude-haiku-5-5` | `claude -p` |
+| `sonnet` | `claude-sonnet-5-5` | `claude -p` |
 | `opus` | `claude-opus-5-5` | `claude -p` |
 | `fable` | `claude-fable-5-1` | `claude -p` |
 | `astra` | `gpt-6-astra` | codex-bridge daemon |
