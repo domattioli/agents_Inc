@@ -34,7 +34,7 @@ SCRIPTS = repo_file("skills/workerbee/scripts")
 CODEX_SLUGS = ("astra", "sol", "terra", "luna")
 # Exact Claude model ids passed to `claude -p --model`. Keep this the only table.
 CLAUDE_MODELS = {"fable": "claude-fable-5-1", "opus": "claude-opus-5-5",
-                 "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-4-5-20251001"}
+                 "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"}
 # Slot placeholder for the snapshot path; the wrapper fills it after capture.
 SNAPSHOT_PLACEHOLDER = "<snapshot>"
 FREE_SLUGS = ("gemini", "mistral", "openrouter")

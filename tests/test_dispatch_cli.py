@@ -512,8 +512,8 @@ class DispatchCliTest(unittest.TestCase):
     def test_claude_model_ids_exact(self):
         self.assertEqual(dispatch.CLAUDE_MODELS, {
             "fable": "claude-fable-5-1", "opus": "claude-opus-5-5",
-            "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-4-5-20251001"})
-        self.assertEqual(dispatch.claude_argv("haiku", "plan")[3], "claude-haiku-4-5-20251001")
+            "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"})
+        self.assertEqual(dispatch.claude_argv("haiku", "plan")[3], "claude-haiku-5-5")
 
     def test_claude_argv_effort(self):
         self.assertEqual(dispatch.claude_argv("opus", "plan", effort="low")[-2:], ["--effort", "low"])
