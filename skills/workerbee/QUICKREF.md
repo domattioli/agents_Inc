@@ -57,6 +57,6 @@ Lint (mandatory, D41): `agents-inc dispatch` lints every prompt it renders; by h
 - GREEN with no supervisor harness output: treat as RED.
 - Ambiguous gate: treat as RED.
 - Permission classifier blocks a dispatch: report it, do not rephrase around it.
-- Dispatch exits 69 with `detail=caller-sandboxed`: the caller runs inside a sandbox that blocks the provider API. Rerun outside it (`sandbox.excludedCommands` `"agents-inc *"` or `dangerouslyDisableSandbox`); never retry unchanged (D65).
+- Dispatch exits 69 with `detail=caller-sandboxed`: the caller runs inside a sandbox that blocks the provider API. Add `"agents-inc *"` to `sandbox.excludedCommands` and rerun as one plain command: an env prefix, `cd` or `&&` stops the match. Auto mode refuses `dangerouslyDisableSandbox`, and a Codex delegate cannot start inside the sandbox (nested `sandbox-exec`, rc 71), so `AGENTS_INC_ALLOW_SANDBOXED=1` does not help it. Never retry unchanged (D65, D66).
 - Harness "requires approval" on a delegate call is a missing grant (#54, D58), not a policy refusal: stop, record the exact command, hand back, never route around it. One plain command per Bash call (no `cd`, `&&`, `;`, pipes, loops, shell variables); a compound command matches no grant.
 - Operator changes the premise: stop the running delegate first.

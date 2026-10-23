@@ -250,7 +250,7 @@ CLAUDE_WORKER_DENY = (".ssh", ".config", ".codex-bridge", ".codex", ".local", ".
 WORKER_SETTINGS = '{"sandbox": {"enabled": false}}'
 # #94: AGENTS_INC_ALLOW_SANDBOXED=1 lets dispatch start inside another sandbox (tests, a caller that knows better).
 ALLOW_SANDBOXED_ENV = "AGENTS_INC_ALLOW_SANDBOXED"
-SANDBOX_FIX = ('rerun outside the sandbox (sandbox.excludedCommands "agents-inc *" or dangerouslyDisableSandbox); '
+SANDBOX_FIX = ('add "agents-inc *" to sandbox.excludedCommands; rerun as one plain command (no env prefix, cd or &&); '
                "do not retry unchanged")
 
 
