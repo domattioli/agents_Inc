@@ -28,6 +28,9 @@ Pick the cheapest rung that will not get the answer wrong. Escalate on evidence 
 - The supervisor owns the verifier. Do not let a delegate grade its own work.
 - Unknown is not zero. Leave an unestablished price or count absent.
 - Poll every dispatch that outlives one tool call. Exit 0 means returned, not verified.
+- Trust a green gate, not a green report. `outcome=green` with GATES means dispatch already ran each GATES command and it exited as expected; do not re-run it. Verify by reading the delegate's diff and output against the TASK. Re-run only when the outcome is `unverified` (no GATES) or in dispute.
+- Routine slot files need 8 slots: ROLE, TASK, CONSTRAINTS, OUT_OF_SCOPE, FILES_IN_SCOPE, STOP_RULE, SUCCESS_GATE, FAILURE_GATE, plus GATES: a JSON list of `{"argv": [...], "cwd": ".", "timeout_s": 600, "expect_rc": 0}` objects (only `argv` required) or plain command strings, for example `["python3 -m unittest tests.test_x"]`. The renderer fills ALLOWLIST, CLASSIFICATION, EFFORT, SECOND_OPINION, PLAN_CONTRACT and PRE_EXISTING_CHANGES with Worker defaults (the last one keeps a `<snapshot>` placeholder that dispatch replaces after capture); set them only when the default is wrong (a Lead, confidential input, a plan deliverable).
+- Coupled work (code plus its tests) goes to one delegate. Two delegates writing in one cwd at the same time trip each other's scope snapshot (`snapshot-not-clean`).
 - Dispatching from a git worktree: a Codex delegate cannot run git there, because the worktree's metadata sits in the main checkout's `.git`, outside the sandbox. Save the diff to a git-ignored file inside cwd (for example `.scratch/<task>/pr.diff`) and tell the delegate not to run git.
 - A Codex delegate (astra, sol, terra) spawns Workers through the broker when its FAN_OUT total is above 0 and ALLOWLIST names models, on the same terms as a Claude delegate (D57). Its Workers may be Claude or Codex.
 
@@ -57,6 +60,7 @@ Lint (mandatory, D41): `agents-inc dispatch` lints every prompt it renders; by h
 - GREEN with no supervisor harness output: treat as RED.
 - Ambiguous gate: treat as RED.
 - Permission classifier blocks a dispatch: report it, do not rephrase around it.
+- Before the first dispatch in a sandboxed Claude Code session, `~/.claude/settings.json` must list `"agents-inc *"` under `sandbox.excludedCommands`. Doctor warns `WB_SANDBOX_EXCLUDE_MISSING` when it does not. Auto mode denies the agent that edit, so hand back to the operator with that exact ask before dispatching, not after the refusal.
 - Dispatch exits 69 with `detail=caller-sandboxed`: the caller runs inside a sandbox that blocks the provider API. Add `"agents-inc *"` to `sandbox.excludedCommands` and rerun as one plain command: an env prefix, `cd` or `&&` stops the match. Auto mode refuses `dangerouslyDisableSandbox`, and a Codex delegate cannot start inside the sandbox (nested `sandbox-exec`, rc 71), so `AGENTS_INC_ALLOW_SANDBOXED=1` does not help it. Never retry unchanged (D65, D66).
 - Harness "requires approval" on a delegate call is a missing grant (#54, D58), not a policy refusal: stop, record the exact command, hand back, never route around it. One plain command per Bash call (no `cd`, `&&`, `;`, pipes, loops, shell variables); a compound command matches no grant.
 - Operator changes the premise: stop the running delegate first.

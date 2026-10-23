@@ -53,6 +53,16 @@ def default_fan_out(slots: dict) -> str:
 DANGER_RE = re.compile(r"\bgit\b[^;&|]*\b(?:push|commit)\b|\bsudo\b|\brm\b(?=[^;&|]*\s-\w*r)(?=[^;&|]*\s-\w*f)"
                        r"|\brm\b[^;&|]*\s--recursive\b|\bcurl\b|\bssh\b", re.IGNORECASE)
 _GATE_KEYS = {"argv", "cwd", "timeout_s", "expect_rc"}
+# Filled when the slot is absent or blank, so a routine Worker dispatch needs only ROLE, TASK, CONSTRAINTS,
+# OUT_OF_SCOPE, FILES_IN_SCOPE, STOP_RULE, SUCCESS_GATE and FAILURE_GATE (PRE_EXISTING_CHANGES defaults to the snapshot placeholder text; dispatch fills the path).
+# Each default is the Worker case; a Lead, a confidential input or a plan deliverable sets the slot explicitly.
+SLOT_DEFAULTS = {
+    "ALLOWLIST": "none -- do all work yourself",
+    "CLASSIFICATION": "internal (repo source, non-secret)",
+    "EFFORT": "as set by the transport; medium when unset",
+    "SECOND_OPINION": "not applicable -- routine code checked by a deterministic gate; the supervisor reviews",
+    "PLAN_CONTRACT": "not applicable -- deliverable is not a plan.",
+}
 _BAD_PREFIX_CHARS = ("*", "(", ")", "`", "\0")
 
 
@@ -77,6 +87,8 @@ def parse_gates(value) -> tuple[list | None, str | None]:
     out = []
     for n, g in enumerate(value, 1):
         who = f"entry {n}"
+        if isinstance(g, str):  # #100: a plain command string is one gate; shlex splits it, no shell runs it
+            g = {"argv": shlex.split(g)} if g.strip() else {}
         if not isinstance(g, dict) or not set(g) <= _GATE_KEYS:
             return None, f"{who} must be an object with keys from argv, cwd, timeout_s, expect_rc"
         argv = g.get("argv")
@@ -131,6 +143,15 @@ def gate_text(gates: list) -> str:
 
 def _text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def default_pre_existing(files_in_scope) -> str:
+    """#100: the PRE_EXISTING_CHANGES text when the slot is blank. `<snapshot>` is the placeholder dispatch
+    replaces with the real path after capture; each bare path line under FILES IN SCOPE becomes an --allow."""
+    allow = [ln.strip() for ln in _text(files_in_scope).splitlines()
+             if ln.strip() and " " not in ln.strip() and not ln.strip().lower().startswith("none")]
+    cmd = "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>" + "".join(f" --allow {a}" for a in allow)
+    return f"snapshot <snapshot>; verify with `{cmd}`"
 
 
 def _first_alias(text: str) -> str | None:
@@ -326,6 +347,17 @@ def main() -> int:
     print("chain: %s < %s < %s (%s, %s, %s)" % (
         chain["DELEGATE"], chain["SUPERVISOR"], chain["EXECUTIVE"],
         src["DELEGATE"], src["SUPERVISOR"], src["EXECUTIVE"]), file=sys.stderr)
+
+    filled = []
+    if not _text(slots_data.get("PRE_EXISTING_CHANGES")):
+        slots_data["PRE_EXISTING_CHANGES"] = default_pre_existing(slots_data.get("FILES_IN_SCOPE"))
+        filled.append("PRE_EXISTING_CHANGES")
+    for slot, value in SLOT_DEFAULTS.items():
+        if not (isinstance(slots_data.get(slot), str) and slots_data[slot].strip()):
+            slots_data[slot] = value
+            filled.append(slot)
+    if filled:
+        print("defaults filled: " + ", ".join(filled), file=sys.stderr)
 
     missing = []
     for slot in sorted(required_slots):

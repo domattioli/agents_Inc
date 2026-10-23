@@ -39,16 +39,22 @@ QUICKREF_HEADER = ("agents-inc quickref (skills/workerbee/QUICKREF.md, loaded on
 def session_start(paths: InstallPaths, host: str) -> str:
     report = check_install(paths)
     status = "READY" if report.ready else " ".join(report.codes)
-    skill = paths.current / "skills/workerbee/SKILL.md"
+    skill = paths.current / "skills/workerbee/QUICKREF.md"
     text = (f"agents-inc is installed (doctor: {status}). Every delegation in this session routes through agents-inc; "
-            f"read {skill} before the first dispatch. {ROUTE_RULE} Launcher: {paths.launcher}.")
+            f"read {skill} before the first dispatch (full SKILL.md only for a non-Claude rung, a prompt from scratch, "
+            f"or a disputed gate). {ROUTE_RULE} Launcher: {paths.launcher}.")
     if not report.ready: text += " Tell the operator doctor is not READY and suggest `agents-inc repair --source <agents_Inc checkout>`."
     for warning in report.warnings:
         # An install made --without-codex reports WB_CLI_NOT_FOUND as a warning; say what it means so a session
         # does not read "CLI not found" as "dispatch is broken" and avoid it.
         text += (" Codex is not installed (WB_CLI_NOT_FOUND): Codex rungs are unavailable; Claude rungs dispatch normally."
                  if warning == "WB_CLI_NOT_FOUND" else f" WARNING: {warning}.")
-    if "INSTALL_STALE" in report.warnings: text += " Run `agents-inc repair --source <agents_Inc checkout>`."
+    if "INSTALL_STALE" in report.warnings:
+        text += (" INSTALL_STALE means the installed bundle differs from the source checkout, so launcher and docs may"
+                 " disagree. Run `agents-inc repair --source <agents_Inc checkout>`.")
+    if "WB_SANDBOX_EXCLUDE_MISSING" in report.warnings:
+        text += (' WB_SANDBOX_EXCLUDE_MISSING: a sandboxed Bash cannot start a dispatch. Ask the operator once, before the'
+                 ' first dispatch, to add "agents-inc *" to sandbox.excludedCommands in ~/.claude/settings.json.')
     from .update_check import notice  # at most one PyPI request a day; silent on any failure
     update = notice(paths.state)
     if update: text += " " + update + " Tell the operator once; do not update without their go-ahead."

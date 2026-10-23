@@ -131,5 +131,28 @@ class DoctorWarningsTest(unittest.TestCase):
         self.assertIn("WB_HOOK_DRIFT", warnings)
 
 
+class SandboxExclusionTest(DoctorWarningsTest):
+    """#100: warn when the Claude settings file lacks `agents-inc *` under sandbox.excludedCommands."""
+
+    def _settings(self, data):
+        path = self.home / ".claude" / "settings.json"  # keep the hooks the installer wired
+        merged = {**json.loads(path.read_text()), **data}
+        path.write_text(json.dumps(merged))
+
+    def test_missing_exclusion_is_a_warning(self):
+        self._settings({"sandbox": {"excludedCommands": ["gh *"]}})
+        report = check_install(self.paths, models=self.models, **HOST)
+        self.assertEqual(report.codes, ())
+        self.assertIn("WB_SANDBOX_EXCLUDE_MISSING", report.warnings)
+
+    def test_present_exclusion_is_silent(self):
+        self._settings({"sandbox": {"excludedCommands": ["agents-inc *"]}})
+        self.assertNotIn("WB_SANDBOX_EXCLUDE_MISSING", check_install(self.paths, models=self.models, **HOST).warnings)
+
+    def test_no_settings_file_is_silent(self):
+        (self.home / ".claude" / "settings.json").unlink(missing_ok=True)
+        self.assertNotIn("WB_SANDBOX_EXCLUDE_MISSING", check_install(self.paths, models=self.models, **HOST).warnings)
+
+
 if __name__ == "__main__":
     unittest.main()
