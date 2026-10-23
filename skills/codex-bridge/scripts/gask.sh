@@ -265,7 +265,7 @@ TOTAL_SIZE=$(echo "$BODY_OUTPUT" | jq -r '.size')
 
 # POST to Gemini API
 # Use temp file for body to avoid ARG_MAX overflow on large blobs
-BODY_FILE=$(mktemp)
+BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/gask.XXXXXX")
 GASK_CLEANUP_FILES+=("$BODY_FILE")
 echo -n "$BODY_JSON" > "$BODY_FILE"
 chmod 600 "$BODY_FILE"
@@ -273,8 +273,8 @@ chmod 600 "$BODY_FILE"
 ENDPOINT="https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
 
 # Capture response + HTTP code separately
-RESPONSE_FILE=$(mktemp)
-HTTP_CODE_FILE=$(mktemp)
+RESPONSE_FILE=$(mktemp "${TMPDIR:-/tmp}/gask.XXXXXX")
+HTTP_CODE_FILE=$(mktemp "${TMPDIR:-/tmp}/gask.XXXXXX")
 GASK_CLEANUP_FILES+=("$RESPONSE_FILE" "$HTTP_CODE_FILE")
 
 GASK_ATTEMPTED=true

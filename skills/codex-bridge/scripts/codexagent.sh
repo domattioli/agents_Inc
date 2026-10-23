@@ -43,8 +43,8 @@ fi
 # Join prompt args with space
 PROMPT="${PROMPT_ARGS[@]}"
 
-TMPFILE=$(mktemp)
-STDERR_FILE=$(mktemp)
+TMPFILE=$(mktemp "${TMPDIR:-/tmp}/bridge.XXXXXX")
+STDERR_FILE=$(mktemp "${TMPDIR:-/tmp}/bridge.XXXXXX")
 trap "rm -f '$TMPFILE' '$STDERR_FILE'" EXIT
 
 TIMEOUT_CMD=""

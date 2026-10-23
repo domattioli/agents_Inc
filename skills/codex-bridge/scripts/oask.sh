@@ -253,7 +253,7 @@ HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/oask_response.json \
 
 RESPONSE=$(cat /tmp/oask_response.json)
 OASK_REPORT_STATUS="$HTTP_CODE"
-OASK_REPORT_BODY_FILE=$(mktemp)
+OASK_REPORT_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/bridge.XXXXXX")
 cp /tmp/oask_response.json "$OASK_REPORT_BODY_FILE" 2>/dev/null || echo -n "$RESPONSE" > "$OASK_REPORT_BODY_FILE"
 rm -f /tmp/oask_response.json
 
