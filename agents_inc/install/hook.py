@@ -158,7 +158,9 @@ def gate_deny(paths: InstallPaths, payload: object) -> str:
 def gate_notice(paths: InstallPaths) -> str:
     mode, source = agent_gate_mode(paths)
     lines = [f"agents-inc added hooks to {paths.home / '.claude/settings.json'}: SessionStart session-start; PreToolUse agent-nudge "
-             "(Agent|Task, dispatch-shaped Bash, DelegateAgent); PostToolUse agent-done; UserPromptSubmit at_route.",
+             "(Agent|Task, dispatch-shaped Bash, DelegateAgent); PostToolUse agent-done; UserPromptSubmit at_route; "
+             'sandbox.excludedCommands "agents-inc *" (dispatch runs outside the Bash sandbox; each delegate still gets '
+             "its own sandbox-exec, #94).",
              f"agent gate: {mode} ({source}). enforce blocks Agent/Task calls except foreground "
              f"{', '.join(sorted(GATE_ALLOW))}."]
     if mode == "advisory":

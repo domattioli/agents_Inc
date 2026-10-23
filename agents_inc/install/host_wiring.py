@@ -52,7 +52,7 @@ def block_text(paths: InstallPaths) -> str:
         "- Before delegating any task, route it through agents-inc. It pools Claude, Codex (astra, sol, terra, luna), Gemini, Mistral, and OpenRouter capacity and picks the cheapest capable rung.",
         "- Never call the Codex, Gemini, Mistral, or OpenRouter CLIs or APIs directly for delegated work. Never add a paid API fallback.",
         "- Claude's `Agent` tool spawns Claude subagents only. Use it only when agents-inc routing selects a Claude rung.",
-        f"- Before the first dispatch in a session, read `{skills / 'workerbee/SKILL.md'}` (supervision, verification, 14-field prompt contract) and `{skills / 'codex-bridge/SKILL.md'}` (dispatch mechanics).",
+        f"- Before the first dispatch in a session, read `{skills / 'workerbee/QUICKREF.md'}` (gates, ladder, verification, 14-field prompt contract; about 2k tokens). Read the full `{skills / 'workerbee/SKILL.md'}` and `{skills / 'codex-bridge/SKILL.md'}` (about 20k tokens together) only for a non-Claude rung, a prompt written from scratch, or a disputed gate.",
         "- A delegate's self-reported PASS is not evidence. Verify the output yourself before accepting it.",
         "- If doctor does not print `READY`, say so to the operator and run `agents-inc repair --source <agents_Inc checkout>`.",
         END,
@@ -92,6 +92,7 @@ def _legacy(command: object, paths: InstallPaths) -> bool:
 
 def strip_hooks(config: dict, paths: InstallPaths, legacy: bool = False) -> dict:
     """Drop owned entries; with legacy=True (install/repair only) also drop the pre-013 at_route line."""
+    strip_sandbox_exclusion(config)
     hooks = config.get("hooks")
     if not isinstance(hooks, dict): return config
     def drop(h): return isinstance(h, dict) and (_owned(h.get("command"), paths) or (legacy and _legacy(h.get("command"), paths)))
@@ -106,6 +107,24 @@ def strip_hooks(config: dict, paths: InstallPaths, legacy: bool = False) -> dict
     return config
 
 BASH_NUDGE_PATTERNS = ("agents-inc", "gask.sh", "mask.sh", "oask.sh", "agent.sh", "codex exec")
+SANDBOX_EXCLUDE = "agents-inc *"  # #100: a sandboxed Bash cannot start a dispatch (#94); Claude Code skips the sandbox for this match
+
+def add_sandbox_exclusion(config: dict) -> dict:
+    """Claude host only: list `agents-inc *` under sandbox.excludedCommands. Other entries are left as they are."""
+    sandbox = config.setdefault("sandbox", {})
+    if not isinstance(sandbox, dict): return config
+    excluded = sandbox.setdefault("excludedCommands", [])
+    if isinstance(excluded, list) and SANDBOX_EXCLUDE not in excluded: excluded.append(SANDBOX_EXCLUDE)
+    return config
+
+def strip_sandbox_exclusion(config: dict) -> dict:
+    """Remove only our entry; drop the keys we created when nothing else is left in them."""
+    sandbox = config.get("sandbox")
+    if not isinstance(sandbox, dict) or not isinstance(sandbox.get("excludedCommands"), list): return config
+    sandbox["excludedCommands"] = [e for e in sandbox["excludedCommands"] if e != SANDBOX_EXCLUDE]
+    if not sandbox["excludedCommands"]: del sandbox["excludedCommands"]
+    if not sandbox: del config["sandbox"]
+    return config
 
 def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
     config = strip_hooks(config, paths, legacy=True)
@@ -122,6 +141,7 @@ def add_hooks(config: dict, paths: InstallPaths, host: Host) -> dict:
         hooks["PostToolUse"].append({"matcher": "mcp__.*__DelegateAgent", "hooks": [{"type": "command", "command": hook_command(paths, "agent-done"), "timeout": 5}]})
     if host.prompt_hook:  # timeout above the hook's own 120 s alarm
         hooks.setdefault("UserPromptSubmit", []).append({"hooks": [{"type": "command", "command": at_route_command(paths), "timeout": 130}]})
+    if host.name == "claude": add_sandbox_exclusion(config)
     return config
 
 def gemini_reads_agents_md(config: dict) -> dict:
@@ -213,6 +233,8 @@ def unwire_hooks(paths: InstallPaths, host_name: str) -> list[str]:
             if not isinstance(group, dict) or not isinstance(group.get("hooks"), list): continue
             removed += [f"{event} {group.get('matcher') or '*'}: {h['command']}" for h in group["hooks"]
                         if isinstance(h, dict) and _owned(h.get("command"), paths)]
+    if SANDBOX_EXCLUDE in ((config.get("sandbox") or {}).get("excludedCommands") or []):
+        removed.append(f"sandbox.excludedCommands: {SANDBOX_EXCLUDE}")
     if not removed: return []
     write_file(target, _dump_json(strip_hooks(config, paths)), paths)
     return removed
