@@ -6,6 +6,26 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-10-22
+
+Version 0.4.2 because PyPI has 0.4.1 and the merged work since then is two features and several fixes. Constitution VIII-A makes a 0.x feature a minor bump; the operator chose a patch release anyway (2026-10-22).
+
+### Added
+
+- `agents-inc dispatch` keeps each Claude delegate's usage from `claude -p --output-format json` (per-model tokens, list-price cost, turns) in `usage.json` in the run directory and in `<state>/dispatch-runs/<run-id>/`. `agents-inc ledger append` fills the token columns from it.
+- Token bench: `tools/delegation_bench.py` and the size-S build-test-verify fixture (`fixtures/build-test-verify/S/`). Arms A0, A1, B, C and Acheap, one isolated home per arm, hidden acceptance judge. Plan: `docs/proposals/delegation-savings-test.md`.
+
+### Changed
+
+- The agent nudge and session-start text say that the named model is the rung and the route is always `agents-inc dispatch`. `WB_CLI_NOT_FOUND` is explained as "Codex not installed".
+- D66 amends D65: the sandboxed-caller fix text names only `"agents-inc *"` in `sandbox.excludedCommands`, run as one plain command. It no longer offers `dangerouslyDisableSandbox`, which auto mode refuses.
+
+### Fixed
+
+- The haiku alias points at `claude-haiku-5-5`.
+- `gask.sh`, `mask.sh`, `oask.sh` and `codexagent.sh` write temp files under `TMPDIR` when it is set. macOS `mktemp` with no template ignored it, and the sandbox denied the default path.
+- The token bench passes `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` through its env scrub, checks `claude auth status` once per arm, writes install failures to `homes/<arm>/install.log`, and resolves `--out` to an absolute path.
+
 ## [0.4.1] — 2026-10-21
 
 0.4.0 was published and withdrawn on the same day; 0.4.1 replaces it. The only change from 0.4.0 is the software title ("Cross-Vendor Governance for an Agentic-AI Workforce") and the matching PyPI summary.
