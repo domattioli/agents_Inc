@@ -6,7 +6,7 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.4.2] — 2026-10-22
+## [0.4.2] — 2026-10-23
 
 Version 0.4.2 because PyPI has 0.4.1 and the merged work since then is two features and several fixes. Constitution VIII-A makes a 0.x feature a minor bump; the operator chose a patch release anyway (2026-10-22).
 
