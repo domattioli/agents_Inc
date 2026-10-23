@@ -21,8 +21,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Exit-trap outcome reporting: the python block below writes the observed
 # HTTP status (if any) and response body to these temp files; the trap
 # classifies and reports them via free_health without changing mask's exit code.
-MASK_STATUS_FILE=$(mktemp "${TMPDIR:-/tmp}/bridge.XXXXXX")
-MASK_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/bridge.XXXXXX")
+MASK_STATUS_FILE=$(mktemp ${TMPDIR:+"$TMPDIR/bridge.XXXXXX"})
+MASK_BODY_FILE=$(mktemp ${TMPDIR:+"$TMPDIR/bridge.XXXXXX"})
 export MASK_STATUS_FILE MASK_BODY_FILE
 MASK_ATTEMPTED=false
 mask_report_trap() {
