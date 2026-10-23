@@ -17,6 +17,14 @@ def _paths(): return InstallPaths.for_home(Path.home())
 def _efforts(release):
     models = json.loads((release / "agents_inc/models.json").read_text()).get("models", {})
     return {name: value["supported_efforts"] for name, value in models.items() if "supported_efforts" in value}
+def _is_own_console_script(path: Path) -> bool:
+    """True when `path` is the console script pip or pipx generated for this package (it imports our cli)."""
+    try:
+        if path.is_symlink() or not path.is_file(): return False
+        with path.open("rb") as fh: head = fh.read(4096)
+    except OSError: return False
+    return b"agents_inc.install.cli" in head
+
 def install_convenience_launcher(paths: InstallPaths, journal=None) -> OwnedPath:
     """Create only our stable user-bin link; preserve every foreign path."""
     desired = paths.current / "bin/agents-inc"
@@ -24,6 +32,10 @@ def install_convenience_launcher(paths: InstallPaths, journal=None) -> OwnedPath
     if paths.launcher.exists() or paths.launcher.is_symlink():
         if paths.launcher.is_symlink() and paths.launcher.resolve() == desired.resolve():
             return OwnedPath(paths.launcher, "symlink", None, os.readlink(paths.launcher))
+        if _is_own_console_script(paths.launcher):
+            # `pip install --user` and pipx put the package's console script at this same path. It already
+            # launches this package, so keep it; kind "external" means uninstall never touches it.
+            return OwnedPath(paths.launcher, "external", None, None)
         raise RuntimeError(f"WB_CONFIG_CONFLICT: foreign launcher path {paths.launcher}")
     if journal: journal.apply("symlink", paths.launcher, None, str(desired), lambda: paths.launcher.symlink_to(desired))
     else: paths.launcher.symlink_to(desired)
@@ -133,7 +145,8 @@ def verify_installed(paths: InstallPaths) -> None:
     """Post-install self-check (#35): fail loudly if the receipt or launcher is missing."""
     problems = []
     if not paths.receipt.is_file(): problems.append(f"receipt missing: {paths.receipt}")
-    if not paths.launcher.is_symlink() or not paths.launcher.resolve().is_file(): problems.append(f"launcher does not resolve: {paths.launcher}")
+    launcher_ok = (paths.launcher.is_symlink() and paths.launcher.resolve().is_file()) or _is_own_console_script(paths.launcher)
+    if not launcher_ok: problems.append(f"launcher does not resolve: {paths.launcher}")
     if problems: raise RuntimeError("WB_INSTALL_UNVERIFIED: " + "; ".join(problems))
 
 def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:

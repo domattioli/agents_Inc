@@ -13,9 +13,11 @@ All notable changes to this project are recorded here. The format follows
 - The report lint accepts the contract's no-gate form `exit code N/A`, and the `[verified]` exit check no longer fires on `exit` used as a plain word (#91).
 - The snapshot verify gate is one plain command: capture records the repository, `verify` takes `--repo` or reads it from the snapshot, and the renderer refuses a verify gate written with `cd` or `&&` (#92).
 - `--resume <run id>` searches every parent directory a dispatch could have used and lists them when it finds no run; the status line names the absolute run directory to resume (#93).
+- `agents-inc install` after `pip install --user` or pipx no longer fails with `WB_CONFIG_CONFLICT`: the console script pip writes to `~/.local/bin/agents-inc` is recognised as this package's own launcher, kept in place, and left alone by `uninstall`. Found by the new clean-install container check.
 
 ### Added
 
+- A clean-install check in Docker (`docker/Dockerfile.ci`, `docker/ci_check.sh`, workflow `docker-install`): builds the wheel, installs it as an unprivileged user with an empty HOME and no Claude or Codex CLI on Python 3.11 and 3.14, then runs `install`, `doctor`, a dry-run dispatch, a snapshot verify from outside the repository, and `uninstall`. It covers install drift and the Linux half; the macOS sandbox paths stay on the Mac.
 - The release workflow deposits each release on Zenodo itself (`tools/zenodo_deposit.py`): a new version of the newest record under concept DOI 10.5281/zenodo.22670100, with the built wheel and sdist and metadata from `.zenodo.json` at the tag. It needs the repository secret `ZENODO_TOKEN`. It is a no-op when the version is already archived and refuses when the version sits under another concept. 0.4.2 needed a hand deposit, and the hand deposit picked up a stale local `dist/`.
 
 ### Removed

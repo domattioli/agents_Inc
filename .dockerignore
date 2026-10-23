@@ -1,0 +1,8 @@
+.git
+.scratch
+.specify
+specs
+dist
+build
+**/__pycache__
+*.egg-info
