@@ -45,3 +45,22 @@ class SessionStartWarningsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class RouteRuleTest(SessionStartWarningsTest):
+    """Token bench dry run 2026-10-22: a session told 'opus, sonnet, haiku' used native Agent subagents
+    because the nudge approved any Claude rung. The texts now say the route is always dispatch."""
+
+    def test_nudge_does_not_approve_claude_rungs_via_agent(self):
+        self.assertNotIn("only if routing selects a Claude rung", hook.NUDGE)
+        self.assertIn("agents-inc dispatch", hook.NUDGE)
+        self.assertIn("picks the rung, not the route", hook.NUDGE)
+
+    def test_session_start_carries_route_rule(self):
+        self.assertIn(hook.ROUTE_RULE, self._text(()))
+
+    def test_codex_missing_is_explained_not_a_bare_warning(self):
+        text = self._text(("WB_CLI_NOT_FOUND",))
+        self.assertNotIn("WARNING: WB_CLI_NOT_FOUND", text)
+        self.assertIn("Claude rungs dispatch normally", text)

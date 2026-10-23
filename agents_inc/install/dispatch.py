@@ -250,7 +250,7 @@ CLAUDE_WORKER_DENY = (".ssh", ".config", ".codex-bridge", ".codex", ".local", ".
 WORKER_SETTINGS = '{"sandbox": {"enabled": false}}'
 # #94: AGENTS_INC_ALLOW_SANDBOXED=1 lets dispatch start inside another sandbox (tests, a caller that knows better).
 ALLOW_SANDBOXED_ENV = "AGENTS_INC_ALLOW_SANDBOXED"
-SANDBOX_FIX = ('rerun outside the sandbox (sandbox.excludedCommands "agents-inc *" or dangerouslyDisableSandbox); '
+SANDBOX_FIX = ('add "agents-inc *" to sandbox.excludedCommands; rerun as one plain command (no env prefix, cd or &&); '
                "do not retry unchanged")
 
 
@@ -606,14 +606,15 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
         except BaseException:  # cancellation (KeyboardInterrupt included): no detached delegate survives the supervisor
             kill_and_reap(proc)
             raise
-        text, session, is_error = stdout, None, False
+        text, session, is_error, usage = stdout, None, False, None
         try:
             data = json.loads(stdout)
             text, session, is_error = str(data.get("result", "")), data.get("session_id"), bool(data.get("is_error"))
+            usage = claude_usage(data)
         except (ValueError, AttributeError):
             pass
         return {"rc": rc, "stdout": text, "stderr": stderr, "argv": argv, "session_id": session,
-                "is_error": is_error}
+                "is_error": is_error, "usage": usage}
     from .cli import _efforts, _paths
     from .receipt import InstallReceipt
     from .runtime import run_codex
@@ -639,6 +640,33 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume, "is_error": False}
+
+
+def claude_usage(data) -> dict | None:
+    """Token usage from a `claude -p --output-format json` payload, else None. Never raises.
+
+    Totals sum modelUsage across models (the session plus any subagents it ran); `models` keeps the
+    per-model split. Unknown fields stay None, never zero."""
+    try:
+        per = data.get("modelUsage") if isinstance(data, dict) else None
+        if not isinstance(per, dict) or not per:
+            return None
+        models = {}
+        for name, u in per.items():
+            if not isinstance(u, dict):
+                continue
+            models[name] = {"input_tokens": u.get("inputTokens"), "output_tokens": u.get("outputTokens"),
+                            "cache_read": u.get("cacheReadInputTokens"),
+                            "cache_write": u.get("cacheCreationInputTokens"), "cost_usd": u.get("costUSD")}
+        def total(key):
+            vals = [m[key] for m in models.values()]
+            return sum(vals) if vals and all(isinstance(v, (int, float)) for v in vals) else None
+        return {"input_tokens": total("input_tokens"), "output_tokens": total("output_tokens"),
+                "cache_read": total("cache_read"), "cache_write": total("cache_write"),
+                "cost_usd_list": data.get("total_cost_usd"), "num_turns": data.get("num_turns"),
+                "duration_ms": data.get("duration_ms"), "models": models}
+    except Exception:
+        return None
 
 
 def _kind(model: str) -> str | None:
@@ -1217,6 +1245,12 @@ def run(args) -> int:
     _wtext(out_path, result["stdout"])
     _wtext(run_dir / "stderr.txt", result["stderr"])
     spec.update(rc=result["rc"], session_id=result.get("session_id"), argv=result.get("argv"))
+    if result.get("usage") is not None:
+        spec["usage"] = result["usage"]
+        for where in (run_dir, _trust_path(spec["run_id"])):
+            with contextlib.suppress(OSError):
+                Path(where).mkdir(parents=True, exist_ok=True)
+                _wtext(Path(where) / "usage.json", json.dumps(result["usage"], indent=1))
     return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None), prompt=prompt)
 
 

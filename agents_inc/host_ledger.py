@@ -157,6 +157,19 @@ def record_hook_dispatch(state, payload) -> bool:
         return False
 
 
+def _run_usage(state, run_id) -> dict:
+    """usage.json that `agents-inc dispatch` wrote for run_id, else {}. Never raises."""
+    try:
+        for parent in (Path(state) / "dispatch-runs",):
+            f = parent / str(run_id) / "usage.json"
+            if f.is_file():
+                data = json.loads(f.read_text(encoding="utf-8"))
+                return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
 def record_dispatch_run(state, spec: dict, task: str | None) -> bool:
     """Append one dispatch row for a launched `agents-inc dispatch` run. Never raises; JSONL only."""
     try:
@@ -224,6 +237,10 @@ def cli(argv, state) -> int:
               "and no --run-id given", file=sys.stderr)
         return 2
     status = args.status or ("verified" if args.verdict == "pass" else "red")
+    usage = _run_usage(state, args.node_id)
+    for key in ("input_tokens", "output_tokens", "cache_read", "cache_write"):
+        if getattr(args, key) is None and usage.get(key) is not None:
+            setattr(args, key, int(usage[key]))
     ok = ledger.record_return(
         ws, node_id=args.node_id, status=status, seconds=args.seconds,
         subscription_calls=args.subscription_calls, run_id=run_id, effort=args.effort,

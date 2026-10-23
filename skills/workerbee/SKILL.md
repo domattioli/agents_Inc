@@ -984,7 +984,7 @@ id, saved stdout/stderr, transient-failure retries, and a provider-neutral
 | A gate is ambiguous | Treat as RED. Never rationalize a marginal gate into a pass |
 | A price cannot be established | Leave it absent. Never write `0.0` to make a total look complete |
 | A permission classifier blocks a dispatch | Report it. Never rephrase to slip past |
-| Dispatch exits 69 with `detail=caller-sandboxed` | Rerun outside the sandbox (`sandbox.excludedCommands` `"agents-inc *"` or `dangerouslyDisableSandbox`). Never retry unchanged (D65) |
+| Dispatch exits 69 with `detail=caller-sandboxed` | Add `"agents-inc *"` to `sandbox.excludedCommands` and rerun as one plain command (no env prefix, `cd` or `&&`). Not `dangerouslyDisableSandbox` (auto mode refuses it) and not `AGENTS_INC_ALLOW_SANDBOXED=1` for Codex (nested sandbox, rc 71). Never retry unchanged (D65, D66) |
 | Operator changes the premise mid-flight | Kill the running delegate before it reports against the old one |
 | Delegate needs to commit under `workspace-write` | Expect `Operation not permitted`. Land the commit yourself |
 | Non-Claude vendor chosen with no Step 0.5 gate line stated | Non-compliant dispatch. Do not send it |
