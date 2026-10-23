@@ -25,6 +25,7 @@ Version 0.4.2 because PyPI has 0.4.1 and the merged work since then is two featu
 - The haiku alias points at `claude-haiku-5-5`.
 - `gask.sh`, `mask.sh`, `oask.sh` and `codexagent.sh` write temp files under `TMPDIR` when it is set. macOS `mktemp` with no template ignored it, and the sandbox denied the default path.
 - The token bench passes `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` through its env scrub, checks `claude auth status` once per arm, writes install failures to `homes/<arm>/install.log`, and resolves `--out` to an absolute path.
+- `.zenodo.json` sets `license: polyform-small-business-1.0.0`. With no license id, Zenodo showed 0.4.1 as `cc-by-4.0`, which contradicts LICENSE; the no-AI-training term stays in `notes`.
 
 ## [0.4.1] — 2026-10-21
 
