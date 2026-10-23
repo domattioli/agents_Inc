@@ -299,5 +299,38 @@ class DeriveChainTest(unittest.TestCase):
                     os.environ["HOME"] = old
 
 
+class Issue100Test(RenderTest):
+    """#100: string GATES entries and a defaulted PRE_EXISTING_CHANGES."""
+
+    def test_gates_accept_plain_command_strings(self):
+        gates, why = render_dispatch.parse_gates(["python3 -m unittest tests.test_x", {"argv": ["true"]}])
+        self.assertIsNone(why)
+        self.assertEqual(gates[0]["argv"], ["python3", "-m", "unittest", "tests.test_x"])
+        self.assertEqual((gates[0]["cwd"], gates[0]["timeout_s"], gates[0]["expect_rc"]), (".", 600, 0))
+        self.assertEqual(gates[1]["argv"], ["true"])
+
+    def test_blank_gate_string_is_refused(self):
+        _, why = render_dispatch.parse_gates(["  "])
+        self.assertIn("argv", why)
+
+    def test_pre_existing_changes_defaults_with_allow_from_files_in_scope(self):
+        slots = self.example()
+        slots.pop("PRE_EXISTING_CHANGES")
+        slots["FILES_IN_SCOPE"] = "agents_inc/policy.py\ntests/test_policy.py\nnone of the docs"
+        proc = self.render(slots)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("defaults filled: PRE_EXISTING_CHANGES", proc.stderr)
+        self.assertIn("snapshot <snapshot>; verify with `python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify "
+                      "<snapshot> --allow agents_inc/policy.py --allow tests/test_policy.py`", proc.stdout)
+
+    def test_pre_existing_changes_default_without_paths_has_no_allow(self):
+        slots = self.example()
+        slots["PRE_EXISTING_CHANGES"] = ""
+        proc = self.render(slots)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        line = proc.stdout.split("PRE-EXISTING CHANGES")[1].split("\n")[1]
+        self.assertTrue(line.endswith("verify <snapshot>`"), line)
+
+
 if __name__ == "__main__":
     unittest.main()

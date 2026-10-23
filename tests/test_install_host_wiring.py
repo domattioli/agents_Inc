@@ -99,6 +99,24 @@ class HostWiringTest(unittest.TestCase):
         self.assertEqual(matchers, {"Agent|Task", "Bash", "mcp__.*__DelegateAgent"})
         self.assertIsNone(strip_hooks(config, self.paths).get("hooks", {}).get("PreToolUse"))
 
+    def test_claude_host_gets_sandbox_exclusion_and_strip_removes_only_ours(self):
+        from agents_inc.install.host_wiring import HOSTS, add_hooks, strip_hooks
+        claude = next(h for h in HOSTS if h.name == "claude")
+        config = add_hooks({"sandbox": {"excludedCommands": ["docker *"]}}, self.paths, claude)
+        self.assertEqual(config["sandbox"]["excludedCommands"], ["docker *", "agents-inc *"])
+        self.assertEqual(add_hooks(config, self.paths, claude)["sandbox"]["excludedCommands"], ["docker *", "agents-inc *"])
+        self.assertEqual(strip_hooks(config, self.paths)["sandbox"], {"excludedCommands": ["docker *"]})
+        codex = next(h for h in HOSTS if h.name == "codex")
+        self.assertNotIn("sandbox", add_hooks({}, self.paths, codex))
+
+    def test_unwire_reports_the_sandbox_exclusion(self):
+        from agents_inc.install.host_wiring import unwire_hooks
+        self._hosts("claude")
+        install_host_wiring(self.paths, _receipt())
+        removed = unwire_hooks(self.paths, "claude")
+        self.assertIn('sandbox.excludedCommands: agents-inc *', removed)
+        self.assertNotIn("sandbox", json.loads((self.home / ".claude/settings.json").read_text()))
+
     def test_bash_nudge_handlers_carry_if_filters(self):
         from agents_inc.install.host_wiring import HOSTS, add_hooks, hook_command
         claude = next(h for h in HOSTS if h.name == "claude")

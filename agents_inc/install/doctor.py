@@ -60,6 +60,18 @@ def _install_stale(paths: InstallPaths, release_hash: str) -> list[str]:
     except (OSError, ValueError, RuntimeError): return []
     return ["INSTALL_STALE"] if digest != release_hash else []
 
+def _sandbox_exclusion(paths: InstallPaths) -> list[str]:
+    """#100: a Claude Code session that sandboxes Bash cannot start a dispatch (#94) until `agents-inc *` sits in
+    `sandbox.excludedCommands` of ~/.claude/settings.json. Warn only when that settings file exists."""
+    settings = paths.home / ".claude/settings.json"
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8"))
+    except (OSError, ValueError): return []
+    sandbox = data.get("sandbox") if isinstance(data, dict) else None
+    excluded = sandbox.get("excludedCommands", []) if isinstance(sandbox, dict) else []
+    if any(isinstance(e, str) and e.split()[:1] == ["agents-inc"] for e in excluded): return []
+    return ["WB_SANDBOX_EXCLUDE_MISSING"]
+
 def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run,
                   models: list[dict] | None = None, catalog_path: Path | None = None,
                   which=shutil.which, sandbox_probe=None) -> DoctorReport:
@@ -85,6 +97,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     if which("claude", path=WORKER_PATH + os.pathsep + os.environ.get("PATH", "")) is None: codes.append("WB_CLAUDE_NOT_FOUND")
     if sys.platform == "darwin" and not sandbox_probe(): warnings.append("WB_SANDBOX_NESTED")  # inside another sandbox
     warnings.extend(_hook_drift(paths))
+    warnings.extend(_sandbox_exclusion(paths))
     if models is None:  # the catalog of the home being checked; CODEX_HOME still wins. [] stops a re-read of the default.
         default = catalog.cache_path({**os.environ, "HOME": str(paths.home)})
         models = catalog.load(catalog_path or default) or []

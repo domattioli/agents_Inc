@@ -38,6 +38,8 @@ PLAN CONTRACT: {{PLAN_CONTRACT}}
 
 Worked example (read-only scout, every slot filled; render appends header.md below it). JSON source: `skills/workerbee/tests/fixtures/example_slots.json`.
 
+The example has no GATES (a scout writes nothing). A code task adds `"GATES": [{"argv": ["python3", "-m", "unittest", "tests.test_x"]}]` to the JSON; `cwd`, `timeout_s` and `expect_rc` take their defaults, and the renderer appends one sentence naming the command to SUCCESS GATE. A plain string entry such as `"python3 -m unittest tests.test_x"` is also accepted: the renderer splits it with shlex and no shell runs it.
+
 ```text
 ROLE: Grunt scout (haiku, Agent tool), dispatched by Supervisor (opus) in /path/to/repo.
 REPORTING CHAIN: haiku reports to sonnet; sonnet reports to fable; fable reports to the operator
@@ -62,6 +64,8 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 
 ## Slots
 
+Defaults: when ALLOWLIST, CLASSIFICATION, EFFORT, SECOND_OPINION or PLAN_CONTRACT is absent or blank, `render_dispatch.py` fills the Worker default (`none -- do all work yourself`, `internal (repo source, non-secret)`, transport effort, `not applicable` with the reason) and prints `defaults filled: ...` to stderr. A Lead, a confidential input or a plan deliverable sets the slot explicitly. A blank PRE_EXISTING_CHANGES is filled with `snapshot <snapshot>; verify with ...` and one `--allow` per bare path line in FILES_IN_SCOPE; dispatch then replaces `<snapshot>` with the captured path. A hand-written slot keeps the `<snapshot>` placeholder for the same reason.
+
 | slot | element | content |
 |---|---|---|
 | ROLE | context | rung, model, and who dispatched the delegate |
@@ -72,7 +76,7 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | STOP_RULE | Grunt | a number of failed attempts, then report RED |
 | SUCCESS_GATE | 2 | commands in backticks with the expected output; optional when GATES is set, and the renderer appends one sentence naming each GATES command |
 | FAILURE_GATE | 3 | conditions that make the task RED; at least one must be a command in backticks, or `check_dispatch_prompt.py` rejects the prompt as element 3 missing |
-| PRE_EXISTING_CHANGES | 7 | `<snapshot>` placeholder: the dispatch wrapper (`agents_inc/install/dispatch.py`) fills it with the snapshot path after capture; hand-written prompts put the path from `pre_dispatch_snapshot.py capture <out.json>` plus the verify command `pre_dispatch_snapshot.py verify <out.json> --allow <path>...` |
+| PRE_EXISTING_CHANGES | 7 | optional: blank means the renderer writes the default text above. `<snapshot>` placeholder: the dispatch wrapper (`agents_inc/install/dispatch.py`) fills it with the snapshot path after capture; hand-written prompts put the path from `pre_dispatch_snapshot.py capture <out.json>` plus the verify command `pre_dispatch_snapshot.py verify <out.json> --allow <path>...` |
 | ALLOWLIST | 7 | models the delegate may spawn, or `none — do all work yourself`. With a FAN_OUT total and depth above 0, a Codex delegate (astra, sol, terra) or a Claude delegate (fable, opus, sonnet) runs as a broker Lead with the rung-allowed models from this list (D57, D60). A Worker's FAN_OUT must be zero |
 | FAN_OUT | D48 | `width <n>, total <n>, depth <n>`; optional: the renderer fills the rung default from a `RUNG` or `MODEL` slot, else Orchestrator (`width 3, total 6, depth 2`); Workhorse `2, 4, 1`; Grunt `0, 0, 0` |
 | CLASSIFICATION | 8 | public, internal, or confidential, with the reason |
@@ -80,7 +84,7 @@ PLAN CONTRACT: not applicable -- deliverable is not a plan.
 | SECOND_OPINION | 10 | why this rung, or `not applicable` with the reason |
 | PLAN_CONTRACT | 11 | plan deliverable rules, or `not applicable — deliverable is not a plan.` |
 | PERMISSION_MODE | optional | `default`, `acceptEdits` (default), `plan`, `bypassPermissions` or `auto`; passed to `claude -p --permission-mode`, and Codex write access follows it. Headless `claude -p` with `auto` behaved like `acceptEdits` for grants in the 2026-10-15 probe: unlisted Bash is still denied. Broker-owned: a broker request may not set it |
-| GATES | optional | commands dispatch runs itself after the delegate exits, with no shell: a JSON list (or a JSON string of one) of `{argv, cwd, timeout_s, expect_rc}`. `argv` required; `cwd` relative to `--cwd` (default `.`, no `..`); `timeout_s` above 0 and at most 3600 (default 600); `expect_rc` default 0. Each argv is also granted to a Claude delegate as an exact Bash rule. Refused: push, commit, sudo, recursive rm, curl, ssh, credential paths |
+| GATES | optional | commands dispatch runs itself after the delegate exits, with no shell: a JSON list (or a JSON string of one) of `{argv, cwd, timeout_s, expect_rc}` objects, or plain command strings that shlex splits into `argv`. Example: `[{"argv": ["python3", "-m", "unittest", "tests.test_x"], "timeout_s": 300}]`. `argv` required; `cwd` relative to `--cwd` (default `.`, no `..`); `timeout_s` above 0 and at most 3600 (default 600); `expect_rc` default 0. Each argv is also granted to a Claude delegate as an exact Bash rule. Refused: push, commit, sudo, recursive rm, curl, ssh, credential paths |
 | BASH_ALLOW | optional | extra Bash command prefixes granted to a Claude delegate: a list of strings, or one string with a prefix per line. No `*`, parentheses or backticks; same refusals as GATES. Broker-owned: a broker request may not set it |
 | CODEX_WRITE | optional | a Codex delegate matches a Claude subagent by default: tools on and write access to `--cwd` whenever PERMISSION_MODE allows edits (`acceptEdits`, the default, or `bypassPermissions`); read-only under `plan` or `default`. `no` opts out, `yes` forces it on. Built-in `image_gen` saves under `~/.codex/generated_images` (readable); the delegate copies the file into cwd. Writes outside `--cwd` are refused (D49): to edit another repository, dispatch with `--cwd <that repo>`. Claude delegates ignore it |
 | CODEX_NETWORK | optional | `yes` gives a Codex delegate's tool commands outbound network access (for example DOI lookups). Off by default. Needs CODEX_WRITE on; ignored otherwise. Claude delegates ignore it |

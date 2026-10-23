@@ -39,6 +39,15 @@ class SessionStartWarningsTest(unittest.TestCase):
         self.assertIn("WARNING: WB_SANDBOX_NESTED", text)
         self.assertNotIn("Run `agents-inc repair", text)
 
+    def test_sandbox_exclusion_warning_names_the_operator_ask(self):
+        text = self._text(("WB_SANDBOX_EXCLUDE_MISSING",))
+        self.assertIn("WARNING: WB_SANDBOX_EXCLUDE_MISSING", text)
+        self.assertIn('"agents-inc *"', text)
+        self.assertIn("sandbox.excludedCommands", text)
+
+    def test_stale_warning_explains_itself(self):
+        self.assertIn("installed bundle differs from the source checkout", self._text(("INSTALL_STALE",)))
+
     def test_plain_host_gets_the_same_text(self):
         self.assertIn("WARNING: INSTALL_STALE", self._text(("INSTALL_STALE",), host="codex"))
 
