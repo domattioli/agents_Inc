@@ -1,12 +1,14 @@
 """Pre-dispatch baseline: capture and verify the working tree a delegate inherits.
 
 Usage: python3 pre_dispatch_snapshot.py capture <out.json>
-       python3 pre_dispatch_snapshot.py verify <out.json> [--allow <path>...]...
+       python3 pre_dispatch_snapshot.py verify <out.json> [--repo <dir>] [--allow <path>...]...
 
-Run from inside the repository. capture writes JSON with keys time, head,
-porcelain (`git status --porcelain`), and sha256 (repo-relative path -> hex
-digest of every pre-existing dirty file plus every untracked file, enumerated
-recursively with `git ls-files --others --exclude-standard`).
+Run capture from inside the repository. capture writes JSON with keys time,
+head, repo (the absolute repository top level), porcelain (`git status
+--porcelain`), and sha256 (repo-relative path -> hex digest of every
+pre-existing dirty file plus every untracked file, enumerated recursively with
+`git ls-files --others --exclude-standard`). verify needs no particular cwd:
+it uses --repo, else the snapshot's repo, else the cwd's repository.
 
 verify exits 0 when every hashed file is unchanged and the tree differs from
 the snapshot only at --allow paths (a path or a directory prefix). Else it
@@ -14,6 +16,7 @@ exits 1 and prints one `CHANGED <path>` line per offending path. Exit 2 on
 usage or git error. Capture and verify on the same host and git config.
 """
 from __future__ import annotations
+import contextlib
 import hashlib
 import json
 import os
@@ -74,6 +77,7 @@ def capture(out: str) -> int:
     snap = {
         "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "head": _git("rev-parse", "HEAD").strip(),
+        "repo": os.getcwd(),  # main() has moved to the top level; verify reads it back (#92)
         "porcelain": porcelain,
         "sha256": {p: _sha(p) for p in sorted(files)},
         # ignored paths as the capturing user's git sees them; a sandboxed verify may lack ~/.gitignore
@@ -130,25 +134,35 @@ def verify(snap_path: str, allow: list[str]) -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) == 2 and argv[0] == "capture":
-        cmd, path, allow = "capture", argv[1], []
+        cmd, path, allow, repo = "capture", argv[1], [], None
     elif len(argv) >= 2 and argv[0] == "verify":
-        cmd, path, rest, allow = "verify", argv[1], argv[2:], []
+        cmd, path, rest, allow, repo = "verify", argv[1], argv[2:], [], None
         while rest:
             # `--allow a b c` and `--allow a --allow b` both work; each --allow needs a path.
-            if rest[0] != "--allow" or len(rest) < 2 or rest[1] == "--allow":
+            if rest[0] not in ("--allow", "--repo") or len(rest) < 2 or rest[1] in ("--allow", "--repo"):
                 print(__doc__, file=sys.stderr)
                 return 2
+            if rest[0] == "--repo":
+                repo, rest = rest[1], rest[2:]
+                continue
             rest = rest[1:]
-            while rest and rest[0] != "--allow":
+            while rest and rest[0] not in ("--allow", "--repo"):
                 allow.append(rest[0])
                 rest = rest[1:]
     else:
         print(__doc__, file=sys.stderr)
         return 2
     try:
-        # porcelain and ls-files paths are repo-root relative; resolve them there.
-        top = _git("rev-parse", "--show-toplevel").strip()
         path = os.path.abspath(path)
+        if cmd == "verify" and repo is None:
+            # #92: the repo recorded at capture, so verify works from any cwd
+            with contextlib.suppress(OSError, ValueError, AttributeError):
+                with open(path, encoding="utf-8") as fh:
+                    recorded = json.load(fh).get("repo")
+                if isinstance(recorded, str) and os.path.isdir(recorded):
+                    repo = recorded
+        # porcelain and ls-files paths are repo-root relative; resolve them there.
+        top = _git(*(["-C", repo] if repo else []), "rev-parse", "--show-toplevel").strip()
         os.chdir(top)
         return capture(path) if cmd == "capture" else verify(path, allow)
     except subprocess.CalledProcessError as exc:

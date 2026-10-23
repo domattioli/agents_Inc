@@ -352,6 +352,12 @@ def main() -> int:
     if not _text(slots_data.get("PRE_EXISTING_CHANGES")):
         slots_data["PRE_EXISTING_CHANGES"] = default_pre_existing(slots_data.get("FILES_IN_SCOPE"))
         filled.append("PRE_EXISTING_CHANGES")
+    # #92: verify reads the repo from the snapshot, so the gate needs no `cd`; a compound command matches no grant
+    for span in re.findall(r"`([^`]*)`", slots_data["PRE_EXISTING_CHANGES"]):
+        if "pre_dispatch_snapshot.py" in span and ("&&" in span or span.strip().startswith("cd ")):
+            print("PRE_EXISTING_CHANGES invalid: write the verify gate as one plain command (no cd or &&); "
+                  "verify reads the repo from the snapshot", file=sys.stderr)
+            return 2
     for slot, value in SLOT_DEFAULTS.items():
         if not (isinstance(slots_data.get(slot), str) and slots_data[slot].strip()):
             slots_data[slot] = value

@@ -125,5 +125,47 @@ class SnapshotPathTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+class RepoFlagTests(unittest.TestCase):
+    """#92: verify finds the repo from --repo or the snapshot, not from cwd."""
+
+    _base_setup = SnapshotPathTests.setUp
+    tearDown = SnapshotPathTests.tearDown
+    _commit = SnapshotPathTests._commit
+
+    def setUp(self):
+        self._base_setup()
+        self._commit("f")
+        self.assertEqual(_run(self.repo, "capture", self.snap).returncode, 0)
+        self.outside = tempfile.TemporaryDirectory()
+        self.addCleanup(self.outside.cleanup)
+
+    def test_capture_records_repo(self):
+        import json
+        with open(self.snap, encoding="utf-8") as fh:
+            recorded = json.load(fh)["repo"]
+        self.assertEqual(Path(recorded).resolve(), self.repo.resolve())
+
+    def test_verify_outside_repo_with_repo_flag(self):
+        r = _run(self.outside.name, "verify", self.snap, "--repo", str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_verify_outside_repo_uses_recorded_repo(self):
+        r = _run(self.outside.name, "verify", self.snap)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        (self.repo / "f").write_text("v2\n", encoding="utf-8")
+        r = _run(self.outside.name, "verify", self.snap)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("CHANGED f", r.stdout)
+
+    def test_repo_flag_after_allow_group(self):
+        (self.repo / "a.md").write_text("x\n", encoding="utf-8")
+        r = _run(self.outside.name, "verify", self.snap, "--allow", "a.md", "--repo", str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_repo_flag_without_value_is_usage_error(self):
+        self.assertEqual(_run(self.repo, "verify", self.snap, "--repo").returncode, 2)
+        self.assertEqual(_run(self.repo, "verify", self.snap, "--repo", "--allow", "a.md").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

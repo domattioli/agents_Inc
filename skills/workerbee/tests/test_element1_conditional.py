@@ -89,5 +89,29 @@ class TestHandoffLintDegrades(unittest.TestCase):
             self.assertEqual(r.stdout.strip(), "COMPLIANT", decl)
 
 
+class TestVerifiedExitLine(unittest.TestCase):
+    """#91: the contract's own no-gate line must not trip verified-exit-without-code."""
+    BASE = "caveman ultra. grill. [verified] exit code 0.\nOUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n"
+
+    def _flagged(self, line):
+        return "verified-exit-without-code" in cdp.check_report(self.BASE + line + "\n")
+
+    def test_contract_no_gate_line_not_flagged(self):
+        self.assertFalse(self._flagged("[verified] Gate commands: none, exit code N/A. "
+                                       "Snapshot integrity unverified; success gate not established."))
+
+    def test_exit_as_plain_word_not_flagged(self):
+        self.assertFalse(self._flagged("[verified] Exit gate needs 10 scored, so the debate continues."))
+
+    def test_exit_with_value_not_flagged(self):
+        self.assertFalse(self._flagged("[verified] tests exit 0"))
+
+    def test_exited_without_code_flagged(self):
+        self.assertTrue(self._flagged("the gate exited cleanly [verified]"))
+
+    def test_exit_code_without_value_flagged(self):
+        self.assertTrue(self._flagged("[verified] gate exit code"))
+
+
 if __name__ == "__main__":
     unittest.main()

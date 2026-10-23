@@ -259,8 +259,7 @@ class TestFanOutAndReport(unittest.TestCase):
         self.assertEqual(dispatch.parse_workers_spawned("WORKERS SPAWNED: 0 this turn (1 total for the run)\n"), 0)
 
     def test_verified_exit_needs_code(self):
-        self.assertIn("verified-exit-without-code",
-                      cdp.check_report(self.REPORT + "[verified] gate exit code N/A\nWORKERS SPAWNED: 0\n"))
+        self.assertEqual(cdp.check_report(self.REPORT + "[verified] gate exit code N/A\nWORKERS SPAWNED: 0\n"), [])
         self.assertIn("verified-exit-without-code",
                       cdp.check_report(self.REPORT + "the gate exited cleanly [verified]\nWORKERS SPAWNED: 0\n"))
         self.assertEqual(cdp.check_report(self.REPORT + "[verified] gate rc=0; exited 1 earlier\nWORKERS SPAWNED: 0\n"), [])

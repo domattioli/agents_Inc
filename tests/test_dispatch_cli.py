@@ -7,6 +7,7 @@ import json
 import shutil
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -21,7 +22,8 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]|none) "
                        r"snapshot=(clean|CHANGED:\S+|ERROR:\S+|TAMPERED|none) outcome=(green|red|unverified)"
-                       r"( reason=\S+)?( detail=\S+)? out=\S+stdout(\.\d+)?\.md$")
+                       r"( reason=\S+)?( detail=\S+)? out=\S+stdout(\.\d+)?\.md"
+                       r"( \(resume with --resume /\S+\))?$")
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
 
@@ -123,6 +125,22 @@ class DispatchCliTest(unittest.TestCase):
             self.assertTrue((run / name).is_file(), name)
         self.assertEqual(out.strip(), f"dispatch {run.name} haiku dry-run prompt={run / 'prompt.md'}")
         self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
+
+    def test_dry_run_verify_gate_is_one_plain_command(self):
+        """#92: every verify command in the prompt names the absolute snapshot path, with no cd or &&."""
+        rc, out, _ = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                                "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 0, out)
+        run = self._run_dir()
+        cmds = [c for c in re.findall(r"`([^`]*)`", (run / "prompt.md").read_text())
+                if "pre_dispatch_snapshot.py verify" in c]
+        self.assertTrue(cmds)
+        for cmd in cmds:
+            snap = shlex.split(cmd)[3]
+            self.assertEqual(snap, str(run / "snapshot.json"), cmd)
+            self.assertTrue(Path(snap).is_absolute(), cmd)
+            self.assertNotIn("&&", cmd)
+            self.assertFalse(cmd.strip().startswith("cd "), cmd)
 
     def _chain_line(self, model):
         rc, out, _ = self._main("--slots", str(self._slots()), "--model", model, "--cwd", str(self.repo),

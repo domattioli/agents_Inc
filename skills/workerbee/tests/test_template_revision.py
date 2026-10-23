@@ -173,7 +173,7 @@ class SnapshotTest(unittest.TestCase):
     def test_round_trip(self):
         self.assertEqual(self.snapcmd("capture", self.snap).returncode, 0)
         data = json.loads(self.snap.read_text())
-        self.assertEqual(set(data), {"time", "head", "porcelain", "sha256", "ignored"})
+        self.assertEqual(set(data), {"time", "head", "repo", "porcelain", "sha256", "ignored"})
         self.assertEqual(sorted(data["sha256"]), ["a.txt", "u/deep.txt"])
         self.assertEqual(data["sha256"]["a.txt"], hashlib.sha256(b"a dirty\n").hexdigest())
         self.assertEqual(self.snapcmd("verify", self.snap).returncode, 0)
@@ -330,6 +330,26 @@ class Issue100Test(RenderTest):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         line = proc.stdout.split("PRE-EXISTING CHANGES")[1].split("\n")[1]
         self.assertTrue(line.endswith("verify <snapshot>`"), line)
+
+
+class Issue92Test(RenderTest):
+    """#92: the snapshot verify gate is one plain command, never `cd <repo> && ...`."""
+
+    def test_compound_verify_command_is_refused(self):
+        for cmd in ("cd /repo && python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json",
+                    "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json && echo ok"):
+            slots = self.example()
+            slots["PRE_EXISTING_CHANGES"] = f"snapshot /x/s.json; verify with `{cmd}`"
+            proc = self.render(slots)
+            self.assertEqual(proc.returncode, 2, proc.stdout)
+            self.assertIn("PRE_EXISTING_CHANGES invalid", proc.stderr)
+
+    def test_plain_verify_command_renders(self):
+        slots = self.example()
+        slots["PRE_EXISTING_CHANGES"] = ("snapshot /x/s.json; verify with "
+                                         "`python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json`")
+        proc = self.render(slots)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ name = "agents-inc"
 dynamic = ["version"]
 description = "Cross-vendor governance for an agentic-AI workforce"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "LicenseRef-PolyForm-Small-Business-1.0.0-NoAI-Training"
 license-files = ["LICENSE"]
 authors = [{ name = "Dominik O. Mattioli" }]
@@ -25,7 +25,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

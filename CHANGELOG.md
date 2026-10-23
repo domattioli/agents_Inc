@@ -10,10 +10,17 @@ All notable changes to this project are recorded here. The format follows
 
 - Dispatch slot gaps from #100: a `GATES` entry may be a plain command string (shlex-split, no shell) as well as an `{argv, cwd, timeout_s, expect_rc}` object, and a blank `PRE_EXISTING_CHANGES` is filled by the renderer with the snapshot placeholder text and one `--allow` per path in `FILES_IN_SCOPE`. QUICKREF and `slots.md` show the GATES object shape.
 - Sandboxed sessions no longer learn about the #94 refusal at dispatch time: doctor warns `WB_SANDBOX_EXCLUDE_MISSING` when the Claude settings file lacks `"agents-inc *"` under `sandbox.excludedCommands`, and the session-start hook names that exact operator ask. `agents-inc install` and `repair` now add that entry on the Claude host (other entries untouched) and `unwire` removes only it. The hook also explains `INSTALL_STALE`.
+- The report lint accepts the contract's no-gate form `exit code N/A`, and the `[verified]` exit check no longer fires on `exit` used as a plain word (#91).
+- The snapshot verify gate is one plain command: capture records the repository, `verify` takes `--repo` or reads it from the snapshot, and the renderer refuses a verify gate written with `cd` or `&&` (#92).
+- `--resume <run id>` searches every parent directory a dispatch could have used and lists them when it finds no run; the status line names the absolute run directory to resume (#93).
 
 ### Added
 
 - The release workflow deposits each release on Zenodo itself (`tools/zenodo_deposit.py`): a new version of the newest record under concept DOI 10.5281/zenodo.22670100, with the built wheel and sdist and metadata from `.zenodo.json` at the tag. It needs the repository secret `ZENODO_TOKEN`. It is a no-op when the version is already archived and refuses when the version sits under another concept. 0.4.2 needed a hand deposit, and the hand deposit picked up a stale local `dist/`.
+
+### Removed
+
+- Python 3.10 support: the package now requires Python 3.11 or later. The 0.4 releases stay installable on 3.10 (#90).
 
 ## [0.4.2] — 2026-10-23
 

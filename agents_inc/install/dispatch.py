@@ -789,7 +789,7 @@ def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt")
     if verdict is not None:
         src, slog, snap = verdict
     else:
-        args = ["verify", snap_file]
+        args = ["verify", snap_file, "--repo", str(cwd)]  # #92: never depend on the subprocess cwd
         for a in allow:
             args += ["--allow", a]
         src, slog = snapshot(*args, cwd=cwd)
@@ -920,7 +920,8 @@ def _status(spec: dict, report: str, snap: str, out_path: Path) -> str:
     reason = f" reason={spec['reason']}" if spec.get("reason") else ""
     detail = f" detail={spec['reason_detail']}" if spec.get("reason_detail") else ""
     return (f"dispatch {spec['run_id']} {spec['model']} rc={spec['rc']} report={report} snapshot={snap} "
-            f"outcome={spec['outcome']}{reason}{detail} out={out_path}")
+            f"outcome={spec['outcome']}{reason}{detail} out={out_path} "
+            f"(resume with --resume {out_path.parent.resolve()})")
 
 
 def _mirror(spec: dict, run_dir: Path, home_repo: str | None, prompt: str | None = None) -> str | None:
@@ -1254,11 +1255,38 @@ def run(args) -> int:
     return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None), prompt=prompt)
 
 
+def _resume_candidates(cwd: Path, run_id: str, run_dir_arg) -> list[Path]:
+    """Run directories where a bare run id may live. An explicit --run-dir is the only candidate; else every parent
+    a dispatch could have used (default_parent, repo .scratch, session scratchpad, TMPDIR, /tmp), first form kept."""
+    if run_dir_arg:
+        return [Path(run_dir_arg).resolve() / run_id]
+    parents = [default_parent(cwd), Path(cwd) / ".scratch" / "agents-inc-runs"]
+    parents += [Path(base) / "agents-inc-runs" for base in (os.environ.get("CLAUDE_SCRATCHPAD"),
+                                                            os.environ.get("TMPDIR"), "/tmp") if base]
+    found, seen = [], set()
+    for parent in parents:
+        cand = parent / run_id
+        key = cand.resolve()
+        if key not in seen:
+            seen.add(key)
+            found.append(cand)
+    return found
+
+
 def resume(args) -> int:
     """Send one more turn to a finished delegate: Claude via its session id, Codex via its thread id (D54)."""
     cwd = Path(getattr(args, "cwd", None) or os.getcwd()).resolve()
     given = Path(args.resume)  # a run id under --run-dir, or a path to the run directory itself
-    run_dir = given.resolve() if (given.is_absolute() or len(given.parts) > 1) and (given / "run.json").is_file() else Path(args.run_dir or default_parent(cwd)).resolve() / args.resume
+    if (given.is_absolute() or len(given.parts) > 1) and (given / "run.json").is_file():
+        run_dir = given.resolve()
+    else:
+        candidates = _resume_candidates(cwd, args.resume, args.run_dir)
+        run_dir = next((c for c in candidates if (c / "run.json").is_file()), None)
+        if run_dir is None:
+            print(f"dispatch: no run.json for {args.resume} (searched: {', '.join(str(c) for c in candidates)})",
+                  file=sys.stderr)
+            return EXIT_USAGE
+        run_dir = run_dir.resolve()
     try:
         spec = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
