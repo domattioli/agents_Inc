@@ -106,5 +106,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Check Zenodo archived the release under the concept DOI
-        run: python tools/check_zenodo_concept.py "${GITHUB_REF_NAME}" --attempts 20 --interval 60
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Deposit the release on Zenodo under the concept DOI
+        # The Zenodo GitHub integration stays off (docs/RELEASING.md). This step publishes the built
+        # wheel and sdist as a new version of the newest record under 10.5281/zenodo.22670100, with
+        # metadata from .zenodo.json at the tag. It is a no-op when the version is already archived
+        # and refuses when the version sits under another concept or ZENODO_TOKEN is missing.
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: python tools/zenodo_deposit.py "${GITHUB_REF_NAME}" --dist dist
+      - name: Check Zenodo lists the release under the concept DOI
+        run: python tools/check_zenodo_concept.py "${GITHUB_REF_NAME}" --attempts 10 --interval 30
