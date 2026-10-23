@@ -13,7 +13,14 @@ Arms
 Usage:
   python3 tools/delegation_bench.py --size S --arms A0,A1,B,C --n 1 --out <dir>
   python3 tools/delegation_bench.py --rollup <dir>
-Must run outside the Claude Code Bash sandbox (agents-inc dispatch exits 69 inside it).
+Auth: each arm runs `claude -p` under an isolated HOME, so Keychain auth (macOS interactive login) is not
+visible to the trial. Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY in the calling
+environment; those two survive the CLAUDE* scrub. A preflight (`claude auth status` under the trial env) runs once
+per arm before its first trial; skip it with --no-auth-check.
+
+Sandbox: the harness launches `claude -p` and `agents-inc` itself, so the repo's sandbox.excludedCommands entry
+`agents-inc *` does not cover it. Either add `python3 tools/delegation_bench.py *` to sandbox.excludedCommands or
+run it from a plain terminal (agents-inc dispatch exits 69 inside the sandbox).
 """
 from __future__ import annotations
 
@@ -28,6 +35,9 @@ FIX = ROOT / "fixtures" / "build-test-verify"
 ARMS = ("A0", "A1", "B", "C", "Acheap")
 SCRUB = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE",
          "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT", "SANDBOX_RUNTIME")
+KEEP = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")   # headless auth; survive the CLAUDE* scrub
+AUTH_FIX = ("claude not logged in under the trial HOME: run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN "
+            "(or ANTHROPIC_API_KEY) before running the bench, or pass --no-auth-check")
 BASE_PROMPT = ("Read SPEC.md in the current directory and deliver everything it asks for, in this directory. "
                "Work unattended: there is no one to answer questions, so state any assumption in VERIFICATION.md. "
                "Do not edit SPEC.md.")
@@ -44,10 +54,17 @@ def arm_home(out: Path, arm: str) -> Path:
     if arm in ("B", "C"):
         env = dict(os.environ, HOME=str(home))
         launcher = home / ".local/bin/agents-inc"
-        subprocess.run([shutil.which("agents-inc") or "agents-inc", "install", "--without-codex", "--source", str(ROOT)],
-                       env=env, check=True, capture_output=True, text=True)
-        subprocess.run([str(launcher), "repair", "--agent-gate", "enforce" if arm == "C" else "advisory"],
-                       env=env, check=True, capture_output=True, text=True)
+        try:
+            subprocess.run([shutil.which("agents-inc") or "agents-inc", "install", "--without-codex", "--source", str(ROOT)],
+                           env=env, check=True, capture_output=True, text=True)
+            subprocess.run([str(launcher), "repair", "--agent-gate", "enforce" if arm == "C" else "advisory"],
+                           env=env, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            log = home / "install.log"
+            log.write_text(f"$ {' '.join(map(str, e.cmd))}\nexit {e.returncode}\n--- stdout ---\n{e.stdout or ''}"
+                           f"\n--- stderr ---\n{e.stderr or ''}\n")
+            tail = "\n".join((e.stderr or "").strip().splitlines()[-5:])
+            raise SystemExit(f"arm {arm}: {e.cmd[1]} exited {e.returncode}; full output in {log}\n{tail}")
         doctor = subprocess.run([str(launcher), "doctor"], env=env, capture_output=True, text=True)
         if not doctor.stdout.startswith("READY"):
             raise SystemExit(f"arm {arm}: doctor not READY:\n{doctor.stdout}{doctor.stderr}")
@@ -57,12 +74,30 @@ def arm_home(out: Path, arm: str) -> Path:
 
 def trial_env(home: Path) -> dict:
     # Drop every CLAUDE_* variable: the calling host's flags (auto background tasks, effort, remote-session
-    # wiring) otherwise leak into the trial and add ~25k tokens of host context. Auth survives without them.
-    env = {k: v for k, v in os.environ.items() if k not in SCRUB and not k.startswith("CLAUDE")}
+    # wiring) otherwise leak into the trial and add ~25k tokens of host context. KEEP carries headless auth:
+    # the fake HOME cannot see the macOS Keychain login.
+    env = {k: v for k, v in os.environ.items() if k in KEEP or (k not in SCRUB and not k.startswith("CLAUDE"))}
     env["HOME"] = str(home)
     env["PATH"] = f"{home / '.local/bin'}:{env.get('PATH', '')}"
     env.setdefault("AGENTS_INC_TURN_TIMEOUT_S", "1800")
     return env
+
+
+_AUTH_OK: set = set()
+
+
+def auth_preflight(home: Path, arm: str) -> None:
+    """Once per arm: `claude auth status` under the trial env must report loggedIn true, else SystemExit."""
+    if arm in _AUTH_OK:
+        return
+    p = subprocess.run(["claude", "auth", "status"], env=trial_env(home), capture_output=True, text=True)
+    try:
+        logged_in = bool(json.loads(p.stdout).get("loggedIn"))
+    except (ValueError, AttributeError):
+        logged_in = '"loggedIn": true' in p.stdout or "loggedIn: true" in p.stdout
+    if not logged_in:
+        raise SystemExit(f"arm {arm}: {AUTH_FIX}\nclaude auth status (rc {p.returncode}): {p.stdout.strip()[-300:]}")
+    _AUTH_OK.add(arm)
 
 
 def dispatch_usage(home: Path, since: float) -> list[dict]:
@@ -76,7 +111,7 @@ def dispatch_usage(home: Path, since: float) -> list[dict]:
     return rows
 
 
-def run_trial(out: Path, size: str, arm: str, rep: int, timeout: int) -> dict:
+def run_trial(out: Path, size: str, arm: str, rep: int, timeout: int, auth_check: bool = True) -> dict:
     tid = f"{size}-{arm}-{rep}"
     work = out / "trials" / tid / "work"
     if work.exists():
@@ -85,6 +120,8 @@ def run_trial(out: Path, size: str, arm: str, rep: int, timeout: int) -> dict:
     shutil.copy(FIX / size / "SPEC.md", work / "SPEC.md")
     subprocess.run(["git", "init", "-q"], cwd=work, check=True)
     home = arm_home(out, arm)
+    if auth_check:
+        auth_preflight(home, arm)
     model = CLAUDE_MODELS["sonnet" if arm == "Acheap" else "opus"]
     argv = ["claude", "-p", "--model", model, "--output-format", "json", "--permission-mode", "bypassPermissions"]
     if arm in ("A0", "Acheap"):
@@ -163,11 +200,14 @@ def main() -> None:
     ap.add_argument("--out", type=Path)
     ap.add_argument("--timeout", type=int, default=2400)
     ap.add_argument("--rollup", type=Path)
+    ap.add_argument("--no-auth-check", action="store_true",
+                    help="skip the per-arm `claude auth status` preflight under the trial HOME")
     a = ap.parse_args()
     if a.rollup:
         print(rollup(a.rollup)); return
     if not a.out:
         raise SystemExit("--out is required")
+    a.out = a.out.resolve()         # arm HOMEs live under it; agents-inc install refuses a relative HOME
     arms = [x for x in a.arms.split(",") if x]
     bad = [x for x in arms if x not in ARMS]
     if bad:
@@ -175,7 +215,7 @@ def main() -> None:
     a.out.mkdir(parents=True, exist_ok=True)
     for rep in range(a.n):          # interleave arms within each rep
         for arm in arms:
-            r = run_trial(a.out, a.size, arm, rep, a.timeout)
+            r = run_trial(a.out, a.size, arm, rep, a.timeout, auth_check=not a.no_auth_check)
             print(json.dumps({k: r[k] for k in ("trial", "rc", "accepted", "seconds")} | {"tokens": r["totals"]["all"]}), flush=True)
     print(rollup(a.out))
 
