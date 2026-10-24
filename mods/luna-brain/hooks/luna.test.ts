@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { failureText, trimSkillList } from './luna'
+import { failureText, refuses, trimSkillList } from './luna'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
@@ -26,6 +26,7 @@ const TOOLS = [
   { name: 'mcp__x__y', description: 'An MCP tool.', mcp: true },
 ]
 const text = (role: 'user' | 'assistant', t: string) => ({ role, content: [{ type: 'text', text: t }] })
+const CUE = '<system-reminder>SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>})</system-reminder>'
 
 // Stands for the engine beneath the plugin: agent.register, agent.spawn, session messages, tools, prompt and the luna process.
 type Run = { out: string; err?: string[]; code?: number }
@@ -35,7 +36,7 @@ async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[
   on('agent.register', (_$, e) => ({ value: { agent: `luna-brain:${e.name}` } }))
   on('agent.spawn', () => ({ model: 'haiku', agentId: opts.agentId }))
   on('agent.list', () => ({ value: [] }))
-  on('session.messages', () => ({ value: opts.rows ?? [text('user', TASK)] }))
+  on('session.messages', () => ({ value: opts.rows ?? [text('user', `${TASK}\n${CUE}`)] }))
   on('tool.list', () => ({ value: TOOLS }))
   on('prompt.compose', () => ({ sections: (opts.sections ?? ['You are Claude Code.']).map((t, i) => ({ id: `s${i}`, text: t, scope: 'shared' })) }))
   on('fs.read', () => ({ value: TYPES }))
@@ -121,6 +122,18 @@ test('tools [] with say becomes a SubagentHandback call', async ($, on) => {
   expect(chunks[2]).toMatchObject({ kind: 'tool', name: 'SubagentHandback' })
   expect(JSON.parse(String(chunks[3].json))).toEqual({ message: '42 lines' })
   expect(result).toMatchObject({ answer: '42 lines', stopReason: 'tool_use', toolUses: [{ name: 'SubagentHandback', input: { message: '42 lines' } }] })
+})
+
+test('without the hand-back cue a final say ends the turn and SubagentHandback is not offered', async ($, on) => {
+  const calls: Call[] = []
+  const bad = JSON.stringify({ say: '', tools: [{ name: 'SubagentHandback', input: { message: '42 lines' } }] })
+  await setup($, on, { agentId: 'h1', rows: [text('user', TASK)], replies: [bad, JSON.stringify({ say: '42 lines', tools: [] })], calls })
+  const { chunks, result } = await step($, 'h1')
+  expect(calls[0].stdin).not.toContain('- SubagentHandback:')
+  expect(calls[0].stdin).toContain('There is no SubagentHandback tool here')
+  expect(calls[1].stdin).toContain('unknown tool "SubagentHandback"')
+  expect(chunks.map(c => c.kind)).toEqual(['thinking', 'text', 'stop'])
+  expect(result).toMatchObject({ answer: '42 lines', stopReason: 'end_turn', toolUses: [] })
 })
 
 test('a SubagentHandback next to another call is dropped until the results exist', async ($, on) => {
@@ -295,4 +308,25 @@ test('a conversation that shrank starts a fresh thread with the whole prompt', a
   await step($, 'c1', 1)
   expect(calls[1].argv.at(-1)).toMatch(/c1-2\.thread$/)
   expect(calls[1].stdin).toContain('Conversation:')
+})
+
+test('a refusal before any tool ran gets one push, and the pushed reply is used', async ($, on) => {
+  const calls: Call[] = []
+  const no = JSON.stringify({ say: 'I can’t run tools in this environment.', tools: [] })
+  const yes = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }] })
+  await setup($, on, { agentId: 'r1', replies: [no, yes], calls })
+  const { result } = await step($, 'r1')
+  expect(calls.length).toBe(2)
+  expect(calls[1].stdin).toContain('every catalog tool is real')
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }])
+})
+
+test('refuses only fires before any tool result and only without tool calls', () => {
+  const say = (t: string, tools: { name: string; input: unknown }[] = []) => ({ say: t, tools })
+  expect(refuses(say("I can't run Bash here."), false)).toBe(true)
+  expect(refuses(say('the host’s execution tool is disabled'), false)).toBe(true)
+  expect(refuses(say("I can't run Bash here."), true)).toBe(false)
+  expect(refuses(say("I can't run Bash here.", [{ name: 'Bash', input: {} }]), false)).toBe(false)
+  expect(refuses(say('A=173'), false)).toBe(false)
+  expect(refuses('no JSON object in the reply', false)).toBe(false)
 })

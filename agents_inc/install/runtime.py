@@ -322,6 +322,23 @@ NO_TOOL_FEATURES = ("shell_tool", "unified_exec", "code_mode_host", "apps", "bro
                     "goals", "image_generation", "multi_agent", "plugins", "skill_search", "sleep_tool", "tool_suggest",
                     "view_image")
 NO_TOOL_ARGS = [a for f in NO_TOOL_FEATURES for a in ("-c", f"features.{f}=false")]
+# Codex keeps its JavaScript exec tool even with those features off, and its base instructions teach the model to use it:
+# luna then searched exec for the host's Bash, got "code-mode host is disabled", and answered that it could not run
+# anything (Docker stress run, 2026-10-24). A tool-free run replaces the base instructions with this text.
+NO_TOOL_INSTRUCTIONS = (
+    "You answer in text only: your final message is your whole output. Never call exec or any other Codex tool, and "
+    "never look for one; the read-only sandbox note applies to those Codex tools alone. When the user message lists tools "
+    "that a host runs for you, those tools are real and work: request them in your reply, in the format the user message "
+    "asks for, and their results arrive in the next message. Never answer that you cannot run a tool the host lists.\n")
+
+
+def no_tool_args() -> list[str]:
+    """NO_TOOL_ARGS plus model_instructions_file pointing at NO_TOOL_INSTRUCTIONS, written once per content."""
+    path = Path(tempfile.gettempdir()) / "agents-inc" / "no-tools-instructions.md"
+    if not path.is_file() or path.read_text() != NO_TOOL_INSTRUCTIONS:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(NO_TOOL_INSTRUCTIONS)
+    return NO_TOOL_ARGS + ["-c", f"model_instructions_file={json.dumps(str(path))}"]
 
 
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
@@ -357,9 +374,9 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         # `-s` is dropped here only: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04);
         # the profile grants cwd read only and shell_tool stays off.
         argv = ([str(executable), "exec", "-m", slug] + common + permission_args(cwd, False, extra_deny=extra_deny)
-                + NO_TOOL_ARGS)
+                + no_tool_args())
     elif not tools:
-        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + NO_TOOL_ARGS
+        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + no_tool_args()
     else:
         # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
         # The profile alone sets access: cwd "read", or "write" with --write; network stays off unless --network.

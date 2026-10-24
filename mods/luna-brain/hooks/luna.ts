@@ -4,28 +4,45 @@ const AGENT = 'luna'
 const AGENT_TYPES = ['luna-brain:luna', 'luna']
 const HANDBACK = 'SubagentHandback'
 const HANDBACK_ARGS = '{ message: string }'
+const HANDBACK_CUE = 'call SubagentHandback('
 const RESULT_CAP = 20_000
 const DESC_CAP = 500
 const MCP_DESC_CAP = 200
 const RUN_TIMEOUT_MS = 300_000
 const MODEL_LINE = /You are powered by the model|The exact model ID is/
 const DELTA_HEADER =
-  'New messages since your last reply. Same rules: reply with one JSON object {say, tools}; act on the latest messages; hand back alone when done.\n'
+  'New messages since your last reply. Same rules: reply with one JSON object {say, tools}; act on the latest messages; finish as the rules said.\n'
+// luna sometimes reads Codex's read-only sandbox note as its own and answers that it cannot run a tool, calling none.
+const REFUSAL = /(can['’]?t|cannot|unable to|not able to)\s+(run|read|inspect|execute|access|use|report)|tools?\b[^.]*\b(disabled|unavailable|not available)/i
+const PUSH = 'You answered that you cannot run a tool, but every catalog tool is real and the host runs it for you. ' +
+  'Request the tools the task needs in "tools" now. Reply with exactly one JSON object.\n'
+export function refuses(reply: Reply | string | null, ranTool: boolean): boolean {
+  return !ranTool && reply !== null && typeof reply !== 'string' && reply.tools.length === 0 && REFUSAL.test(reply.say)
+}
 const CORRECTION = (why: string) => `Your previous reply was rejected: ${why}. Reply with exactly one JSON object, only tools from the Tools list.\n`
 const TOOL_TYPES_PATH = '.claude-plugin/types/claude-code-tools/index.d.ts'
 
 const HEADER =
-  'You are the reasoning step of an agent loop. You cannot run tools yourself. The host runs the tools you name.\n' +
+  'You drive an agent loop with real tools. To run a tool, name it in "tools"; the host runs it and its result arrives ' +
+  'in the next step. Bash, Read and every other catalog tool work this way, so never answer that you cannot run one.\n' +
+  'The catalog tools live in the host, not in Codex: they never appear in your own tool list, so never look for them there. ' +
+  'Example, to run a shell command: {"say": "", "tools": [{"name": "Bash", "input": {"command": "ls"}}]}\n' +
   'You are luna (OpenAI GPT-6 Luna, model gpt-6-luna, run through Codex).\n' +
   'Codex\'s own tools (exec, wait, request_user_input, list_agents, send_message, collaboration.*, and any other) are ' +
   'not yours in this loop: never call them, never search them for a catalog tool, and never pass your reply to one. ' +
   'Your reply is the JSON object itself, written as your final message text. Every tool in the catalog below is real and available: call it ' +
   'by naming it in "tools", and its result arrives in the next step. Never report a catalog tool as unavailable.\n' +
-  'Act on the latest messages; earlier ones are history. When the task is done, call SubagentHandback with your full report.\n' +
-  'Call SubagentHandback alone, in a step after you have read the results it reports; never in the same step as another tool.\n' +
+  'Act on the latest messages; earlier ones are history.\n' +
   'Reply with exactly one JSON object and nothing else:\n' +
   '{"say": "<short text, may be empty>", "tools": [{"name": "<tool from the catalog>", "input": {...}}]}\n' +
   'Use "tools": [] only when you have nothing to call.\n'
+const HANDBACK_RULES =
+  'When the task is done, call SubagentHandback with your full report.\n' +
+  'Call SubagentHandback alone, in a step after you have read the results it reports; never in the same step as another tool.\n'
+// A background subagent on some builds has no SubagentHandback: its last plain reply is its report.
+const FINAL_RULES =
+  'When the task is done, reply with your full report in "say" and "tools": []. That reply ends your run.\n' +
+  'There is no SubagentHandback tool here; never call it.\n'
 
 const AGENT_PROMPT = 'You are a general-purpose agent. Complete the task you are given, then hand your report back.'
 
@@ -94,13 +111,13 @@ export function argBlock(types: string, name: string): string {
   return end < 0 ? '' : lines.slice(start, end + 1).map(l => shortDoc(l.slice(4))).join('\n')
 }
 
-export function catalog(tools: readonly Tool[], types: string): string {
+export function catalog(tools: readonly Tool[], types: string, hand = true): string {
   const entries = tools.map(t => {
     const block = argBlock(types, t.name)
     const description = t.mcp ? cap(t.description.split(/(?<=[.!?])\s/)[0], MCP_DESC_CAP) : cap(t.description, DESC_CAP)
     return `- ${t.name}: ${description}${block ? `\n  Arguments:\n${block.replace(/^/gm, '  ')}` : ''}`
   })
-  entries.push(`- ${HANDBACK}: Deliver your final report and end your run.\n  Arguments: ${HANDBACK_ARGS}`)
+  if (hand) entries.push(`- ${HANDBACK}: Deliver your final report and end your run.\n  Arguments: ${HANDBACK_ARGS}`)
   return entries.join('\n')
 }
 
@@ -124,8 +141,8 @@ export function render(messages: readonly Msg[]): string {
   return out.join('\n')
 }
 
-export function buildPrompt(system: string, tools: string, messages: readonly Msg[]): string {
-  return `${HEADER}\nSystem prompt:\n${system}\n\nTools:\n${tools}\n\nConversation:\n${render(messages) || '(empty)'}\n`
+export function buildPrompt(system: string, tools: string, messages: readonly Msg[], hand = true): string {
+  return `${HEADER}${hand ? HANDBACK_RULES : FINAL_RULES}\nSystem prompt:\n${system}\n\nTools:\n${tools}\n\nConversation:\n${render(messages) || '(empty)'}\n`
 }
 
 // First balanced {...} in the text, parsed; a reason string when none parses or the shape is wrong.
@@ -168,8 +185,9 @@ function shape(obj: unknown, allowed?: ReadonlySet<string>): Reply | string {
   return { say: typeof o.say === 'string' ? o.say : '', tools: list }
 }
 
-// Plain final text is ignored by the harness; the report has to travel through SubagentHandback.
-export function handback(out: Reply): Reply {
+// Where the harness offers SubagentHandback, plain final text is ignored: the report has to travel through it.
+export function handback(out: Reply, hand = true): Reply {
+  if (!hand) return out
   // A hand-back next to other calls would report before their results exist: drop it, the next step can hand back.
   const others = out.tools.filter(t => t.name !== HANDBACK)
   if (others.length > 0 && others.length < out.tools.length) return { ...out, tools: others }
@@ -306,14 +324,17 @@ export const register: Register = on => {
     }
 
     const tools: Tool[] = await $.tool.list().catch(() => [])
-    const names = [...tools.map(t => t.name), HANDBACK]
+    const api = await $.session.messages({ agentId: id, as: 'api' }).catch(() => [])
+    const messages = Array.isArray(api) ? (api as Msg[]) : []
+    // The harness announces SubagentHandback in a reminder when it serves it; a background agent on some builds has none
+    // and loops on "No such tool available" if told to call it (Linux, Claude Code 2.1.310, 2026-10-24).
+    const hand = tools.some(t => t.name === HANDBACK) || JSON.stringify(messages).includes(HANDBACK_CUE)
+    const names = [...tools.filter(t => t.name !== HANDBACK).map(t => t.name), ...(hand ? [HANDBACK] : [])]
     const allowed = new Set(names)
     const composed = await $.prompt.compose({ tools: names }).catch(() => ({ sections: [] }))
     const system = [...composed.sections.map(s => stripModelLines(s.text)), AGENT_PROMPT].join('\n\n')
     const types = await readToolTypes($)
-    const api = await $.session.messages({ agentId: id, as: 'api' }).catch(() => [])
-    const messages = Array.isArray(api) ? (api as Msg[]) : []
-    const full = () => buildPrompt(system, catalog(tools, types), messages)
+    const full = () => buildPrompt(system, catalog(tools, types, hand), messages, hand)
 
     const st = agents.get(id) ?? { n: 1, used: false, sent: 0 }
     agents.set(id, st)
@@ -340,11 +361,18 @@ export const register: Register = on => {
       chars += prompt.length
       run = yield* ask(prompt, threadPath(id, st.n), allowed)
     }
+    if (!run.failed && refuses(run.reply, JSON.stringify(messages).includes('"tool_result"'))) {
+      // One push; a second refusal stands as luna's answer.
+      prompt = PUSH
+      chars += prompt.length
+      const again = yield* ask(prompt, threadPath(id, st.n), allowed)
+      if (!again.failed && again.reply !== null && typeof again.reply !== 'string') run = again
+    }
     if (!run.failed) st.used = true
     const reply = run.reply
     if (typeof reply !== 'string' && reply !== null) st.sent = messages.length
     const ms = (await $.clock.now()) - t0
-    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, system ${system.length} catalog ${catalog(tools, types).length} conversation ${render(messages).length} chars, ${names.length} tools, messages ${messages.length} sent ${sentBefore}`, { to: 'debug' })
+    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, system ${system.length} catalog ${catalog(tools, types, hand).length} conversation ${render(messages).length} chars, ${names.length} tools, handback ${hand ? 'on' : 'off'}, messages ${messages.length} sent ${sentBefore}`, { to: 'debug' })
     const tokens = acc.usage
     const turnUsage: TurnUsageOut | null = tokens
       ? {
@@ -358,7 +386,7 @@ export const register: Register = on => {
 
     if (reply === null) return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null, usage: turnUsage }
 
-    const out: Reply = typeof reply === 'string' ? { say: 'luna reply unparsable', tools: [] } : handback(reply)
+    const out: Reply = typeof reply === 'string' ? { say: 'luna reply unparsable', tools: [] } : handback(reply, hand)
     let index = 1 // block 0 is the live thinking line
     if (out.say) yield { kind: 'text', index: index++, text: out.say }
     for (const [n, tool] of out.tools.entries()) {
