@@ -112,6 +112,13 @@ test('tools [] with say becomes a SubagentHandback call', async ($, on) => {
   expect(result).toMatchObject({ answer: '', stopReason: 'tool_use', toolUses: [{ name: 'SubagentHandback', input: { message: '42 lines' } }] })
 })
 
+test('a SubagentHandback next to another call is dropped until the results exist', async ($, on) => {
+  const reply = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }, { name: 'SubagentHandback', input: { message: 'pending' } }] })
+  await setup($, on, { agentId: 'g1', replies: [reply] })
+  const { result } = await step($, 'g1')
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }])
+})
+
 test('tool results are capped and a later user message follows the first', async ($, on) => {
   const rows = [
     text('user', TASK),

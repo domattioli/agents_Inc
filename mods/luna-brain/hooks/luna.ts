@@ -12,6 +12,7 @@ const TOOL_TYPES_PATH = '.claude-plugin/types/claude-code-tools/index.d.ts'
 const HEADER =
   'You are the reasoning step of an agent loop. You cannot run tools yourself. The host runs the tools you name.\n' +
   'Act on the latest messages; earlier ones are history. When the task is done, call SubagentHandback with your full report.\n' +
+  'Call SubagentHandback alone, in a step after you have read the results it reports; never in the same step as another tool.\n' +
   'Reply with exactly one JSON object and nothing else:\n' +
   '{"say": "<short text, may be empty>", "tools": [{"name": "<tool from the catalog>", "input": {...}}]}\n' +
   'Use "tools": [] only when you have nothing to call.\n'
@@ -114,6 +115,9 @@ function shape(obj: unknown, allowed?: ReadonlySet<string>): Reply | string {
 
 // Plain final text is ignored by the harness; the report has to travel through SubagentHandback.
 export function handback(out: Reply): Reply {
+  // A hand-back next to other calls would report before their results exist: drop it, the next step can hand back.
+  const others = out.tools.filter(t => t.name !== HANDBACK)
+  if (others.length > 0 && others.length < out.tools.length) return { ...out, tools: others }
   return out.tools.length === 0 && out.say ? { say: '', tools: [{ name: HANDBACK, input: { message: out.say } }] } : out
 }
 
@@ -170,7 +174,12 @@ export const register: Register = on => {
           stdin: prompt,
           timeoutMs: RUN_TIMEOUT_MS,
         })
-        .then(r => (r.exitCode === 0 ? parseReply(r.stdout, allowed) : `agents-inc run exited ${r.exitCode}`))
+        .then(r => {
+          if (r.exitCode === 0) return parseReply(r.stdout, allowed)
+          const why = `agents-inc run exited ${r.exitCode}: ${r.stderr.slice(-400)}`
+          $.ui.log(`luna-brain: ${why}`, { to: 'debug' })
+          return why
+        })
         .catch(err => `agents-inc run failed: ${String((err as Error)?.message ?? err)}`)
       return Promise.race([run, aborted])
     }
