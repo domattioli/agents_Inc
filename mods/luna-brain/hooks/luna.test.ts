@@ -27,19 +27,28 @@ const TOOLS = [
 const text = (role: 'user' | 'assistant', t: string) => ({ role, content: [{ type: 'text', text: t }] })
 
 // Stands for the engine beneath the plugin: agent.register, agent.spawn, session messages, tools, prompt and the luna process.
-async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: string[]; calls?: Call[] }) {
+type Run = { out: string; err?: string[]; code?: number }
+
+async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: (string | Run)[]; calls?: Call[]; sections?: string[] }) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('agent.register', (_$, e) => ({ value: { agent: `luna-brain:${e.name}` } }))
   on('agent.spawn', () => ({ model: 'haiku', agentId: opts.agentId }))
   on('agent.list', () => ({ value: [] }))
   on('session.messages', () => ({ value: opts.rows ?? [text('user', TASK)] }))
   on('tool.list', () => ({ value: TOOLS }))
-  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude Code.', scope: 'shared' }] }))
+  on('prompt.compose', () => ({ sections: (opts.sections ?? ['You are Claude Code.']).map((t, i) => ({ id: `s${i}`, text: t, scope: 'shared' })) }))
   on('fs.read', () => ({ value: TYPES }))
-  on('process.run', (_$, e) => {
-    opts.calls?.push({ argv: e.argv, stdin: e.init?.stdin })
-    const stdout = opts.replies.shift() ?? ''
-    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  on('process.spawn', async function* (_$, e) {
+    opts.calls?.push({ argv: e.argv, stdin: e.input })
+    const next = opts.replies.shift() ?? ''
+    const r = typeof next === 'string' ? { out: next } : next
+    // Progress lines first, split mid-line the way a pipe may deliver them.
+    for (const line of r.err ?? []) {
+      yield { stream: 'stderr' as const, text: line.slice(0, 7) }
+      yield { stream: 'stderr' as const, text: `${line.slice(7)}\n` }
+    }
+    if (r.out) yield { stream: 'stdout' as const, text: r.out }
+    return { value: { code: r.code ?? 0, signal: null } }
   })
   on('turn.step', async function* (_$, e) {
     yield { kind: 'text', index: 0, text: 'from anthropic' }
@@ -51,8 +60,8 @@ async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[
   await $.agent.spawn({ prompt: TASK, subagentType: 'luna-brain:luna' })
 }
 
-async function step($: Dollar, agentId: string | undefined) {
-  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'haiku', messageCount: 1, agentId })
+async function step($: Dollar, agentId: string | undefined, index = 0) {
+  const stream = $.turn.step({ turnId: 't1', index, model: 'haiku', messageCount: 1, agentId })
   const chunks: { kind: string; [k: string]: unknown }[] = []
   for (;;) {
     const n = await stream.next()
@@ -72,7 +81,7 @@ test('a Read call becomes tool chunks and stopReason tool_use', async ($, on) =>
   expect(result.stopReason).toBe('tool_use')
   expect(result.toolUses).toEqual([{ name: 'Read', input: { file_path: '/work/a.py' } }])
   expect(result.usage).toBeNull()
-  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--cwd', '/work'])
+  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--cwd', '/work', '--thread', '/work/.scratch/luna-brain/a1.thread'])
   const stdin = calls[0].stdin ?? ''
   expect(stdin).toContain('You are Claude Code.')
   expect(stdin).toContain('- Read: Reads a file.')
@@ -145,6 +154,100 @@ test('a non-luna agentId passes through to next', async ($, on) => {
   expect(chunks).toMatchObject([{ kind: 'text', text: 'from anthropic' }])
   expect(result.answer).toBe('from anthropic')
   expect(calls.length).toBe(0)
+})
+
+test('the second step sends only the new messages on the same thread', async ($, on) => {
+  const calls: Call[] = []
+  const first = JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] })
+  const opts = { agentId: 'h1', replies: [first, JSON.stringify({ say: 'done', tools: [] })], calls, rows: [text('user', TASK)] as unknown[] }
+  await setup($, on, opts)
+  await step($, 'h1')
+  opts.rows = [
+    text('user', TASK),
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'u1', name: 'Read', input: { file_path: '/work/a.py' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: '12 lines' }] },
+  ]
+  await step($, 'h1', 1)
+  expect(calls.length).toBe(2)
+  const [one, two] = calls
+  expect(one.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/luna-brain/h1.thread'])
+  expect(two.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/luna-brain/h1.thread'])
+  const delta = two.stdin ?? ''
+  expect(delta).toContain('New messages since your last reply.')
+  expect(delta).toContain('tool result: 12 lines')
+  expect(delta).not.toContain('System prompt:')
+  expect(delta).not.toContain('- Read: Reads a file.')
+  expect(delta).not.toContain(`user: ${TASK}`)
+  console.log(`fixture prompt sizes: first ${one.stdin?.length} chars, second ${delta.length} chars`)
+})
+
+test('progress lines become thinking chunks before the stop chunk', async ($, on) => {
+  const run: Run = {
+    out: JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] }),
+    err: [
+      'agents-inc run: record {"model":"luna","slug":"gpt-5.6-luna","tools":"off"}',
+      `agents-inc run: event ${JSON.stringify({ kind: 'reasoning', text: 'look at the file' })}`,
+      `agents-inc run: event ${JSON.stringify({ kind: 'agent_message', text: 'calling Read' })}`,
+      'agents-inc run: usage {"input_tokens":1000,"cached_input_tokens":800,"output_tokens":50}',
+    ],
+  }
+  await setup($, on, { agentId: 'i1', replies: [run] })
+  const { chunks, result } = await step($, 'i1')
+  expect(chunks.map(c => c.kind)).toEqual(['thinking', 'thinking', 'thinking', 'tool', 'input', 'stop'])
+  expect(chunks[1]).toMatchObject({ index: 0, text: 'look at the file' })
+  expect(chunks[2]).toMatchObject({ index: 0, text: 'calling Read' })
+  const usage = { input_tokens: 200, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 0, model: 'gpt-5.6-luna' }
+  expect(chunks[5]).toMatchObject({ kind: 'stop', usage })
+  expect(result.usage).toEqual(usage)
+})
+
+test('usage falls back to the model name luna when no record line came', async ($, on) => {
+  const run: Run = { out: JSON.stringify({ say: 'x', tools: [] }), err: ['agents-inc run: usage {"input_tokens":10,"cached_input_tokens":0,"output_tokens":2}'] }
+  await setup($, on, { agentId: 'j1', replies: [run] })
+  const { result } = await step($, 'j1')
+  expect(result.usage).toEqual({ input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'luna' })
+})
+
+test('lines naming the placeholder model are dropped from the system prompt', async ($, on) => {
+  const calls: Call[] = []
+  const sections = ['You are Claude Code.\nYou are powered by the model named Haiku 5.5. The exact model ID is claude-haiku-5-5.\nKeep it short.']
+  await setup($, on, { agentId: 'k1', replies: [JSON.stringify({ say: 'x', tools: [] })], calls, sections })
+  await step($, 'k1')
+  const stdin = calls[0].stdin ?? ''
+  expect(stdin).toContain('You are Claude Code.\nKeep it short.')
+  expect(stdin).not.toContain('You are powered by the model')
+  expect(stdin).not.toContain('The exact model ID is')
+  expect(stdin).toContain('You are luna (OpenAI GPT-5.6 Luna, run through Codex).')
+})
+
+test('a retry on a resumed thread sends only the correction line', async ($, on) => {
+  const calls: Call[] = []
+  const bad = JSON.stringify({ say: '', tools: [{ name: 'Teleport', input: {} }] })
+  const good = JSON.stringify({ say: 'ok', tools: [] })
+  await setup($, on, { agentId: 'l1', replies: [good, bad, good], calls })
+  await step($, 'l1')
+  await step($, 'l1', 1)
+  expect(calls.length).toBe(3)
+  expect(calls[2].stdin).toContain('Your previous reply was rejected: unknown tool "Teleport"')
+  expect(calls[2].stdin).not.toContain('New messages since')
+  expect(calls[2].stdin).not.toContain('System prompt:')
+})
+
+test('a failed resume retries fresh with the full prompt and a new thread path', async ($, on) => {
+  const calls: Call[] = []
+  const good = JSON.stringify({ say: 'ok', tools: [] })
+  await setup($, on, { agentId: 'm1', replies: [good, { out: '', code: 1 }, good, good], calls })
+  await step($, 'm1')
+  const { result } = await step($, 'm1', 1)
+  expect(calls.length).toBe(3)
+  expect(calls[1].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1.thread'])
+  expect(calls[2].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1-2.thread'])
+  expect(calls[2].stdin).toContain('System prompt:')
+  expect(calls[2].stdin).toContain(`user: ${TASK}`)
+  expect(result.answer).toBe('ok')
+  await step($, 'm1', 2) // the new thread is used from here on
+  expect(calls[3].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1-2.thread'])
+  expect(calls[3].stdin).toContain('New messages since')
 })
 
 test('an unparsable reply twice yields luna reply unparsable', async ($, on) => {

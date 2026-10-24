@@ -599,3 +599,42 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
 
     # Return original exit code; a leaked isolated CODEX_HOME turns success into failure
     return 1 if cleanup_failed and result.returncode == 0 else result.returncode
+
+
+def thread_progress_line(line: str) -> None:
+    """`agents-inc run --thread`: one stderr line per reasoning or agent_message item and per turn usage, flushed
+    as the JSONL line arrives. Other lines are ignored."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return
+    if not isinstance(event, dict):
+        return
+    out = None
+    if event.get("type") == "item.completed" and isinstance(event.get("item"), dict):
+        item = event["item"]
+        if item.get("type") in ("reasoning", "agent_message"):
+            out = "agents-inc run: event " + json.dumps({"kind": item["type"], "text": item.get("text")})
+    elif event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+        out = "agents-inc run: usage " + json.dumps(event["usage"])
+    if out is not None:
+        sys.stderr.write(out + "\n")
+        sys.stderr.flush()
+
+
+def run_codex_thread(thread_file: Path, *args, **kwargs) -> int:
+    """`agents-inc run --thread FILE`: FILE missing or empty starts a new thread, FILE holding a thread id resumes
+    it with the prompt as the next message. After the run the thread id (new or resumed) is written to FILE."""
+    thread_file = Path(thread_file)
+    try:
+        known = thread_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        known = ""
+    thread_out: dict = {}
+    rc = run_codex(*args, thread_out=None if known else thread_out, resume_thread=known or None,
+                   on_line=thread_progress_line, **kwargs)
+    tid = known or thread_out.get("thread_id")
+    if tid:
+        thread_file.parent.mkdir(parents=True, exist_ok=True)
+        thread_file.write_text(tid + "\n", encoding="utf-8")
+    return rc
