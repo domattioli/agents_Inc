@@ -95,6 +95,12 @@ class GateDenyTest(_Gate):
         result = self.run_hook(payload("Explore", background=True))
         self.assertEqual(self.decision(result), "deny")
 
+    def test_allow_luna_brain_types_even_in_background(self):
+        self.assertNotEqual(self.decision(self.run_hook(payload("luna-brain:luna", background=True))), "deny")
+
+    def test_deny_a_type_that_only_contains_the_brain_prefix(self):
+        self.assertEqual(self.decision(self.run_hook(payload("x-luna-brain:luna"))), "deny")
+
     def test_deny_task_tool_too(self):
         self.assertEqual(self.decision(self.run_hook(payload("general-purpose", tool="Task"))), "deny")
 

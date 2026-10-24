@@ -73,6 +73,18 @@ class PersonaDenyTest(_Home):
                 result, _ = self.run_hook("agent-nudge", payload(desc, session=f"a{i}"))
                 self.assertNotEqual(self.decision(result), "deny")
 
+    def test_luna_brain_agent_types_may_name_luna(self):
+        data = payload("luna: count lines")
+        data["tool_input"]["subagent_type"] = "luna-brain:luna"
+        result, _ = self.run_hook("agent-nudge", data)
+        self.assertNotEqual(self.decision(result), "deny")
+
+    def test_other_agent_types_still_denied(self):
+        data = payload("luna: count lines")
+        data["tool_input"]["subagent_type"] = "general-purpose"
+        result, _ = self.run_hook("agent-nudge", data)
+        self.assertEqual(self.decision(result), "deny")
+
     def test_task_tool_is_covered(self):
         result, _ = self.run_hook("agent-nudge", payload("Terra review", tool="Task"))
         self.assertEqual(self.decision(result), "deny")

@@ -24,6 +24,9 @@ AGENT_TOOLS = {"Agent", "Task"}
 AGENT_GATE_ENV = "AGENTS_INC_AGENT_GATE"
 AGENT_GATE_MODES = ("enforce", "advisory", "off")
 GATE_ALLOW = frozenset({"Explore", "Plan", "claude-code-guide", "statusline-setup"})
+# The luna-brain mod's agent types run a Codex model through `agents-inc run` (spike, operator 2026-10-24): the persona
+# name is the true model and the call is agents-inc's own route, so neither the FR-002 deny nor the gate applies.
+BRAIN_PREFIX = "luna-brain:"
 GATE_DENY_REASON = ("agents-inc agent gate: this Agent/Task call is blocked (subagent_type: {subagent}; background: {background}). "
                     "Agent/Task spawns Claude subagents outside agents-inc routing, ledger, and verification. Allowed here: {allowed} "
                     "(foreground only). For every other delegation run: agents-inc dispatch --slots <json> --model <opus|sonnet|haiku|fable>. "
@@ -97,11 +100,17 @@ def agent_nudge(paths: InstallPaths, payload: dict) -> str:
     """Once per session, so a run of subagent spawns is not flooded with the same reminder."""
     return _context(_nudge_text(paths, payload))
 
+def _is_brain(tool_input: object) -> bool:
+    subagent = tool_input.get("subagent_type") if isinstance(tool_input, dict) else None
+    return isinstance(subagent, str) and subagent.startswith(BRAIN_PREFIX)
+
 def persona_deny(payload: object) -> str:
     """The only blocking path. Anything unexpected fails open (empty string)."""
     try:
         if not isinstance(payload, dict) or payload.get("tool_name") not in AGENT_TOOLS: return ""
-        description = _tool_input(payload).get("description")
+        tool_input = _tool_input(payload)
+        if _is_brain(tool_input): return ""
+        description = tool_input.get("description")
         if not isinstance(description, str) or not PERSONA_RE.match(description): return ""
         return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                   "permissionDecisionReason": PERSONA_DENY_REASON}})
@@ -148,6 +157,7 @@ def gate_deny(paths: InstallPaths, payload: object) -> str:
         if not isinstance(tool_input, dict) or agent_gate_mode(paths)[0] != "enforce": return ""
         subagent, background = tool_input.get("subagent_type"), tool_input.get("run_in_background") is True
         if isinstance(subagent, str) and subagent in GATE_ALLOW and not background: return ""
+        if _is_brain(tool_input): return ""
         reason = GATE_DENY_REASON.format(subagent=subagent if isinstance(subagent, str) else "omitted",
                                          background="yes" if background else "no", allowed=", ".join(sorted(GATE_ALLOW)))
         return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
