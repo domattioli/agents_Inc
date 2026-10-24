@@ -163,8 +163,18 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
         if retained:
             # Receipt is evidence needed for a future conservative retry.
             journal.commit(); return retained
+        # `current` is ours when it points at the receipt's release; a foreign link stays put.
+        release = paths.releases / receipt.release_hash
+        if paths.current.is_symlink() and (paths.current.parent / os.readlink(paths.current)).resolve() == release.resolve():
+            journal.apply("unlink", paths.current, os.readlink(paths.current), None, lambda: paths.current.unlink())
         journal.apply("receipt", paths.receipt, None, None, lambda: paths.receipt.unlink(missing_ok=True))
-        journal.commit(); return retained
+        journal.commit()
+        # After commit: the release tree is content-addressed and reproducible, so its removal needs no journal.
+        if release.is_dir() and not paths.current.exists(): shutil.rmtree(release, ignore_errors=True)
+        for empty in (paths.releases, paths.releases.parent):
+            try: empty.rmdir()
+            except OSError: break
+        return retained
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
@@ -239,6 +249,8 @@ def main(argv=None):
         if args.command == "repair": return install(args)
         if args.command == "rollback":
             if not receipt.prior_release: raise RuntimeError("no predecessor release")
+            if Path(receipt.prior_release).name == receipt.release_hash:
+                raise RuntimeError(f"nothing to roll back: the predecessor is the current release {receipt.release_hash[:12]}")
             with LifecycleLock(paths.lock):
                 TransactionJournal.recover(paths.journal); journal = TransactionJournal(paths.journal).begin("rollback")
                 prior = os.readlink(paths.current) if paths.current.is_symlink() else None

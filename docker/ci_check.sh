@@ -45,9 +45,13 @@ verifier="$HOME/.local/share/agents-inc/current/skills/workerbee/scripts/pre_dis
 (cd repo && python3 "$verifier" capture "$snap")
 python3 "$verifier" verify "$snap"
 
-echo "== uninstall exits 0, drops the receipt, and keeps pip's console script"
+echo "== uninstall exits 0, drops the receipt, the current link and the release, and keeps pip's console script"
 agents-inc uninstall
 [ ! -e "$HOME/.config/agents-inc/install.json" ] || fail "install receipt survived uninstall"
+[ ! -L "$HOME/.local/share/agents-inc/current" ] || fail "current link survived uninstall"
+[ ! -d "$HOME/.local/share/agents-inc/releases" ] || fail "release tree survived uninstall"
 [ -f "$HOME/.local/bin/agents-inc" ] || fail "uninstall removed pip's console script"
+doctor_after=$(agents-inc doctor | head -1 || true)
+[ "$doctor_after" = "WB_NOT_INSTALLED" ] || fail "doctor after uninstall printed '$doctor_after', expected WB_NOT_INSTALLED alone"
 
 echo "ALL OK"

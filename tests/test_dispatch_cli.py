@@ -420,6 +420,28 @@ class DispatchCliTest(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(out.strip(), f"dispatch: {slug} not supported, use agent.sh")
 
+    def test_slots_that_are_not_an_object_exit_2(self):
+        # A JSON list used to reach `slots.get` and die with an AttributeError traceback (Docker stress 2026-10-23).
+        for text in ("[]", "\"x\"", "3", "null"):
+            path = self.root / "bad_slots.json"
+            path.write_text(text)
+            rc, out, err = self._main("--slots", str(path), "--model", "haiku", "--run-dir", str(self.runs), "--dry-run")
+            self.assertEqual(rc, 2, text)
+            self.assertIn("dispatch: slots must be a JSON object", out + err)
+        self.assertFalse(self.runs.exists())
+
+    def test_missing_cwd_and_unwritable_run_dir_exit_2(self):
+        rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.root / "nope"),
+                                  "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 2)
+        self.assertIn("dispatch: cwd is not a directory", out + err)
+        blocker = self.root / "blocker"
+        blocker.write_text("a file, not a directory")
+        rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                                  "--run-dir", str(blocker), "--dry-run")
+        self.assertEqual(rc, 2)
+        self.assertIn("dispatch: cannot create run directory", out + err)
+
     def test_claude_bad_effort_exits_2(self):
         for effort in ("ultra", "xhigh"):
             rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--effort", effort,

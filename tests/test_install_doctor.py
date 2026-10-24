@@ -24,7 +24,7 @@ class DoctorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             report = check_install(InstallPaths.for_home(Path(raw) / "home"), **HOST)
             self.assertFalse(report.ready)
-            self.assertIn("WB_RELEASE_UNTRUSTED", report.codes)
+            self.assertEqual(report.codes, ("WB_NOT_INSTALLED",))  # no receipt is not an untrusted release
 
 
 class DoctorWarningsTest(unittest.TestCase):

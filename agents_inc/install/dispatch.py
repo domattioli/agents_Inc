@@ -1126,10 +1126,20 @@ def run(args) -> int:
     except (OSError, ValueError) as exc:
         print(f"dispatch: cannot read slots: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    if not isinstance(slots, dict):
+        print(f"dispatch: slots must be a JSON object, got {type(slots).__name__}: {slots_path}", file=sys.stderr)
+        return EXIT_USAGE
     cwd = Path(args.cwd or os.getcwd()).resolve()
+    if not cwd.is_dir():
+        print(f"dispatch: cwd is not a directory: {cwd}", file=sys.stderr)
+        return EXIT_USAGE
     run_id = new_run_id(model)
     run_dir = Path(args.run_dir or default_parent(cwd)).resolve() / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        run_dir.mkdir(parents=True, exist_ok=False)
+    except OSError as exc:
+        print(f"dispatch: cannot create run directory {run_dir}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     if _BROKER_SAFE_WRITES:
         _wtext(run_dir / "slots.json", slots_path.read_text(encoding="utf-8"))
     else:
