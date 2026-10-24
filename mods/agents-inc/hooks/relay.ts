@@ -149,6 +149,6 @@ export const register: Register = on => {
         .catch(() => '[output withheld: redaction failed]')
       text = `dispatch ended without a verdict\n${redacted}`
     }
-    return { result: { text } }
+    return { result: text } // the tool's output shape is a string (T043: an object was refused)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'agents-inc relay: its guard failed.' }))
 }

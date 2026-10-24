@@ -77,7 +77,7 @@ test('happy path: rows reach the subagent and the verdict comes back', async ($,
   const session = mock.session(on)
   await start($, on)
   const out = await $.tool.call({ tool: TOOL, model: 'sonnet', slots: '/work/s.md', agentId: 'a1' })
-  expect(JSON.stringify(out)).toContain(VERDICT)
+  expect(out.result).toBe(`delegate answer\n\n${VERDICT}`) // a string: the engine refuses an object
   expect(seen.some(a => a.includes('follow') && a.includes(RUN_DIR))).toBe(true)
   const notices = session.appended().map(r => JSON.stringify(r.message))
   expect(notices.some(n => n.includes('sonnet say: hello'))).toBe(true)
