@@ -118,7 +118,7 @@ export function handback(out: Reply): Reply {
   // A hand-back next to other calls would report before their results exist: drop it, the next step can hand back.
   const others = out.tools.filter(t => t.name !== HANDBACK)
   if (others.length > 0 && others.length < out.tools.length) return { ...out, tools: others }
-  return out.tools.length === 0 && out.say ? { say: '', tools: [{ name: HANDBACK, input: { message: out.say } }] } : out
+  return out.tools.length === 0 && out.say ? { say: out.say, tools: [{ name: HANDBACK, input: { message: out.say } }] } : out
 }
 
 async function readToolTypes($: { plugin: { root: string }; fs: { read: (p: string) => Promise<unknown> } }): Promise<string> {
@@ -162,6 +162,8 @@ export const register: Register = on => {
     }
 
     const t0 = await $.clock.now()
+    // Shown live, not recorded: the window has something to show while luna works.
+    yield { kind: 'thinking', index: 0, text: `luna is working on step ${e.index}…` }
     const aborted = new Promise<null>(res => {
       if (next.signal.aborted) res(null)
       else next.signal.addEventListener('abort', () => res(null), { once: true })
@@ -203,7 +205,7 @@ export const register: Register = on => {
     if (reply === null) return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null, usage: null }
 
     const out: Reply = typeof reply === 'string' ? { say: 'luna reply unparsable', tools: [] } : handback(reply)
-    let index = 0
+    let index = 1 // block 0 is the live thinking line
     if (out.say) yield { kind: 'text', index: index++, text: out.say }
     for (const [n, tool] of out.tools.entries()) {
       yield { kind: 'tool', index, id: `luna_${e.turnId}_${e.index}_${n}`, name: tool.name }
