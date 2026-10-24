@@ -5,7 +5,7 @@ const AGENT_TYPES = ['luna-brain:luna', 'luna']
 const HANDBACK = 'SubagentHandback'
 const HANDBACK_ARGS = '{ message: string }'
 const RESULT_CAP = 20_000
-const DESC_CAP = 1_200
+const DESC_CAP = 500
 const MCP_DESC_CAP = 200
 const RUN_TIMEOUT_MS = 300_000
 const MODEL_LINE = /You are powered by the model|The exact model ID is/
@@ -54,11 +54,25 @@ type TurnUsageOut = {
 // The system prompt names a placeholder Claude model; luna is not that model, so those lines go.
 const stripModelLines = (text: string) => text.split('\n').filter(l => !MODEL_LINE.test(l)).join('\n')
 
+// The harness's skill-listing reminder, cut to the skill names: luna can still call Skill by name, without ~25k chars
+// of descriptions in every fresh prompt.
+const SKILL_LIST = /(<system-reminder>\nThe following skills are available for use with the Skill tool:\n)([\s\S]*?)(<\/system-reminder>)/
+export const trimSkillList = (text: string) =>
+  text.replace(SKILL_LIST, (_, head: string, body: string, tail: string) => {
+    const names = body.split('\n').map(l => /^- (\S+?)(?::\s|$)/.exec(l)?.[1]).filter(Boolean)
+    return `${head}${names.join(', ')}\n${tail}`
+  })
+
 // The dir is git-ignored; agents-inc creates it. A fresh thread after a failed resume gets the suffix -2, -3...
 const threadPath = (agentId: string, n: number) =>
   `${sessionCwd || '.'}/.scratch/luna-brain/${agentId.replace(/[^\w.-]/g, '_')}${n > 1 ? `-${n}` : ''}.thread`
 
 const cap = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n[truncated ${s.length - n} chars]` : s)
+
+// A field's `/** doc */` cut to its first sentence and FIELD_DOC_CAP chars; the field itself stays.
+const FIELD_DOC_CAP = 160
+const shortDoc = (line: string) =>
+  line.replace(/\/\*\* (.*?) \*\//, (_, doc: string) => { const first = doc.split(/(?<=[.!?])\s/)[0]; return `/** ${first.length > FIELD_DOC_CAP ? `${first.slice(0, FIELD_DOC_CAP)}…` : first} */` })
 
 // The `Name: {...}` block of one tool in the BuiltinToolInputs interface; '' when the tool has none.
 export function argBlock(types: string, name: string): string {
@@ -67,7 +81,7 @@ export function argBlock(types: string, name: string): string {
   if (start < 0) return ''
   if (lines[start].trimEnd().endsWith('{}')) return lines[start].trim()
   const end = lines.findIndex((l, i) => i > start && l === '    }')
-  return end < 0 ? '' : lines.slice(start, end + 1).map(l => l.slice(4)).join('\n')
+  return end < 0 ? '' : lines.slice(start, end + 1).map(l => shortDoc(l.slice(4))).join('\n')
 }
 
 export function catalog(tools: readonly Tool[], types: string): string {
@@ -91,7 +105,7 @@ export function render(messages: readonly Msg[]): string {
   const out: string[] = []
   for (const m of messages) {
     for (const b of m.content ?? []) {
-      if (b.type === 'text') out.push(`${m.role}: ${String(b.text ?? '')}`)
+      if (b.type === 'text') out.push(`${m.role}: ${trimSkillList(stripModelLines(String(b.text ?? '')))}`)
       else if (b.type === 'tool_use') out.push(`assistant tool call: ${String(b.name)} ${JSON.stringify(b.input ?? {})}`)
       else if (b.type === 'tool_result') out.push(`tool result${b.is_error ? ' (error)' : ''}: ${cap(resultText(b.content), RESULT_CAP)}`)
       else out.push(`${m.role}: [${b.type}]`)
@@ -288,6 +302,8 @@ export const register: Register = on => {
     let resumed = st.used
     let prompt = resumed ? `${DELTA_HEADER}${render(messages.slice(st.sent)) || '(nothing new)'}\n` : full()
     let chars = prompt.length
+    // Spike: keep the last fresh prompt beside the thread file, to see what fills it.
+    if (!resumed) await $.fs.write(`${threadPath(id, st.n)}.prompt.txt`, prompt).catch(() => undefined)
     let run = yield* ask(prompt, threadPath(id, st.n), allowed)
     if (run.failed) {
       // A thread that failed may be half-written: start another one with the whole conversation.
@@ -307,7 +323,7 @@ export const register: Register = on => {
     const reply = run.reply
     if (typeof reply !== 'string' && reply !== null) st.sent = messages.length
     const ms = (await $.clock.now()) - t0
-    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, tools ${names.join(',')}`, { to: 'debug' })
+    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, system ${system.length} catalog ${catalog(tools, types).length} conversation ${render(messages).length} chars, ${names.length} tools`, { to: 'debug' })
     const tokens = acc.usage
     const turnUsage: TurnUsageOut | null = tokens
       ? {

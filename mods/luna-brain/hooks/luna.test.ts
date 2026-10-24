@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { trimSkillList } from './luna'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
@@ -258,4 +259,11 @@ test('an unparsable reply twice yields luna reply unparsable', async ($, on) => 
   expect(calls[1].stdin).toContain('Your previous reply was rejected')
   expect(chunks).toMatchObject([{ kind: 'thinking' }, { kind: 'text', text: 'luna reply unparsable' }, { kind: 'stop', stopReason: 'end_turn' }])
   expect(result.stopReason).toBe('end_turn')
+})
+
+test('the skill listing keeps only skill names, colons in plugin names included', async () => {
+  const text = 'hi\n<system-reminder>\nThe following skills are available for use with the Skill tool:\n\n- accelerate\n' +
+    '- caveman: Terse voice.\n  more detail\n- code-review:code-review: Code review a pull request\n</system-reminder>\nbye'
+  expect(trimSkillList(text)).toBe('hi\n<system-reminder>\nThe following skills are available for use with the Skill tool:\n' +
+    'accelerate, caveman, code-review:code-review\n</system-reminder>\nbye')
 })
