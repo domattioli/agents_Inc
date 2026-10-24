@@ -316,6 +316,14 @@ def lead_env(executable: Path, codex_home: Path, base: dict | None = None) -> di
     return env
 
 
+# A tool-free run turns off every Codex feature that adds a tool, not only the shell: with code_mode_host on, a luna
+# brain step searched Codex's own JavaScript tool table for SubagentHandback and looped 18 model calls (2026-10-24).
+NO_TOOL_FEATURES = ("shell_tool", "unified_exec", "code_mode_host", "apps", "browser_use", "computer_use", "in_app_browser",
+                    "goals", "image_generation", "multi_agent", "plugins", "skill_search", "sleep_tool", "tool_suggest",
+                    "view_image")
+NO_TOOL_ARGS = [a for f in NO_TOOL_FEATURES for a in ("-c", f"features.{f}=false")]
+
+
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
                      model_map: dict[str, str] | None = None, tools: bool = False, write: bool = False,
                      write_dir: Path | None = None, lead_dir: Path | None = None,
@@ -349,9 +357,9 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         # `-s` is dropped here only: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04);
         # the profile grants cwd read only and shell_tool stays off.
         argv = ([str(executable), "exec", "-m", slug] + common + permission_args(cwd, False, extra_deny=extra_deny)
-                + ["-c", "features.shell_tool=false"])
+                + NO_TOOL_ARGS)
     elif not tools:
-        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + ["-c", "features.shell_tool=false"]
+        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + NO_TOOL_ARGS
     else:
         # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
         # The profile alone sets access: cwd "read", or "write" with --write; network stays off unless --network.

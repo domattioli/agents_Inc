@@ -186,7 +186,7 @@ test('progress lines become thinking chunks before the stop chunk', async ($, on
   const run: Run = {
     out: JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] }),
     err: [
-      'agents-inc run: record {"model":"luna","slug":"gpt-5.6-luna","tools":"off"}',
+      'agents-inc run: record {"model":"luna","slug":"gpt-6-luna","tools":"off"}',
       `agents-inc run: event ${JSON.stringify({ kind: 'reasoning', text: 'look at the file' })}`,
       `agents-inc run: event ${JSON.stringify({ kind: 'agent_message', text: 'calling Read' })}`,
       'agents-inc run: usage {"input_tokens":1000,"cached_input_tokens":800,"output_tokens":50}',
@@ -197,7 +197,7 @@ test('progress lines become thinking chunks before the stop chunk', async ($, on
   expect(chunks.map(c => c.kind)).toEqual(['thinking', 'thinking', 'thinking', 'tool', 'input', 'stop'])
   expect(chunks[1]).toMatchObject({ index: 0, text: 'look at the file' })
   expect(chunks[2]).toMatchObject({ index: 0, text: 'calling Read' })
-  const usage = { input_tokens: 200, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 0, model: 'gpt-5.6-luna' }
+  const usage = { input_tokens: 200, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 0, model: 'gpt-6-luna' }
   expect(chunks[5]).toMatchObject({ kind: 'stop', usage })
   expect(result.usage).toEqual(usage)
 })
@@ -218,7 +218,7 @@ test('lines naming the placeholder model are dropped from the system prompt', as
   expect(stdin).toContain('You are Claude Code.\nKeep it short.')
   expect(stdin).not.toContain('You are powered by the model')
   expect(stdin).not.toContain('The exact model ID is')
-  expect(stdin).toContain('You are luna (OpenAI GPT-5.6 Luna, run through Codex).')
+  expect(stdin).toContain('You are luna (OpenAI GPT-6 Luna, model gpt-6-luna, run through Codex).')
 })
 
 test('a retry on a resumed thread sends only the correction line', async ($, on) => {
