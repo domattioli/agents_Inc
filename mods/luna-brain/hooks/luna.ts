@@ -17,6 +17,8 @@ const TOOL_TYPES_PATH = '.claude-plugin/types/claude-code-tools/index.d.ts'
 const HEADER =
   'You are the reasoning step of an agent loop. You cannot run tools yourself. The host runs the tools you name.\n' +
   'You are luna (OpenAI GPT-5.6 Luna, run through Codex).\n' +
+  'Your own Codex tools are off on purpose. Every tool in the catalog below is real and available: call it by naming it ' +
+  'in "tools", and its result arrives in the next step. Never report a catalog tool as unavailable; call it instead.\n' +
   'Act on the latest messages; earlier ones are history. When the task is done, call SubagentHandback with your full report.\n' +
   'Call SubagentHandback alone, in a step after you have read the results it reports; never in the same step as another tool.\n' +
   'Reply with exactly one JSON object and nothing else:\n' +
@@ -305,7 +307,7 @@ export const register: Register = on => {
     const reply = run.reply
     if (typeof reply !== 'string' && reply !== null) st.sent = messages.length
     const ms = (await $.clock.now()) - t0
-    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread`, { to: 'debug' })
+    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, tools ${names.join(',')}`, { to: 'debug' })
     const tokens = acc.usage
     const turnUsage: TurnUsageOut | null = tokens
       ? {
