@@ -28,10 +28,18 @@ from pathlib import Path
 
 from agents_inc.datafiles import repo_file, repo_root
 
+from . import live_events
 from .live_events import EventSink, _stream_run
 from .runtime import QUOTA_PATTERN, kill_and_reap
 
 _LIVE_SINK: EventSink | None = None  # spec 027: events.jsonl writer of the dispatch run in progress
+EXIT_CANCELLED = 130  # spec 027 FR-011: the shell's code for a run ended by SIGINT
+CANCEL_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+CANCEL_GRACE_S = 5.0  # `--cancel`: seconds between SIGTERM and SIGKILL
+
+
+class Cancelled(BaseException):
+    """A termination signal reached the dispatch run. BaseException: the launch-failed handler must not swallow it."""
 
 REPO_ROOT = repo_root()
 SCRIPTS = repo_file("skills/workerbee/scripts")
@@ -1323,14 +1331,21 @@ def run(args) -> int:
     sink = _LIVE_SINK = EventSink(run_dir, safe_writes=_BROKER_SAFE_WRITES)
     sink.emit("agents-inc", {"type": "run.start", "run_id": run_id, "model": model, "kind": kind})
     code, outcome = EXIT_RED, "red"
+    saved_handlers = _install_cancel_handlers()
     try:
         code = _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, run_dir)
         outcome = _run_end_outcome(run_dir, code)
+        return code
+    except Cancelled:  # launch() already killed and reaped the delegate's group
+        outcome, code = "cancelled", EXIT_CANCELLED
+        _mark_cancelled(run_dir, run_id, model)
         return code
     except BaseException:
         outcome = "cancelled"  # KeyboardInterrupt and anything else that escapes: launch() reaped the child
         raise
     finally:
+        _restore_handlers(saved_handlers)
+        live_events.CHILD_START = None
         _LIVE_SINK = None
         spec_rc = _read_run_json(run_dir).get("rc")
         sink.emit("agents-inc", {"type": "run.end", "outcome": outcome, "rc": spec_rc if isinstance(spec_rc, int) else code})
@@ -1341,6 +1356,75 @@ def run(args) -> int:
                 spec["events_error"] = sink.error
                 with contextlib.suppress(OSError):
                     _write_json(run_dir / "run.json", spec)
+
+
+def _on_cancel_signal(signum, frame) -> None:
+    for s in CANCEL_SIGNALS:  # one cancellation: a second signal during cleanup changes nothing
+        signal.signal(s, signal.SIG_IGN)
+    raise Cancelled(signal.Signals(signum).name)
+
+
+def _install_cancel_handlers() -> dict:
+    """Make SIGTERM, SIGHUP and SIGINT raise Cancelled (FR-011). Only the main thread may install handlers."""
+    if threading.current_thread() is not threading.main_thread():
+        return {}
+    return {s: signal.signal(s, _on_cancel_signal) for s in CANCEL_SIGNALS}
+
+
+def _restore_handlers(saved: dict) -> None:
+    for s, handler in saved.items():
+        signal.signal(s, handler if handler is not None else signal.SIG_DFL)
+
+
+def _process_start(pid: int) -> str | None:
+    """`ps` start time of a process: tells a recorded group leader from an unrelated process that took its pid."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))], capture_output=True, text=True,
+                             timeout=5).stdout.strip()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return out or None
+
+
+def _record_child(spec: dict, run_dir: Path, pid: int) -> None:
+    """FR-012: the delegate leads its own process group (start_new_session): note the group and the leader's start
+    time in run.json while the run is live, so `dispatch --cancel` can find it."""
+    spec["delegate_pgid"], spec["delegate_start"] = pid, _process_start(pid)
+    with contextlib.suppress(OSError):
+        _write_json(run_dir / "run.json", spec)
+
+
+def _mark_cancelled(run_dir: Path, run_id: str, model: str) -> None:
+    spec = _read_run_json(run_dir) or {"run_id": run_id, "model": model}
+    spec.update(outcome="cancelled", reason="cancelled", rc=EXIT_CANCELLED)
+    with contextlib.suppress(OSError):
+        _write_json(run_dir / "run.json", spec)
+    print(f"dispatch {run_id} {model} cancelled")
+
+
+def cancel_run(run_dir) -> int:
+    """`dispatch --cancel RUN_DIR` (FR-012): stop the recorded delegate group of a run that has no final outcome and
+    whose group leader still has the recorded start time. SIGTERM, then SIGKILL after CANCEL_GRACE_S. Else do nothing."""
+    spec = _read_run_json(Path(run_dir))
+    pgid, started = spec.get("delegate_pgid"), spec.get("delegate_start")
+    if spec.get("outcome") or not isinstance(pgid, int) or pgid <= 1 or not started \
+            or _process_start(pgid) != started:
+        print("nothing to cancel")
+        return EXIT_OK
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + CANCEL_GRACE_S
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            print(f"cancelled group {pgid}")
+            return EXIT_OK
+        time.sleep(0.05)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGKILL)
+    print(f"cancelled group {pgid} (killed)")
+    return EXIT_OK
 
 
 def _read_run_json(run_dir: Path) -> dict:
@@ -1482,6 +1566,7 @@ def _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, ru
         _write_json(run_dir / "run.json", spec)  # before launch: the broker reads the parent run.json
     global _LAUNCHES
     _LAUNCHES += 1
+    live_events.CHILD_START = lambda pid: _record_child(spec, run_dir, pid)
     try:
         result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
                         **({"codex_write": True} if spec["codex_write"] else {}),

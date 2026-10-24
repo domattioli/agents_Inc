@@ -1,6 +1,6 @@
 """Command line for user-scoped direct Codex installation."""
 from __future__ import annotations
-import argparse, json, os, shutil, sys, tempfile
+import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 from .. import datafiles
 from .bundle import activate, stage_bundle
@@ -83,7 +83,39 @@ def _packaged_source(tmp: Path) -> Path:
     shim = datafiles.repo_root() / "workerbees"
     if shim.is_dir():
         shutil.copytree(shim, tmp / "workerbees", ignore=shutil.ignore_patterns("__pycache__"))
+    mod = datafiles.repo_root() / "mods/agents-inc"
+    if mod.is_dir():
+        shutil.copytree(mod, tmp / "mods/agents-inc", ignore=shutil.ignore_patterns("__pycache__", "node_modules"))
     return tmp
+
+MOD_PLUGIN, MOD_MARKETPLACE = "agents-inc@agents-inc-local", "agents-inc-local"
+
+def _claude(home: Path, *argv, timeout=60):
+    """Run the Claude CLI quietly against the install's own HOME; returns the CompletedProcess, or None when it cannot run.
+    HOME is explicit: an install into another home (tests, a temp HOME) must never register the mod in the caller's."""
+    claude = shutil.which("claude")
+    if not claude: return None
+    env = dict(os.environ, HOME=str(home))
+    try: return subprocess.run([claude, *argv], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL, env=env)
+    except (OSError, subprocess.SubprocessError): return None
+
+def install_mod(paths: InstallPaths, notices: list) -> None:
+    """Register the bundled mod with Claude Code (spec 027 FR-028). Never fails the install: a problem is a warning."""
+    mod = paths.current / "mods/agents-inc"
+    if not (mod / ".claude-plugin/plugin.json").is_file(): return
+    listed = _claude(paths.home, "plugin", "list")
+    if listed is None or MOD_PLUGIN in (listed.stdout or ""): return
+    added = _claude(paths.home, "plugin", "marketplace", "add", str(mod.resolve()))
+    done = _claude(paths.home, "plugin", "install", MOD_PLUGIN) if added is not None and added.returncode == 0 else added
+    if done is None or done.returncode != 0:
+        notices.append(f"warning: mod install failed ({'unavailable' if done is None else done.returncode}); the live view is off, delegation still works")
+
+def uninstall_mod(paths: InstallPaths) -> list:
+    notices = []
+    for argv in (("plugin", "uninstall", MOD_PLUGIN), ("plugin", "marketplace", "remove", MOD_MARKETPLACE)):
+        done = _claude(paths.home, *argv)
+        if done is not None and done.returncode != 0: notices.append(f"warning: `claude {' '.join(argv)}` failed ({done.returncode})")
+    return notices
 
 def install(args):
     """Install from --source, or from the installed package's own data when --source is omitted."""
@@ -133,6 +165,7 @@ def _install(args, source: Path):
             journal.commit()
             if getattr(args, "agent_gate", None): host_hook.write_agent_gate(paths, args.agent_gate)
             if not getattr(args, "no_host_wiring", False) and (paths.home / ".claude").is_dir(): notices.append(host_hook.gate_notice(paths))
+            if not getattr(args, "no_mod", False): install_mod(paths, notices)  # after commit: a mod problem never rolls the install back
             for line in notices: print(line)
             return 0
         except Exception:
@@ -178,11 +211,12 @@ def uninstall(paths: InstallPaths, receipt: InstallReceipt) -> set[Path]:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agents-inc")
     subs = parser.add_subparsers(dest="command", required=True)
-    p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
+    p = subs.add_parser("install"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--no-mod", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
     p = subs.add_parser("run"); p.add_argument("--model", required=True); p.add_argument("--effort", default="medium"); p.add_argument("--cwd", required=True); p.add_argument("--tools", action="store_true"); p.add_argument("--no-tools", action="store_true"); p.add_argument("--write", action="store_true"); p.add_argument("--network", action="store_true"); p.add_argument("--run-dir"); p.add_argument("--lead", metavar="RUN_DIR"); p.add_argument("--home-repo")
-    p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
+    p = subs.add_parser("dispatch"); p.add_argument("--slots"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--cwd"); p.add_argument("--tier", choices=("grunt",)); p.add_argument("--run-dir"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--resume"); p.add_argument("--message"); p.add_argument("--home-repo"); p.add_argument("--serve", metavar="RUN_DIR"); p.add_argument("--poll-interval", type=float, default=1.0); p.add_argument("--idle-timeout", type=float, default=600.0); p.add_argument("--cancel", metavar="RUN_DIR"); p.add_argument("--wait", nargs=2, metavar=("RUN_DIR", "REQUEST_ID")); p.add_argument("--timeout", type=float, default=600.0)
+    p = subs.add_parser("events", help="follow or redact live delegate events (spec 027)"); p.add_argument("verb", choices=("follow", "redact")); p.add_argument("run_dir", nargs="?")
     p = subs.add_parser("doctor"); p.add_argument("--json", action="store_true"); p.add_argument("--live-model")
-    p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
+    p = subs.add_parser("repair"); p.add_argument("--source"); p.add_argument("--adopt-existing-workerbee", action="store_true"); p.add_argument("--without-codex", action="store_true"); p.add_argument("--no-host-wiring", action="store_true"); p.add_argument("--no-mod", action="store_true"); p.add_argument("--agent-gate", choices=host_hook.AGENT_GATE_MODES)
     p = subs.add_parser("unwire"); p.add_argument("--host", choices=("claude",), default="claude")
     p = subs.add_parser("hook"); p.add_argument("event", choices=("session-start", "agent-nudge", "agent-done")); p.add_argument("--host", choices=("claude", "codex", "gemini"))
     p = subs.add_parser("ledger", add_help=False); p.add_argument("rest", nargs=argparse.REMAINDER)
@@ -194,9 +228,15 @@ def main(argv=None):
         if args.command == "install": return install(args)
         if args.command == "dispatch":
             from . import dispatch  # works from a source checkout; Codex launch loads the receipt itself
+            if args.cancel: return dispatch.cancel_run(args.cancel)
             if args.wait: return dispatch.wait(args.wait[0], args.wait[1], args.timeout)
             if args.serve: return dispatch.serve(args.serve, args.poll_interval, args.idle_timeout, args.home_repo)
             return dispatch.run(args)
+        if args.command == "events":
+            from .. import live_rows  # works before the receipt check, like dispatch
+            if args.verb == "redact": sys.stdout.write(live_rows.redact(sys.stdin.read())); return 0
+            if not args.run_dir: parser.error("events follow needs a run directory")
+            return live_rows.follow(args.run_dir, sys.stdout)
         if args.command == "models":
             from . import models_cmd  # works from a source checkout, before the receipt check
             return models_cmd.run(args.verb, args.alias, args.slug, unpin=args.unpin, extra=args.extra, clear=args.clear)
@@ -244,6 +284,7 @@ def main(argv=None):
             return run_codex(args.model, args.effort, Path(args.cwd), sys.stdin, receipt, _efforts(paths.current.resolve()), args.no_tools, args.write, args.tools, Path(args.run_dir).resolve() if args.run_dir else None, lead_dir=Path(args.lead).resolve() if args.lead else None, home_repo=args.home_repo, network=args.network)
         if args.command == "uninstall":
             retained = uninstall(paths, receipt)
+            for line in uninstall_mod(paths): print(line)
             if retained: print("WB_CONFIG_CONFLICT: retained modified artifacts", file=sys.stderr); return 1
             return 0
         if args.command == "repair": return install(args)

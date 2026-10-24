@@ -1,4 +1,5 @@
 """Tests for ollama adapter. Unit tests, no sockets, no model loads."""
+import gc
 import unittest
 import json
 import sys
@@ -487,6 +488,7 @@ class TestWatchdogAbort(unittest.TestCase):
                  patch.object(ollama.time, "sleep", return_value=None), \
                  patch.dict(ollama._CONFIG, {"deadline_s": 0.01, "watchdog_interval_s": 0.001,
                                              "unload_verify_s": 0.02}):
+                gc.collect()  # a connection leaked by an earlier test must not print its ResourceWarning into err2
                 code2, err2 = run_main([self.MODEL], stdin_text="hi", state_dir=state_dir)
             self.assertEqual(code2, 3)
             self.assertTrue(err2.startswith("WB_LOCAL_DEADLINE"))

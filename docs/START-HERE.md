@@ -78,6 +78,25 @@ supervisor=opus` changes the default supervisor. Each launched dispatch also
 writes one row to the ledger. Details: `HOW-IT-WORKS.md`, section
 "Asking for work".
 
+### Watching a delegate work (optional)
+
+Install also adds a small Claude Code add-on, the agents-inc mod. It lets you
+watch a delegate while it works. Start a relay subagent with
+`subagent_type: "agents-inc:relay"`, give it a model and a slots file, and open
+its transcript: short rows appear as the delegate reads, edits and runs
+commands. The final answer is the same report you get without the mod.
+
+- **Install:** `agents-inc install` and `agents-inc repair` add the mod when the
+  `claude` command is on your PATH. Add `--no-mod` to skip it. If the step
+  fails you get a warning and everything else still works.
+- **Permission:** allow the tool `mcp__agents-inc__run` in your Claude Code
+  permissions, or the relay asks each time.
+- **Check:** `agents-inc doctor` prints the warning `MOD_NOT_INSTALLED` when the
+  mod is missing. It still says `READY`.
+- **Stop a run:** stop the relay in Claude Code. Or run
+  `agents-inc dispatch --cancel <run dir>` from a terminal.
+- **Manual install:** see `mods/agents-inc/README.md`.
+
 - **Audience:** People who have not run the system before.
 - **Style:** Plain language; the other docs are compressed for experienced readers.
 - **Next reading:** Return to those docs after this page.

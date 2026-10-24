@@ -72,6 +72,17 @@ def _sandbox_exclusion(paths: InstallPaths) -> list[str]:
     if any(isinstance(e, str) and e.split()[:1] == ["agents-inc"] for e in excluded): return []
     return ["WB_SANDBOX_EXCLUDE_MISSING"]
 
+def _mod_missing(release: Path, home: Path, runner, which) -> list[str]:
+    """Spec 027: the release ships the live-view mod but Claude Code does not list it. Warning only; READY stays."""
+    if not (release / "mods/agents-inc/.claude-plugin/plugin.json").is_file(): return []
+    claude = which("claude")
+    if not claude: return []
+    try: listed = runner([claude, "plugin", "list"], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, check=False,
+                            env=dict(os.environ, HOME=str(home)))  # the install's home, never the caller's
+    except (OSError, subprocess.SubprocessError): return []
+    if listed.returncode != 0: return []
+    return [] if "agents-inc@agents-inc-local" in (listed.stdout or "") else ["MOD_NOT_INSTALLED"]
+
 def check_install(paths: InstallPaths, live_model: str | None = None, runner=subprocess.run,
                   models: list[dict] | None = None, catalog_path: Path | None = None,
                   which=shutil.which, sandbox_probe=None) -> DoctorReport:
@@ -97,6 +108,7 @@ def check_install(paths: InstallPaths, live_model: str | None = None, runner=sub
     # Claude is the required provider: a Worker launch needs the CLI on the same PATH worker_env gives it.
     if which("claude", path=WORKER_PATH + os.pathsep + os.environ.get("PATH", "")) is None: codes.append("WB_CLAUDE_NOT_FOUND")
     if sys.platform == "darwin" and not sandbox_probe(): warnings.append("WB_SANDBOX_NESTED")  # inside another sandbox
+    warnings.extend(_mod_missing(release, paths.home, runner, which))
     warnings.extend(_hook_drift(paths))
     warnings.extend(_sandbox_exclusion(paths))
     if models is None:  # the catalog of the home being checked; CODEX_HOME still wins. [] stops a re-read of the default.

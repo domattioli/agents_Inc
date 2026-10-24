@@ -17,6 +17,7 @@ LINE_CAP = 64 * 1024  # bytes of one stored provider line (FR-009)
 TOTAL_CAP = 64 * 1024 * 1024  # bytes of events.jsonl before provider events stop (FR-009)
 EVENTS_FILE = "events.jsonl"
 _POPEN = subprocess.Popen  # bound at import: tests patch subprocess.Popen with a Mock factory
+CHILD_START = None  # callable(pid) the dispatch run sets: told the pid of every delegate process once it runs (FR-012)
 
 
 def _now() -> str:
@@ -185,8 +186,12 @@ def _stream_run(proc, prompt: str, limit: float | None, on_line=None, mark: str 
     try:
         for t in threads:
             t.start()
+        on_start = on_start or CHILD_START
         if on_start is not None:
-            on_start(proc.pid)
+            try:
+                on_start(proc.pid)
+            except Exception:
+                pass  # recording the group is best effort: the delegate still runs
         deadline = None if not limit else time.monotonic() + limit
         for t in threads:
             t.join(None if deadline is None else max(0.0, deadline - time.monotonic()))
