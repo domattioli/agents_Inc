@@ -66,6 +66,13 @@ class HeaderRenderTest(_Tmp):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("COMPLIANT", result.stdout)
 
+    def test_prompt_covers_unreadable_caveman_file(self):
+        proc = self.render(FULL_SLOTS)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("caveman unreadable -> checked by hand", proc.stdout)
+        self.assertIn("not a block under the stop-on-block clause", proc.stdout)
+        self.assertIn("caveman: <ultra|not installed -> by hand|unreadable -> by hand>", proc.stdout)
+
     def test_contract_reference_compliant_for_file_transport(self):
         proc = self.render(FULL_SLOTS, "--contract-ref", str(HEADER))
         self.assertEqual(proc.returncode, 0, proc.stderr)

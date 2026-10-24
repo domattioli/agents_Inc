@@ -8,6 +8,12 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- The test suite runs inside the Claude Code sandbox: tests that bind a local port skip with a stated reason when the bind is refused, and the Ollama adapter tests use temporary paths and a fresh doctor cache instead of fixed `/tmp` files and live CLI probes (#110)
+- A broker Claude Worker can run `git init`, `git add` and `git commit` in its TMPDIR: the profile grants metadata-only reads on the folders above each hole in the broker deny, and read-only holes (including the Worker's own `snapshot.json` and `pre_dispatch_snapshot.py`) get an explicit write deny (#103)
+- `dispatch --serve` takes an exclusive lock on `<run-dir>/broker.lock`; a second broker on the same run directory exits 2 naming the holder's pid and leaves `run.json` and the inbox alone (#109)
+- Control and bidi characters in a slot value or resume message are refused as `refused-control-char` by `dispatch` and the renderer, which names the slot and code point (#109)
+- `agents-inc run --run-dir` works for read-only runs: it needs tools, not `--write` (#88)
+- The prompt contract treats an unreadable caveman skill file as `caveman unreadable -> checked by hand`, not as a block (#88)
 - Dispatch slot gaps from #100: a `GATES` entry may be a plain command string (shlex-split, no shell) as well as an `{argv, cwd, timeout_s, expect_rc}` object, and a blank `PRE_EXISTING_CHANGES` is filled by the renderer with the snapshot placeholder text and one `--allow` per path in `FILES_IN_SCOPE`. QUICKREF and `slots.md` show the GATES object shape.
 - Sandboxed sessions no longer learn about the #94 refusal at dispatch time: doctor warns `WB_SANDBOX_EXCLUDE_MISSING` when the Claude settings file lacks `"agents-inc *"` under `sandbox.excludedCommands`, and the session-start hook names that exact operator ask. `agents-inc install` and `repair` now add that entry on the Claude host (other entries untouched) and `unwire` removes only it. The hook also explains `INSTALL_STALE`.
 - The report lint accepts the contract's no-gate form `exit code N/A`, and the `[verified]` exit check no longer fires on `exit` used as a plain word (#91).

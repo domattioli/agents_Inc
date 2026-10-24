@@ -772,7 +772,7 @@ then reported "no files outside scope touched".
     (d) each gate command run with an output excerpt and its exit code; if no
     gate command was run, item (d) may read `none, exit code N/A`. The first
     line of every report is the declaration `caveman: <ultra|not installed ->
-    by hand>`.
+    by hand|unreadable -> by hand>`.
 13. **Edit hygiene: surgical over full-rewrite.** Minimize tokens spent
     editing, all else equal. Default to targeted edit over rewriting a whole
     existing file whenever the end result is identical. Full-rewrite fine when

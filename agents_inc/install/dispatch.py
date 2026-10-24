@@ -5,6 +5,7 @@ Only the status line goes to stdout. Everything else lands in the run directory.
 from __future__ import annotations
 import base64
 import contextlib
+import fcntl
 import hashlib
 import hmac
 import importlib.util
@@ -17,6 +18,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import stat
 import sys
 import tempfile
 import threading
@@ -430,6 +432,13 @@ def claude_scratch_dir() -> str:
 CLAUDE_CWD_FILE_RE = r"^/private/tmp/claude-[0-9a-f]+-cwd$"
 
 
+def _ancestors_between(root: Path, leaf: Path) -> list[Path]:
+    """Folders from `root` down to, not including, `leaf`. Empty when `leaf` is not strictly inside `root`."""
+    if root == leaf or root not in leaf.parents:
+        return []
+    return [root] + [p for p in reversed(leaf.parents) if root in p.parents and p != leaf]
+
+
 def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = (), write_ok: tuple = (),
                            read_ok: tuple = ()) -> str:
     """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain,
@@ -454,9 +463,19 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple
         f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}"){holes}))\n'
         for d in deny_paths)
     claude_write_denies = " ".join(f'(subpath "{h}/.claude/{n}")' for n in CLAUDE_HOME_READ)
+    # #103: a path walk (git's realpath) stats every folder above a hole; metadata only, no names or contents.
+    holes_at = [Path(_sb(p)) for p in (tmpdir,) + tuple(write_ok) + tuple(read_ok)]
+    meta = []
+    for d in deny_paths:
+        for hole in holes_at:
+            for a in _ancestors_between(Path(_sb(d)), hole):
+                if str(a) not in meta:
+                    meta.append(str(a))
+    meta_allow = "".join(f'(allow file-read-metadata (literal "{a}"))\n' for a in meta)
+    read_ok_write_deny = "".join(f'(deny file-write* (literal "{_sb(p)}"))\n' for p in read_ok)  # D4: holes lift write denies
     return ("(version 1)\n(allow default)\n"
             f"(deny file-write* (require-all {keep}))\n"
-            + broker_deny +
+            + broker_deny + meta_allow + read_ok_write_deny +
             f"(deny file-read* file-write* {deny})\n"
             f'(deny file-read* file-write* (regex #"^{re.escape(h)}/\\.claude\\.json"))\n'
             f'(deny file-read* file-write* (require-all (subpath "{h}/.claude") {claude_keep}))\n'
@@ -681,7 +700,9 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
             profile = Path(run_dir) / ("sandbox.sb" if not resume else f"sandbox.{secrets.token_hex(3)}.sb")
             _wtext(profile, claude_sandbox_profile(
                 Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"], _BROKER_DENY,
-                (channel["ask"],) if channel else (), (channel["script"], channel["config"]) if channel else ()))
+                (channel["ask"],) if channel else (),
+                (Path(run_dir) / "pre_dispatch_snapshot.py", Path(run_dir) / "snapshot.json")  # FR-011
+                + ((channel["script"], channel["config"]) if channel else ())))
             argv += ["--settings", WORKER_SETTINGS]
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
         limit = _turn_timeout()
@@ -1262,6 +1283,10 @@ def run(args) -> int:
     if hit:
         print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
         return EXIT_REFUSED
+    control = control_char_hit(slots)  # 026 (#109): C0, DEL and bidi controls, before anything is written
+    if control:
+        print(f"dispatch: refused-control-char (slot {control[0]} {control[1]})", file=sys.stderr)
+        return EXIT_REFUSED
     cwd = Path(args.cwd or os.getcwd()).resolve()
     if not cwd.is_dir():
         print(f"dispatch: cwd is not a directory: {cwd}", file=sys.stderr)
@@ -1457,6 +1482,10 @@ def resume(args) -> int:
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
+    control = control_char_hit({"MESSAGE": args.message})
+    if control:
+        print(f"dispatch: refused-control-char (slot {control[0]} {control[1]})", file=sys.stderr)
+        return EXIT_REFUSED
     hit = credential_hit({"MESSAGE": args.message})  # 025 (#105): same screen as the broker's resume message
     if hit:
         print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
@@ -1605,6 +1634,7 @@ def names_credential(tokens) -> bool:
 
 
 BROKER_OK, BROKER_FATAL, BROKER_USAGE = 0, 1, 2
+BROKER_LOCK = "broker.lock"  # flock target in the run directory; never unlinked, never in a sandbox grant
 REQ_GREEN, REQ_RED, REQ_USAGE, REQ_REFUSED = 0, 1, 2, 3
 REQ_STATUS = {REQ_GREEN: "green", REQ_RED: "red", REQ_USAGE: "usage-error", REQ_REFUSED: "refused"}
 
@@ -1747,11 +1777,39 @@ def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, st
             return None, "broker-owned-slot"
     if "FAN_OUT" in slots and parse_fan_out("FAN_OUT: " + slots["FAN_OUT"]) != {"width": 0, "total": 0, "depth": 0}:
         return None, "worker-cannot-lead"  # D60: a broker Worker never leads (#73); send 'width 0, total 0, depth 0' or omit it
+    if control_char_hit(slots):
+        return None, "refused-control-char"
     if _reject_credential_seeking(slots):
         return None, "credential-seeking"
     if _kind(model) == "claude" and not sandbox_available():
         return None, "no-sandbox-backend"
     return req, None
+
+
+# 026 US4 (#109): same pattern as skills/workerbee/scripts/render_dispatch.py (a pinned checkout copy of that
+# script may predate it, so it is not loaded from there); tests pin the two equal.
+CONTROL_CHAR_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f؜‎‏‪-‮⁦-⁩]")
+
+
+def _nested_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _nested_strings(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _nested_strings(item)
+
+
+def control_char_hit(slots) -> tuple[str, str, int] | None:
+    """(top-level slot key, `U+XXXX`, code-point offset) of the first refused character, else None."""
+    for key, value in (slots.items() if isinstance(slots, dict) else ()):
+        for text in _nested_strings(value):
+            match = CONTROL_CHAR_RE.search(text)
+            if match:
+                return key, f"U+{ord(match.group(0)):04X}", match.start()
+    return None
 
 
 def credential_hit(slots) -> str | None:
@@ -1912,6 +1970,10 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
             detail = credential_hit(raw.get("slots"))
             if detail:
                 extra = dict(extra, reason_detail=detail)
+        elif reason == "refused-control-char":  # 026: name the slot and the code point
+            hit = control_char_hit(raw.get("slots"))
+            if hit:
+                extra = dict(extra, reason_detail=f"slot {hit[0]} {hit[1]}")
     if rid:
         seen.add(rid)
     if req is None:
@@ -2146,6 +2208,8 @@ def plan_resume(run_dir: Path, spec: dict, rid, message, known) -> tuple[dict | 
         return None, "bad-message"
     if len(json.dumps({"request_id": rid, "message": message}).encode("utf-8")) > REQUEST_MAX_BYTES:
         return None, "oversize"
+    if control_char_hit({"MESSAGE": message}):
+        return None, "refused-control-char"
     if _reject_credential_seeking({"MESSAGE": message}):
         return None, "credential-seeking"
     if not known(rid):
@@ -2244,6 +2308,42 @@ def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float =
     if inbox.is_symlink() or not inbox.is_dir():
         print(f"dispatch --serve: {inbox} must be a real directory (the Lead's only write grant)", file=sys.stderr)
         return BROKER_USAGE
+    lock_fd, refusal = _take_broker_lock(root)
+    if lock_fd is None:
+        print(f"dispatch --serve: {refusal}", file=sys.stderr)
+        return BROKER_USAGE
+    try:
+        return _serve_locked(root, inbox, poll_interval, idle_timeout, home_repo, sleep, clock)
+    finally:
+        os.close(lock_fd)  # the flock goes with the descriptor; the file stays
+
+
+def _take_broker_lock(root: Path) -> tuple[int | None, str]:
+    """Take the exclusive flock on <run-dir>/broker.lock. Return (fd, "") or (None, refusal text)."""
+    path = root / BROKER_LOCK
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        return None, f"{path} must be a regular file ({exc.strerror})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raw = os.pread(fd, 32, 0).decode("ascii", "replace").strip()
+            os.close(fd)
+            return None, f"another broker holds {path} (pid {raw if raw.isdigit() else 'unknown'})"
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, str(os.getpid()).encode(), 0)
+    except OSError:
+        os.close(fd)
+        return None, f"{path} must be a regular file"
+    return fd, ""
+
+
+def _serve_locked(root: Path, inbox: Path, poll_interval: float, idle_timeout: float, home_repo: str | None,
+                  sleep, clock) -> int:
     try:
         spec = _load_run_manifest(root)
     except (OSError, ValueError) as exc:

@@ -126,9 +126,7 @@ def permission_profile(cwd: Path, write: bool, home: Path | None = None,
     D51: with write_dir (the Lead's run directory), write goes to write_dir/inbox only; write_dir and cwd stay
     read, so run.json, workers/ and results are broker-owned. Without it, --write grants cwd (legacy)."""
     home = Path(home or Path.home())
-    if write_dir is not None and not write:
-        raise ValueError("--run-dir needs --write")
-    grants = {'":minimal"': "read", _toml_key("/opt/homebrew"): "read", _toml_key("/tmp"): "read",
+    grants ={'":minimal"': "read", _toml_key("/opt/homebrew"): "read", _toml_key("/tmp"): "read",
               _toml_key("/private/tmp"): "read",
               _toml_key("/System/Library/Perl"): "read",  # /usr/bin/shasum and other perl tools need libperl
               _toml_key(cwd): "write" if (write and write_dir is None) else "read"}
@@ -480,8 +478,8 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
     tools = tools_for(model, no_tools, tools)
     if write and not tools:
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
-    if write_dir is not None and not write:
-        raise ValueError("--run-dir needs --write")
+    if write_dir is not None and not tools:
+        raise ValueError("--run-dir needs tools")
     if network and (not tools or lead_dir is not None):
         raise ValueError("--network needs tools on and no --lead")
     if resume_thread is not None and lead_dir is not None:

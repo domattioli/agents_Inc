@@ -182,9 +182,35 @@ class ProfileTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 permission_profile(Path("/w"), True, write_dir=run)
 
-    def test_run_dir_needs_write(self):
-        with self.assertRaises(ValueError):
-            permission_profile(Path("/w"), False, write_dir=Path("/w/r"))
+    def test_run_dir_needs_tools(self):
+        with mock.patch.object(runtime, "load_model_map", return_value=MAP), \
+                mock.patch.object(runtime.os, "access", return_value=True), \
+                mock.patch.object(Path, "is_file", return_value=True), \
+                self.assertRaises(ValueError) as cm:
+            run_codex("sol", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                      no_tools=True, write_dir=Path("/w/r"))
+        self.assertIn("--run-dir needs tools", str(cm.exception))
+
+    def test_run_dir_read_only_profile_equals_write(self):
+        d = Path("/w/r")
+        self.assertEqual(permission_profile(Path("/w"), False, home=Path("/h"), write_dir=d),
+                         permission_profile(Path("/w"), True, home=Path("/h"), write_dir=d))
+
+    def test_run_dir_profile_grants_no_broker_lock(self):
+        prof = permission_profile(Path("/w"), True, home=Path("/h"), write_dir=Path("/w/r"))
+        self.assertNotIn("broker.lock", repr(prof))
+
+    def test_run_dir_without_write_builds_argv(self):
+        done = SimpleNamespace(stdout="OK\n", stderr="", returncode=0)
+        with mock.patch.object(runtime, "load_model_map", return_value=MAP), \
+                mock.patch.object(runtime.subprocess, "run", return_value=done) as sp, \
+                mock.patch.object(runtime.os, "access", return_value=True), \
+                mock.patch.object(Path, "is_file", return_value=True), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = run_codex("sol", "medium", Path("/w"), io.StringIO("p"), SimpleNamespace(codex_path=EXE), EFF,
+                           write=False, write_dir=Path("/w/r"))
+        self.assertEqual(rc, 0)
+        self.assertIn('"/w/r/inbox"="write"', sp.call_args[0][0][-2])
 
     def test_bad_path_rejected(self):
         with self.assertRaises(ValueError):

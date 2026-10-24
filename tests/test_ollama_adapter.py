@@ -261,12 +261,13 @@ class TestPolicyOllama(unittest.TestCase):
 
     def test_ollama_confidential_requires_local_auth(self):
         """ollama + confidential + not local_authorized -> WB_LOCAL_AUTH_REQUIRED."""
-        workspace = Path("/tmp/ws")
-        with patch("agents_inc.policy.is_local_authorized", return_value=False):
-            route = router.Route("ollama", "qwen2.5-coder:7b", "grunt", "http")
-            with self.assertRaises(policy.PolicyError) as cm:
-                policy.check_dispatch(route, workspace, True)
-            self.assertIn("WB_LOCAL_AUTH_REQUIRED", str(cm.exception))
+        with tempfile.TemporaryDirectory() as raw:
+            workspace = Path(raw) / "ws"
+            with patch("agents_inc.policy.is_local_authorized", return_value=False):
+                route = router.Route("ollama", "qwen2.5-coder:7b", "grunt", "http")
+                with self.assertRaises(policy.PolicyError) as cm:
+                    policy.check_dispatch(route, workspace, True)
+                self.assertIn("WB_LOCAL_AUTH_REQUIRED", str(cm.exception))
 
     def test_ollama_with_local_auth_passes(self):
         """ollama + confidential + local_authorized -> OK."""
@@ -400,16 +401,18 @@ class TestLockBusy(unittest.TestCase):
 
     def test_lock_acquire_success(self):
         """Lock acquire returns handle on success."""
-        with patch("fcntl.flock"):
-            with patch("builtins.open", mock_open()) as mock_file:
-                result = ollama._acquire_lock(Path("/tmp/test.lock"))
-                self.assertIsNotNone(result)
+        with tempfile.TemporaryDirectory() as raw:
+            with patch("fcntl.flock"):
+                with patch("builtins.open", mock_open()) as mock_file:
+                    result = ollama._acquire_lock(Path(raw) / "test.lock")
+                    self.assertIsNotNone(result)
 
     def test_lock_acquire_fail_blocking(self):
         """Lock acquire returns None on BlockingIOError."""
-        with patch("builtins.open", side_effect=BlockingIOError):
-            result = ollama._acquire_lock(Path("/tmp/test.lock"))
-            self.assertIsNone(result)
+        with tempfile.TemporaryDirectory() as raw:
+            with patch("builtins.open", side_effect=BlockingIOError):
+                result = ollama._acquire_lock(Path(raw) / "test.lock")
+                self.assertIsNone(result)
 
     def test_lock_exclusivity_real_flock(self):
         """Follow-up 3 change 4b: real fcntl.flock exclusivity, no mocking of flock itself.
@@ -707,8 +710,9 @@ class TestDoctorNoProbe(unittest.TestCase):
             if "WORKERBEES_LOCAL" in os.environ:
                 del os.environ["WORKERBEES_LOCAL"]
 
-            with patch("agents_inc.adapters.ollama.ready") as mock_ready:
-                workspace = Path("/tmp/test_ws")
+            with patch("agents_inc.adapters.ollama.ready") as mock_ready, \
+                    tempfile.TemporaryDirectory() as raw:
+                workspace = Path(raw) / "test_ws"
                 # Create minimal doctor.json
                 ws_dir = workspace / ".workerbees"
                 ws_dir.mkdir(parents=True, exist_ok=True)
@@ -716,7 +720,7 @@ class TestDoctorNoProbe(unittest.TestCase):
                     "results": {"claude": {"status": "ok"}, "codex": {"status": "ok"}},
                     "paused": [],
                     "at": "2026-09-22T00:00:00Z",
-                    "epoch": 1695340800.0
+                    "epoch": _time_module.time()  # fresh cache: no live CLI probe
                 }
                 (ws_dir / "doctor.json").write_text(json.dumps(doctor_json))
 

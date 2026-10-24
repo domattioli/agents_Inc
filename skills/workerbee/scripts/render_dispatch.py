@@ -32,6 +32,33 @@ if _SCRIPT_DIR not in sys.path:
 from dispatch_rungs import ALIAS_VENDOR, FAN_OUT_BY_RUNG, LADDER, MODEL_RUNG  # noqa: E402
 
 
+# 026 US4 (#109): C0 controls except tab, LF and CR, DEL, and bidirectional controls never reach a prompt.
+# The same pattern lives in agents_inc/install/dispatch.py (a pinned checkout copy of this script may predate it);
+# tests/test_dispatch_slot_screens.py pins the two equal.
+CONTROL_CHAR_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f؜‎‏‪-‮⁦-⁩]")
+
+
+def _nested_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _nested_strings(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _nested_strings(item)
+
+
+def control_char_hit(slots) -> tuple[str, str, int] | None:
+    """(top-level slot key, `U+XXXX`, code-point offset) of the first refused character, else None."""
+    for key, value in (slots.items() if isinstance(slots, dict) else ()):
+        for text in _nested_strings(value):
+            match = CONTROL_CHAR_RE.search(text)
+            if match:
+                return key, f"U+{ord(match.group(0)):04X}", match.start()
+    return None
+
+
 def default_fan_out(slots: dict) -> str:
     """Return the D48 FAN_OUT line value from a RUNG or MODEL slot, else Orchestrator defaults."""
     rung = "orchestrator"
@@ -334,6 +361,11 @@ def main() -> int:
         slots_data = json.loads(slots_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Failed to load slots file: {e}", file=sys.stderr)
+        return 2
+
+    hit = control_char_hit(slots_data)
+    if hit:
+        print(f"render: slot {hit[0]} has control character {hit[1]} at offset {hit[2]}", file=sys.stderr)
         return 2
 
     # Determine default paths relative to script directory

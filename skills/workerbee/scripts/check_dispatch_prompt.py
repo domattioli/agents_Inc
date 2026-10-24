@@ -70,7 +70,7 @@ KEYWORDS: dict[int, list[str]] = {
 # Delegate report elements (--profile report). Any keyword on any line = present.
 REPORT_KEYWORDS: dict[str, list[str]] = {
     "caveman": ["caveman ultra", "caveman not installed", "caveman: ultra",
-                "caveman: not installed"],
+                "caveman: not installed", "caveman: unreadable", "caveman unreadable"],
     "grill": ["grill"],
     "provenance-tags": ["[verified]", "[inferred]", "[assumed]"],
     "out-of-scope-incomplete": ["out of scope / incomplete:"],
