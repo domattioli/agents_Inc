@@ -1,0 +1,5 @@
+{
+  "name": "luna-brain",
+  "version": "0.1.0",
+  "description": "Spike: a read-only subagent whose model steps are answered by luna (Codex) through agents-inc run."
+}
