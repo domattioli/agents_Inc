@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { trimSkillList } from './luna'
+import { failureText, trimSkillList } from './luna'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
@@ -266,4 +266,33 @@ test('the skill listing keeps only skill names, colons in plugin names included'
     '- caveman: Terse voice.\n  more detail\n- code-review:code-review: Code review a pull request\n</system-reminder>\nbye'
   expect(trimSkillList(text)).toBe('hi\n<system-reminder>\nThe following skills are available for use with the Skill tool:\n' +
     'accelerate, caveman, code-review:code-review\n</system-reminder>\nbye')
+})
+
+test('a failed run reports its stderr without MCP noise or progress lines', async () => {
+  const stderr = 'x ERROR rmcp::transport::worker: worker quit\nagents-inc run: usage {"input_tokens":1}\n' +
+    'agents-inc run: returned an empty reply\n'
+  expect(failureText(stderr)).toBe('agents-inc run: returned an empty reply')
+  expect(failureText('x ERROR rmcp::transport::worker: quit\n')).toBe('(no other stderr)')
+})
+
+test('a resumed thread reports only the rise in Codex running totals', async ($, on) => {
+  const usage = (i: number, c: number, o: number) => `agents-inc run: usage {"input_tokens":${i},"cached_input_tokens":${c},"output_tokens":${o}}`
+  const reply = JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] })
+  const replies: Run[] = [{ out: reply, err: [usage(1000, 0, 10)] }, { out: reply, err: [usage(2100, 1000, 25)] }]
+  await setup($, on, { agentId: 'u1', replies })
+  await step($, 'u1', 0)
+  const { result } = await step($, 'u1', 1)
+  expect(result.usage).toMatchObject({ input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 15 })
+})
+
+test('a conversation that shrank starts a fresh thread with the whole prompt', async ($, on) => {
+  const calls: Call[] = []
+  const reply = JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] })
+  const rows = [text('user', TASK), text('assistant', 'a'), text('user', 'b')]
+  await setup($, on, { agentId: 'c1', rows, replies: [reply, reply], calls })
+  await step($, 'c1', 0)
+  rows.splice(1)
+  await step($, 'c1', 1)
+  expect(calls[1].argv.at(-1)).toMatch(/c1-2\.thread$/)
+  expect(calls[1].stdin).toContain('Conversation:')
 })

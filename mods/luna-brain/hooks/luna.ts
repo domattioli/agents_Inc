@@ -40,6 +40,9 @@ type AgentState = { n: number; used: boolean; sent: number }
 
 const lunaIds = new Set<string>()
 const agents = new Map<string, AgentState>()
+// Last running total Codex reported per thread file.
+const threadTotals = new Map<string, Usage>()
+const ZERO: Usage = { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 }
 let sessionCwd = ''
 let toolTypes: string | undefined // text of the engine-written built-in tool argument types, read once
 
@@ -73,6 +76,11 @@ const cap = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n[trunca
 const FIELD_DOC_CAP = 160
 const shortDoc = (line: string) =>
   line.replace(/\/\*\* (.*?) \*\//, (_, doc: string) => { const first = doc.split(/(?<=[.!?])\s/)[0]; return `/** ${first.length > FIELD_DOC_CAP ? `${first.slice(0, FIELD_DOC_CAP)}…` : first} */` })
+
+// The stderr lines that explain a failed run: Codex's MCP start-up noise and the streamed progress lines left out.
+const NOISE = /rmcp::|^agents-inc run: (event|usage|record) /
+export const failureText = (stderr: string) =>
+  stderr.split('\n').filter(l => l.trim() && !NOISE.test(l)).join('\n').slice(-600) || '(no other stderr)'
 
 // The `Name: {...}` block of one tool in the BuiltinToolInputs interface; '' when the tool has none.
 export function argBlock(types: string, name: string): string {
@@ -244,11 +252,19 @@ export const register: Register = on => {
         }
         if (m[1] === 'record' && typeof data.slug === 'string') acc.slug = data.slug
         else if (m[1] === 'usage') {
-          const u = acc.usage ?? { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 }
+          // Codex reports the thread's running total: this run's share is the rise since the last report.
+          const total: Usage = {
+            input_tokens: Number(data.input_tokens) || 0,
+            cached_input_tokens: Number(data.cached_input_tokens) || 0,
+            output_tokens: Number(data.output_tokens) || 0,
+          }
+          const before = threadTotals.get(thread) ?? ZERO
+          threadTotals.set(thread, total)
+          const u = acc.usage ?? ZERO
           acc.usage = {
-            input_tokens: u.input_tokens + (Number(data.input_tokens) || 0),
-            cached_input_tokens: u.cached_input_tokens + (Number(data.cached_input_tokens) || 0),
-            output_tokens: u.output_tokens + (Number(data.output_tokens) || 0),
+            input_tokens: u.input_tokens + Math.max(0, total.input_tokens - before.input_tokens),
+            cached_input_tokens: u.cached_input_tokens + Math.max(0, total.cached_input_tokens - before.cached_input_tokens),
+            output_tokens: u.output_tokens + Math.max(0, total.output_tokens - before.output_tokens),
           }
         } else if (m[1] === 'event' && typeof data.text === 'string') lines.push(data.text)
       }
@@ -269,7 +285,7 @@ export const register: Register = on => {
             if (pending) take(pending)
             for (const text of lines.splice(0)) yield { kind: 'thinking', index: 0, text }
             if (n.value.code === 0) return { reply: parseReply(stdout, allowed), failed: false }
-            const why = `agents-inc run exited ${n.value.code ?? n.value.signal}: ${stderr.slice(-400)}`
+            const why = `agents-inc run exited ${n.value.code ?? n.value.signal}, stdout ${stdout.length} chars: ${failureText(stderr)}`
             $.ui.log(`luna-brain: ${why}`, { to: 'debug' })
             return { reply: why, failed: true }
           }
@@ -299,7 +315,10 @@ export const register: Register = on => {
 
     const st = agents.get(id) ?? { n: 1, used: false, sent: 0 }
     agents.set(id, st)
+    // A compacted conversation holds fewer messages than luna has seen: the thread no longer matches it, so start over.
+    if (st.used && messages.length < st.sent) Object.assign(st, { n: st.n + 1, used: false, sent: 0 })
     let resumed = st.used
+    const sentBefore = st.sent
     let prompt = resumed ? `${DELTA_HEADER}${render(messages.slice(st.sent)) || '(nothing new)'}\n` : full()
     let chars = prompt.length
     // Spike: keep the last fresh prompt beside the thread file, to see what fills it.
@@ -323,7 +342,7 @@ export const register: Register = on => {
     const reply = run.reply
     if (typeof reply !== 'string' && reply !== null) st.sent = messages.length
     const ms = (await $.clock.now()) - t0
-    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, system ${system.length} catalog ${catalog(tools, types).length} conversation ${render(messages).length} chars, ${names.length} tools`, { to: 'debug' })
+    $.ui.log(`luna-brain: step ${e.index} of ${id} took ${ms} ms, prompt ${chars} chars, ${resumed ? 'resumed' : 'fresh'} thread, system ${system.length} catalog ${catalog(tools, types).length} conversation ${render(messages).length} chars, ${names.length} tools, messages ${messages.length} sent ${sentBefore}`, { to: 'debug' })
     const tokens = acc.usage
     const turnUsage: TurnUsageOut | null = tokens
       ? {
