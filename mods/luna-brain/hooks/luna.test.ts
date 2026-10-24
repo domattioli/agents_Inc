@@ -2,16 +2,40 @@ import { expect, mock, test } from 'claude-code/testing'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Call = { argv: readonly string[]; stdin?: string }
 
 const TASK = 'How many lines does /work/a.py have?'
+const TYPES = [
+  'declare module "claude-code" {',
+  '  interface BuiltinToolInputs {',
+  '    Bash: {',
+  '      /** The command to execute */',
+  '      command: string',
+  '    }',
+  '    Read: {',
+  '      /** Absolute path */',
+  '      file_path: string',
+  '    }',
+  '  }',
+  '}',
+].join('\n')
+const TOOLS = [
+  { name: 'Read', description: 'Reads a file.', mcp: false },
+  { name: 'Bash', description: 'Runs a shell command.', mcp: false },
+  { name: 'mcp__x__y', description: 'An MCP tool.', mcp: true },
+]
+const text = (role: 'user' | 'assistant', t: string) => ({ role, content: [{ type: 'text', text: t }] })
 
-// Stands for the engine beneath the plugin: agent.register, agent.spawn, session rows and the luna process.
-async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: string[]; calls?: { argv: readonly string[]; stdin?: string }[] }) {
+// Stands for the engine beneath the plugin: agent.register, agent.spawn, session messages, tools, prompt and the luna process.
+async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: string[]; calls?: Call[] }) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('agent.register', (_$, e) => ({ value: { agent: `luna-brain:${e.name}` } }))
   on('agent.spawn', () => ({ model: 'haiku', agentId: opts.agentId }))
   on('agent.list', () => ({ value: [] }))
-  on('session.messages', () => ({ value: opts.rows ?? [{ role: 'user', text: TASK, toolUses: [] }] }))
+  on('session.messages', () => ({ value: opts.rows ?? [text('user', TASK)] }))
+  on('tool.list', () => ({ value: TOOLS }))
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude Code.', scope: 'shared' }] }))
+  on('fs.read', () => ({ value: TYPES }))
   on('process.run', (_$, e) => {
     opts.calls?.push({ argv: e.argv, stdin: e.init?.stdin })
     const stdout = opts.replies.shift() ?? ''
@@ -38,7 +62,7 @@ async function step($: Dollar, agentId: string | undefined) {
 }
 
 test('a Read call becomes tool chunks and stopReason tool_use', async ($, on) => {
-  const calls: { argv: readonly string[]; stdin?: string }[] = []
+  const calls: Call[] = []
   const reply = JSON.stringify({ say: 'reading', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] })
   await setup($, on, { agentId: 'a1', replies: [reply], calls })
   const { chunks, result } = await step($, 'a1')
@@ -49,28 +73,65 @@ test('a Read call becomes tool chunks and stopReason tool_use', async ($, on) =>
   expect(result.toolUses).toEqual([{ name: 'Read', input: { file_path: '/work/a.py' } }])
   expect(result.usage).toBeNull()
   expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--cwd', '/work'])
-  expect(calls[0].stdin).toContain(`Task: ${TASK}`)
-  expect(calls[0].stdin).toContain('Transcript so far: (empty, this is step 0)')
+  const stdin = calls[0].stdin ?? ''
+  expect(stdin).toContain('You are Claude Code.')
+  expect(stdin).toContain('- Read: Reads a file.')
+  expect(stdin).toContain('file_path: string')
+  expect(stdin).toContain('- SubagentHandback:')
+  expect(stdin).toContain(`user: ${TASK}`)
+  console.log(`fixture prompt size: ${stdin.length} chars`)
 })
 
-test('a final step yields the text and end_turn', async ($, on) => {
+test('a tool from tool.list that is not a file tool is accepted', async ($, on) => {
+  const calls: Call[] = []
+  const reply = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }] })
+  await setup($, on, { agentId: 'b1', replies: [reply], calls })
+  const { result } = await step($, 'b1')
+  expect(calls.length).toBe(1)
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }])
+  expect(result.stopReason).toBe('tool_use')
+})
+
+test('an unknown tool name retries once with a correction', async ($, on) => {
+  const calls: Call[] = []
+  const bad = JSON.stringify({ say: '', tools: [{ name: 'Teleport', input: {} }] })
+  const good = JSON.stringify({ say: '', tools: [{ name: 'Read', input: { file_path: '/work/a.py' } }] })
+  await setup($, on, { agentId: 'c1', replies: [bad, good], calls })
+  const { result } = await step($, 'c1')
+  expect(calls.length).toBe(2)
+  expect(calls[1].stdin).toContain('Your previous reply was rejected: unknown tool "Teleport"')
+  expect(result.toolUses).toEqual([{ name: 'Read', input: { file_path: '/work/a.py' } }])
+})
+
+test('tools [] with say becomes a SubagentHandback call', async ($, on) => {
+  await setup($, on, { agentId: 'd1', replies: [JSON.stringify({ say: '42 lines', tools: [] })] })
+  const { chunks, result } = await step($, 'd1')
+  expect(chunks.map(c => c.kind)).toEqual(['tool', 'input', 'stop'])
+  expect(chunks[0]).toMatchObject({ kind: 'tool', name: 'SubagentHandback' })
+  expect(JSON.parse(String(chunks[1].json))).toEqual({ message: '42 lines' })
+  expect(result).toMatchObject({ answer: '', stopReason: 'tool_use', toolUses: [{ name: 'SubagentHandback', input: { message: '42 lines' } }] })
+})
+
+test('tool results are capped and a later user message follows the first', async ($, on) => {
   const rows = [
-    { role: 'user', text: TASK, toolUses: [] },
-    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: { file_path: '/work/a.py' } }] },
-    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'u1', text: 'x'.repeat(30000), isError: false }] },
+    text('user', TASK),
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'u1', name: 'Read', input: { file_path: '/work/a.py' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: 'x'.repeat(30000) }] },
+    text('user', '<system-reminder>Your final report is delivered through SubagentHandback</system-reminder>'),
+    text('user', 'Actually count /work/b.py instead.'),
   ]
-  const calls: { argv: readonly string[]; stdin?: string }[] = []
-  await setup($, on, { agentId: 'a2', rows, replies: [JSON.stringify({ say: '42 lines', tools: [] })], calls })
-  const { chunks, result } = await step($, 'a2')
-  expect(chunks).toMatchObject([{ kind: 'text', text: '42 lines' }, { kind: 'stop', stopReason: 'end_turn' }])
-  expect(result).toMatchObject({ answer: '42 lines', toolUses: [], stopReason: 'end_turn' })
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'e1', rows, replies: [JSON.stringify({ say: 'ok', tools: [] })], calls })
+  await step($, 'e1')
   const stdin = calls[0].stdin ?? ''
   expect(stdin).toContain('assistant tool call: Read {"file_path":"/work/a.py"}')
   expect(stdin).toContain('[truncated 10000 chars]')
+  expect(stdin.indexOf(TASK)).toBeLessThan(stdin.indexOf('Actually count /work/b.py instead.'))
+  expect(stdin).toContain('<system-reminder>Your final report is delivered through SubagentHandback</system-reminder>')
 })
 
 test('a non-luna agentId passes through to next', async ($, on) => {
-  const calls: { argv: readonly string[]; stdin?: string }[] = []
+  const calls: Call[] = []
   await setup($, on, { agentId: 'a3', replies: [], calls })
   const { chunks, result } = await step($, 'other')
   expect(chunks).toMatchObject([{ kind: 'text', text: 'from anthropic' }])
@@ -79,7 +140,7 @@ test('a non-luna agentId passes through to next', async ($, on) => {
 })
 
 test('an unparsable reply twice yields luna reply unparsable', async ($, on) => {
-  const calls: { argv: readonly string[]; stdin?: string }[] = []
+  const calls: Call[] = []
   await setup($, on, { agentId: 'a4', replies: ['not json', 'still not json'], calls })
   const { chunks, result } = await step($, 'a4')
   expect(calls.length).toBe(2)
