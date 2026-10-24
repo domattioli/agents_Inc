@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Fake `claude -p` for spec 027 tests.
+
+With `--output-format stream-json` it prints claude.jsonl line by line; with `--output-format json` it prints the
+final `result` line alone (the legacy single payload). FAKE_PACE seconds between lines (default 0.5); FAKE_SLEEP=1
+sleeps forever after the first line (cancel tests); FAKE_RC exit code (default 0); FAKE_FIXTURE overrides the path
+(default: claude.jsonl beside this file)."""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    fmt = argv[argv.index("--output-format") + 1] if "--output-format" in argv else "text"
+    sys.stdin.read()
+    fixture = Path(os.environ.get("FAKE_FIXTURE") or Path(__file__).with_name("claude.jsonl"))
+    lines = fixture.read_text(encoding="utf-8").splitlines()
+    if fmt != "stream-json":
+        final = [ln for ln in lines if ln.startswith("{") and json.loads(ln).get("type") == "result"][-1]
+        print(final, flush=True)
+        return int(os.environ.get("FAKE_RC", "0"))
+    pace = float(os.environ.get("FAKE_PACE", "0.5"))
+    for i, line in enumerate(lines):
+        if i and pace:
+            time.sleep(pace)
+        print(line, flush=True)
+        if os.environ.get("FAKE_SLEEP") and i == 0:
+            while True:
+                time.sleep(3600)
+    return int(os.environ.get("FAKE_RC", "0"))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,11 @@
+{"type":"system","subtype":"init","session_id":"sess-fixture-1","model":"claude-haiku-5-5","tools":["Bash","Read","Edit"]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Check the tree first, then edit the launcher."}]},"session_id":"sess-fixture-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Checking the tree. Key ghp_abcdefghijklmnopqrstuvwx and api_key=0123456789ab are fake."}]},"session_id":"sess-fixture-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"git status --short"}}]},"session_id":"sess-fixture-1"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":" M agents_inc/install/dispatch.py"}]},"session_id":"sess-fixture-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"Edit","input":{"file_path":"agents_inc/install/dispatch.py","old_string":"a","new_string":"b"}}]},"session_id":"sess-fixture-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_3","name":"Bash","input":{"command":"curl -s -H \"Authorization: Bearer ghp_abcdefghijklmnopqrstuvwx\" https://example.invalid/ping"}}]},"session_id":"sess-fixture-1"}
+{"type":"mystery_event","payload":{"x":1}}
+stream warmup (not json)
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_4","name":"Read","input":{"file_path":"README.md"}}]},"session_id":"sess-fixture-1"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":4200,"num_turns":3,"result":"caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\nOUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n","session_id":"sess-fixture-1","total_cost_usd":0.0123,"usage":{"input_tokens":1500,"output_tokens":420},"modelUsage":{"claude-haiku-5-5":{"inputTokens":1500,"outputTokens":420,"cacheReadInputTokens":300,"cacheCreationInputTokens":100,"costUSD":0.0123}}}

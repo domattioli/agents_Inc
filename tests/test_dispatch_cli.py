@@ -243,7 +243,7 @@ class DispatchCliTest(CliBase):
         self.assertIsNone(calls["effort"])
         argv = spec["argv"]
         self.assertEqual(argv[1:], ["-p", "--model", "claude-sonnet-5-5", "--permission-mode", "acceptEdits",
-                                    "--output-format", "json"])
+                                    "--output-format", "stream-json", "--verbose"])
         self.assertIsNone(spec["effort"])
         self.assertNotIn("--effort", argv)
         self.assertEqual(spec["session_id"], "sess-1")
@@ -422,7 +422,7 @@ class DispatchCliTest(CliBase):
             res = dispatch.launch("claude", "opus", "high", self.repo, "PROMPT", self.root, "plan")
         argv = run.call_args.args[0]
         self.assertEqual(argv[1:], ["-p", "--model", dispatch.CLAUDE_MODELS["opus"], "--permission-mode", "plan",
-                                    "--output-format", "json", "--effort", "high"])
+                                    "--output-format", "stream-json", "--verbose", "--effort", "high"])
         self.assertEqual(run.call_args.kwargs["input"], "PROMPT")
         self.assertEqual(run.call_args.kwargs["cwd"], str(self.repo))
         self.assertEqual((res["stdout"], res["session_id"]), ("hi", "s9"))

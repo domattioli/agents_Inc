@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .live_events import _stream_run
+
 import json
 import sys
 
@@ -417,32 +419,19 @@ def kill_and_reap(proc) -> None:
         pass
 
 
-def _run_with_deadline(argv, prompt, env, timeout_s, extra) -> subprocess.CompletedProcess:
+def _run_with_deadline(argv, prompt, env, timeout_s, extra, on_line=None) -> subprocess.CompletedProcess:
     """Run argv in its own session; on expiry kill the whole group and return rc 124. Any other exception during
-    communicate (KeyboardInterrupt included) kills the group and reaps the child before it propagates."""
+    the run (KeyboardInterrupt included) kills the group and reaps the child before it propagates.
+    on_line (spec 027): called with each stdout line as it arrives; the returned stdout is still the full text."""
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             env=env, start_new_session=True, **extra)
-    try:
-        out, err = proc.communicate(input=prompt, timeout=timeout_s)
-        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        try:
-            out, err = proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:  # a grandchild holds the pipes open: give up on the output
-            for pipe in (proc.stdin, proc.stdout, proc.stderr):
-                try:
-                    pipe.close()
-                except Exception:
-                    pass
-            out, err = "", ""
-        return subprocess.CompletedProcess(argv, 124, out or "", f"{err or ''}turn timeout after {timeout_s:g} s")
-    except BaseException:
-        kill_and_reap(proc)
-        raise
+    rc, out, err = _stream_run(proc, prompt, timeout_s, on_line)  # _stream_run kills and reaps on any exception
+    return subprocess.CompletedProcess(argv, rc, out or "", err)
+
+
+def _run_streaming(argv, prompt, env, extra, on_line) -> subprocess.CompletedProcess:
+    """The no-deadline run with a line callback (spec 027)."""
+    return _run_with_deadline(argv, prompt, env, None, extra, on_line)
 
 
 def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, supported_efforts: dict[str, list[str]],
@@ -450,8 +439,9 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
               env: dict | None = None, lead_dir: Path | None = None, home_repo: str | None = None,
               extra_deny: tuple = (), isolate_home: bool = False, thread_out: dict | None = None,
               resume_thread: str | None = None, worker: tuple | None = None, extra_read: tuple = (),
-              network: bool = False, timeout_s: float | None = None) -> int:
+              network: bool = False, timeout_s: float | None = None, on_line=None) -> int:
     """timeout_s: kill the child's process group after that many seconds and return 124 (None: no deadline).
+    on_line (spec 027): called with each JSONL stdout line while the child runs; json mode only.
     thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
     message, not the JSONL, to stdout. resume_thread: continue that thread with the prompt as the next turn."""
     if receipt.codex_path is None:
@@ -522,8 +512,11 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
             argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
                                     lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read,
                                     network=network, tool_tmp=tool_tmp)
+        line_cb = on_line if json_mode else None  # Lead runs (no --json) get lifecycle events only
         if timeout_s:
-            result = _run_with_deadline(argv, prompt, env, timeout_s, extra)
+            result = _run_with_deadline(argv, prompt, env, timeout_s, extra, line_cb)
+        elif line_cb is not None:
+            result = _run_streaming(argv, prompt, env, extra, line_cb)
         else:
             result = subprocess.run(
                 argv,

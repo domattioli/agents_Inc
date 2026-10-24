@@ -28,7 +28,10 @@ from pathlib import Path
 
 from agents_inc.datafiles import repo_file, repo_root
 
+from .live_events import EventSink, _stream_run
 from .runtime import QUOTA_PATTERN, kill_and_reap
+
+_LIVE_SINK: EventSink | None = None  # spec 027: events.jsonl writer of the dispatch run in progress
 
 REPO_ROOT = repo_root()
 SCRIPTS = repo_file("skills/workerbee/scripts")
@@ -261,7 +264,7 @@ def claude_argv(model: str, permission_mode: str, resume: str | None = None, eff
                 allowed: list | None = None, disallowed: list | None = None) -> list[str]:
     exe = shutil.which("claude") or "claude"
     argv = [exe, "-p", "--model", CLAUDE_MODELS[model], "--permission-mode", permission_mode,
-            "--output-format", "json"]
+            "--output-format", "stream-json", "--verbose"]
     if effort:
         argv += ["--effort", effort]
     if resume:
@@ -708,30 +711,11 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
         limit = _turn_timeout()
         proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 cwd=str(cwd), text=True, start_new_session=True, **extra)
-        try:
-            stdout, stderr = proc.communicate(input=prompt, timeout=limit)
-            rc = proc.returncode
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            try:
-                stdout, stderr = proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:  # a grandchild holds the pipes open: give up on the output
-                for pipe in (proc.stdin, proc.stdout, proc.stderr):
-                    with contextlib.suppress(Exception):
-                        pipe.close()
-                stdout, stderr = "", ""
-            rc, stderr = 124, f"{stderr or ''}{TIMEOUT_MARK} {limit:g} s"
-        except BaseException:  # cancellation (KeyboardInterrupt included): no detached delegate survives the supervisor
-            kill_and_reap(proc)
-            raise
-        text, session, is_error, usage = stdout, None, False, None
-        try:
-            data = json.loads(stdout)
-            text, session, is_error = str(data.get("result", "")), data.get("session_id"), bool(data.get("is_error"))
-            usage = claude_usage(data)
-        except (ValueError, AttributeError):
-            pass
+        sink = _LIVE_SINK  # spec 027: the run path installs it; None outside a dispatch run
+        # kills the group at the deadline (rc 124, TIMEOUT_MARK) and on cancellation (KeyboardInterrupt included)
+        rc, stdout, stderr = _stream_run(proc, prompt, limit, (lambda ln: sink.line("claude", ln)) if sink else None,
+                                         mark=TIMEOUT_MARK)
+        text, session, is_error, usage = parse_claude_output(stdout)
         return {"rc": rc, "stdout": text, "stderr": stderr, "argv": argv, "session_id": session,
                 "is_error": is_error, "usage": usage}
     from .cli import _efforts, _paths
@@ -752,6 +736,8 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                        thread_out=None if lead_dir else thread, resume_thread=resume, worker=worker,
                        tools=codex_write or lead_dir is not None, write=codex_write, lead_dir=lead_dir,
                        network=codex_write and codex_network and lead_dir is None, timeout_s=_turn_timeout(),
+                       # json mode only (run_codex ignores it for Lead runs, which get lifecycle events only)
+                       on_line=(lambda ln: _LIVE_SINK.line("codex", ln)) if _LIVE_SINK is not None else None,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
                        # the verifier copy too, so the delegate can run its own FAILURE GATE check (#66)
                        extra_read=(Path(run_dir) / "pre_dispatch_snapshot.py",) + (
@@ -759,6 +745,36 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume, "is_error": False}
+
+
+def parse_claude_output(stdout: str) -> tuple:
+    """(text, session_id, is_error, usage) from Claude stdout (spec 027 R1).
+
+    The last `type: "result"` line of a stream-json run wins; else the whole stdout as one legacy json payload
+    (it must carry `result`); else the raw stdout. Never raises."""
+    payload = None
+    for line in reversed((stdout or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("type") == "result":
+            payload = data
+            break
+    if payload is None:
+        try:
+            data = json.loads(stdout)
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, dict) and "result" in data:
+            payload = data
+    if payload is None:
+        return stdout, None, False, None
+    return (str(payload.get("result", "")), payload.get("session_id"), bool(payload.get("is_error")),
+            claude_usage(payload))
 
 
 def claude_usage(data) -> dict | None:
@@ -1302,6 +1318,58 @@ def run(args) -> int:
     except OSError as exc:
         print(f"dispatch: cannot create run directory {run_dir}: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    print(f"agents-inc dispatch: run {run_id} dir {run_dir}", file=sys.stderr)  # 027 FR-007
+    global _LIVE_SINK
+    sink = _LIVE_SINK = EventSink(run_dir, safe_writes=_BROKER_SAFE_WRITES)
+    sink.emit("agents-inc", {"type": "run.start", "run_id": run_id, "model": model, "kind": kind})
+    code, outcome = EXIT_RED, "red"
+    try:
+        code = _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, run_dir)
+        outcome = _run_end_outcome(run_dir, code)
+        return code
+    except BaseException:
+        outcome = "cancelled"  # KeyboardInterrupt and anything else that escapes: launch() reaped the child
+        raise
+    finally:
+        _LIVE_SINK = None
+        spec_rc = _read_run_json(run_dir).get("rc")
+        sink.emit("agents-inc", {"type": "run.end", "outcome": outcome, "rc": spec_rc if isinstance(spec_rc, int) else code})
+        sink.close()
+        if sink.error:  # 027 FR-009: a viewer problem never changes the verdict; run.json records it
+            spec = _read_run_json(run_dir)
+            if spec:
+                spec["events_error"] = sink.error
+                with contextlib.suppress(OSError):
+                    _write_json(run_dir / "run.json", spec)
+
+
+def _read_run_json(run_dir: Path) -> dict:
+    try:
+        data = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _run_end_outcome(run_dir: Path, code: int) -> str:
+    """The FR-002 `run.end` outcome for a finished run, read back from the run.json the run path wrote."""
+    spec = _read_run_json(run_dir)
+    outcome, reason = spec.get("outcome"), spec.get("reason")
+    if outcome == "dry-run":
+        return "dry-run"
+    if isinstance(outcome, str) and outcome.startswith("refused"):
+        return "refused"
+    if outcome == "red" and reason == "launch-failed":
+        return "launch-failed"
+    if outcome == "red" and reason == "timeout":
+        return "timeout"
+    if outcome in ("green", "unverified"):
+        return "done"
+    return "red"
+
+
+def _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, run_dir) -> int:
+    """Everything after the run directory exists (split from run() for the spec 027 event bracket)."""
     if _BROKER_SAFE_WRITES:  # 025 (#104): a broker Worker loads its Lead's scripts and never probes its own cwd
         sdir, ssrc = _INHERITED_SCRIPTS or (SCRIPTS, "installed")
     else:

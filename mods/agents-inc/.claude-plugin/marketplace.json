@@ -1,0 +1,5 @@
+{
+  "name": "agents-inc-local",
+  "owner": { "name": "agents-inc" },
+  "plugins": [{ "name": "agents-inc", "source": "./" }]
+}

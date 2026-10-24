@@ -181,7 +181,7 @@ class ToolGrantTest(GrantsBase):
         self.assertNotIn("--allowedTools", argv)
         self.assertNotIn("--disallowedTools", argv)
         self.assertEqual(argv[1:], ["-p", "--model", dispatch.CLAUDE_MODELS["haiku"], "--permission-mode",
-                                    "acceptEdits", "--output-format", "json", "--effort", "low"])
+                                    "acceptEdits", "--output-format", "stream-json", "--verbose", "--effort", "low"])
 
     def test_ask_channel_adds_one_allowed_tools_flag(self):
         dispatch._BROKER_SAFE_WRITES, dispatch._WORKER_ASK = True, "r1"

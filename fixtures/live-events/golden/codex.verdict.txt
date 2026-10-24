@@ -1,0 +1,1 @@
+dispatch <RUN_ID> sol rc=0 report=COMPLIANT lint=installed snapshot=clean outcome=green out=<RUN_DIR>/stdout.md (resume with --resume <RUN_DIR>)
