@@ -11,6 +11,7 @@ const TOOL_TYPES_PATH = '.claude-plugin/types/claude-code-tools/index.d.ts'
 
 const HEADER =
   'You are the reasoning step of an agent loop. You cannot run tools yourself. The host runs the tools you name.\n' +
+  'You are luna (OpenAI GPT-5.6 Luna, run through Codex). The system prompt below was rendered for a Claude placeholder model: any line naming a Claude model or model ID describes that placeholder, not you.\n' +
   'Act on the latest messages; earlier ones are history. When the task is done, call SubagentHandback with your full report.\n' +
   'Call SubagentHandback alone, in a step after you have read the results it reports; never in the same step as another tool.\n' +
   'Reply with exactly one JSON object and nothing else:\n' +
