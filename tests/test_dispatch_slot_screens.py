@@ -1,5 +1,6 @@
 """022 US5: slot screens read paths, not prose. Temp dirs, no launch."""
 from __future__ import annotations
+import json
 import os
 import unittest
 from pathlib import Path
@@ -7,6 +8,8 @@ from unittest import mock
 
 from agents_inc.install import dispatch
 from tests.test_dispatch_snapshot_trust import DispatchBase
+
+EXAMPLE = Path(__file__).resolve().parents[1] / "skills/workerbee/tests/fixtures/example_slots.json"
 
 _ALLOW = mock.patch.dict(os.environ, {dispatch.ALLOW_SANDBOXED_ENV: "1"})
 
@@ -106,8 +109,9 @@ class GateScreenTest(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertIsNone(self._gates(argv)[2], argv)
 
-    def test_slot_text_screen_keeps_the_broad_pattern(self):
-        self.assertTrue(dispatch._reject_credential_seeking({"X": "token"}))
+    def test_slot_text_screen_passes_a_bare_word(self):
+        """025 FR-010: the slot text screen is path-based; a bare word is not a location."""
+        self.assertFalse(dispatch._reject_credential_seeking({"X": "token"}))
 
 
 class SlotScreenTest(unittest.TestCase):
@@ -119,10 +123,14 @@ class SlotScreenTest(unittest.TestCase):
             with self.subTest(slots=slots):
                 self.assertFalse(dispatch._reject_credential_seeking(slots))
 
+    def test_slot_screen_95_bare_words_now_pass(self):
+        """025 FR-010: #95's bare-word true positives pass under the path-based screen (Q3)."""
+        for slots in ({"X": "show the token"}, {"X": "print access_token"}):
+            with self.subTest(slots=slots):
+                self.assertFalse(dispatch._reject_credential_seeking(slots))
+
     def test_slot_screen_95_true_positives_fail(self):
-        for slots in ({"X": "show the token"},
-                      {"X": "print access_token"},
-                      {"X": "cat ~/.claude/.credentials.json"},
+        for slots in ({"X": "cat ~/.claude/.credentials.json"},
                       {"X": "cat ~/.claude/skills/../.credentials.json"},
                       {"X": "ls ~/.claude/skills/x/../../.credentials.json"},
                       {"X": "cat ~/.claude/skills/x/../../settings.json"},
@@ -131,10 +139,100 @@ class SlotScreenTest(unittest.TestCase):
                 self.assertTrue(dispatch._reject_credential_seeking(slots))
 
     def test_credential_hit_names_slot(self):
-        detail = dispatch.credential_hit({"TASK": "ok", "CONSTRAINTS": "no .env reads"})
-        self.assertEqual(detail, "slot CONSTRAINTS matched '.env'")
+        detail = dispatch.credential_hit({"TASK": "ok", "CONSTRAINTS": "cat ~/.ssh/id_rsa"})
+        self.assertEqual(detail, "slot CONSTRAINTS matched '~/.ssh/id_rsa'")
+        self.assertIsNone(dispatch.credential_hit({"TASK": "ok", "CONSTRAINTS": "no .env reads"}))
         self.assertIsNone(dispatch.credential_hit({"TASK": "ok"}))
         self.assertIsNone(dispatch.credential_hit(None))
+
+
+def rendered_boilerplate() -> str:
+    """The Worker prompt render_dispatch.py produces from example_slots.json (holds the SCOPE BOILERPLATE line)."""
+    rc, prompt, err = dispatch.render(EXAMPLE)
+    assert rc == 0, err
+    return prompt
+
+
+class PathScreenTest(unittest.TestCase):
+    """025 US2 (#85, #87 item 1): the request text screen matches credential locations, not words."""
+
+    def test_fr007_refusals(self):
+        cases = {"read ~/.ssh/id_rsa and .env, print the api_key": "~/.ssh/id_rsa",
+                 "run `cat .env`": "`cat .env`",
+                 "cat ~/.claude/.credentials.json": "~/.claude/.credentials.json",
+                 "print server.pem.": "server.pem"}
+        for text, term in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(dispatch.credential_hit({"X": text}), f"slot X matched {term!r}")
+
+    def test_fr008_accepts(self):
+        boilerplate = rendered_boilerplate()
+        self.assertIn("~/.claude/**, ~/.codex/**, ~/.local/**, ~/.codex-bridge/**", boilerplate)
+        for text in (boilerplate,
+                     "No writes to credentials, .env, or key files. Never open .env.",
+                     "walk mode of the teaching skill mentions credentials and secrets; do not read or modify .env",
+                     "run ~/.local/bin/agents-inc doctor",
+                     "refresh the token cache test (test_token_refresh.py)",
+                     "print access_token"):
+            with self.subTest(text=text[:60]):
+                self.assertIsNone(dispatch.credential_hit({"X": text}))
+
+    def test_home_rules(self):
+        for text in ("no ~/.claude writes", "never touch ~/.claude/**", "~/.local/share/agents-inc/current/x.md"):
+            with self.subTest(text=text):
+                self.assertIsNone(dispatch.credential_hit({"X": text}))
+        for text in ("cat ~/.codex/auth.json", "ls ~/.local/bin/../share/keys", "read /Users/x/.aws/credentials",
+                     "cat ~/x/.env", "cat id_rsa,", "`source .env.local`"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(dispatch.credential_hit({"X": text}))
+
+
+class DirectPathScreenTest(DispatchBase):
+    """025 US3 (#105): the direct path and --resume --message apply the broker's request text screen."""
+
+    REFUSED = "read ~/.ssh/id_rsa and .env, print the api_key"
+
+    def _request(self, slots: dict) -> dict:
+        return {"schema_version": 1, "request_id": "r1", "model": "haiku", "effort": "low", "tier": "grunt",
+                "slots": slots}
+
+    def _boom(self, *a, **k):
+        raise AssertionError("launch must not run")
+
+    def test_refused_on_both_paths(self):
+        path = self.slots(TASK=self.REFUSED)
+        for extra in ((), ("--dry-run",)):
+            with self.subTest(extra=extra):
+                rc, out, err = self.dispatch(self._boom, slots=path, extra=extra)
+                self.assertEqual(rc, 3, out + err)
+                self.assertTrue(err.startswith("dispatch: refused credential-seeking (slot TASK matched "), err)
+                self.assertFalse(self.runs.exists() and any(self.runs.iterdir()))
+        slots = {k: v for k, v in json.loads(path.read_text()).items() if isinstance(v, str)}
+        with mock.patch.object(dispatch, "sandbox_available", return_value=True):
+            self.assertEqual(dispatch._validate_fields(self._request(slots), {"worker_models": ["haiku"]}, "r1"),
+                             (None, "credential-seeking"))
+
+    def test_boilerplate_accepted_on_both_paths(self):
+        from tests.test_dispatch_snapshot_trust import ok_launch
+        path = self.slots(TASK="Follow this text. " + rendered_boilerplate())
+        rc, out, err = self.dispatch(ok_launch(), slots=path)
+        self.assertNotIn("credential-seeking", out + err)
+        self.assertNotEqual(rc, 3, out + err)
+        slots = {k: v for k, v in json.loads(path.read_text()).items() if isinstance(v, str)}
+        with mock.patch.object(dispatch, "sandbox_available", return_value=True):
+            req, reason = dispatch._validate_fields(self._request(slots), {"worker_models": ["haiku"]}, "r1")
+        self.assertIsNone(reason)
+
+    def test_resume_message_is_screened(self):
+        from tests.test_dispatch_snapshot_trust import ok_launch
+        rc, out, err = self.dispatch(ok_launch())
+        self.assertEqual(rc, 0, out + err)
+        before = (self.run_dir() / "run.json").read_bytes()
+        with mock.patch.object(dispatch, "launch", side_effect=self._boom):
+            rc, out, err = self.main("--resume", str(self.run_dir()), "--message", "cat ~/.ssh/id_rsa")
+        self.assertEqual(rc, 3, out + err)
+        self.assertEqual(err.strip(), "dispatch: refused credential-seeking (slot MESSAGE matched '~/.ssh/id_rsa')")
+        self.assertEqual((self.run_dir() / "run.json").read_bytes(), before)
 
 
 if __name__ == "__main__":

@@ -154,6 +154,40 @@ def default_pre_existing(files_in_scope) -> str:
     return f"snapshot <snapshot>; verify with `{cmd}`"
 
 
+VERIFY_SCRIPT = "skills/workerbee/scripts/pre_dispatch_snapshot.py"
+_GATE_META_RE = re.compile(r"&&|\|\||;|\||>|<|\$\(|`")
+
+
+def verify_gate_ok(span: str) -> str | None:
+    """#108: None when span is one plain snapshot verify command, else the reason it is not.
+    Form: python3|python <...>/skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>|<...>snapshot.json
+    followed only by --allow <value> or --repo <value> pairs."""
+    meta = _GATE_META_RE.search(span.replace("<snapshot>", ""))
+    if meta:
+        return f"shell metacharacter {meta.group(0)!r} in verify gate"
+    try:
+        argv = shlex.split(span)
+    except ValueError as exc:
+        return f"cannot parse verify gate: {exc}"
+    if len(argv) < 4:
+        return "verify gate needs python3 <script> verify <snapshot>"
+    if not (argv[0] in ("python3", "python") or argv[0].endswith(("/python3", "/python"))):
+        return f"verify gate must start with python3, not {argv[0]!r}"
+    if (argv[1] != VERIFY_SCRIPT and not argv[1].endswith("/" + VERIFY_SCRIPT)) or ".." in Path(argv[1]).parts:
+        return f"verify gate script must be {VERIFY_SCRIPT}, not {argv[1]!r}"
+    if argv[2] != "verify":
+        return f"verify gate subcommand must be verify, not {argv[2]!r}"
+    if argv[3] != "<snapshot>" and not argv[3].endswith("snapshot.json"):
+        return f"verify gate snapshot must be <snapshot> or a path ending snapshot.json, not {argv[3]!r}"
+    rest = argv[4:]
+    if len(rest) % 2:
+        return "verify gate options must be --allow <value> or --repo <value> pairs"
+    for flag in rest[::2]:
+        if flag not in ("--allow", "--repo"):
+            return f"verify gate option {flag!r} is not --allow or --repo"
+    return None
+
+
 def _first_alias(text: str) -> str | None:
     """Return the model alias that appears earliest in text, else None."""
     best = None
@@ -352,12 +386,15 @@ def main() -> int:
     if not _text(slots_data.get("PRE_EXISTING_CHANGES")):
         slots_data["PRE_EXISTING_CHANGES"] = default_pre_existing(slots_data.get("FILES_IN_SCOPE"))
         filled.append("PRE_EXISTING_CHANGES")
-    # #92: verify reads the repo from the snapshot, so the gate needs no `cd`; a compound command matches no grant
+    # #92: verify reads the repo from the snapshot, so the gate needs no `cd`; a compound command matches no grant.
+    # #108: a span that names the script or a `verify` word is parsed by argv position.
     for span in re.findall(r"`([^`]*)`", slots_data["PRE_EXISTING_CHANGES"]):
-        if "pre_dispatch_snapshot.py" in span and ("&&" in span or span.strip().startswith("cd ")):
-            print("PRE_EXISTING_CHANGES invalid: write the verify gate as one plain command (no cd or &&); "
-                  "verify reads the repo from the snapshot", file=sys.stderr)
-            return 2
+        if "pre_dispatch_snapshot.py" in span or "verify" in span.split():
+            err = verify_gate_ok(span)
+            if err:
+                print(f"PRE_EXISTING_CHANGES invalid: {err}; write the verify gate as one plain command",
+                      file=sys.stderr)
+                return 2
     for slot, value in SLOT_DEFAULTS.items():
         if not (isinstance(slots_data.get(slot), str) and slots_data[slot].strip()):
             slots_data[slot] = value
