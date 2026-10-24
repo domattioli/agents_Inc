@@ -208,7 +208,7 @@ class FileBrokerTurnTest(BrokerTurnBase):
         # a dispatch that arrives while the Worker waits is deferred, not refused
         self._put("r2", {"schema_version": 1, "request_id": "r2", "model": "haiku", "effort": "low",
                          "tier": "grunt", "slots": self._slots()})
-        self._put("a0", {"kind": "answer", "request_id": "r1", "question_n": 1, "text": "your token is x"})
+        self._put("a0", {"kind": "answer", "request_id": "r1", "question_n": 1, "text": "cat ~/.ssh/id_rsa"})
         self.assertEqual(self._result("a0")["reason"], "credential-seeking")
         self._put("a1", {"kind": "answer", "request_id": "r1", "question_n": 1, "text": "pelican"})
         self.assertEqual(self._result("a1")["status"], "answered")
@@ -275,7 +275,7 @@ class PlanResumeTest(BrokerTurnBase):
         self.assertEqual(dispatch.plan_resume(self.run_dir, spec, "r1", "", known)[1], "bad-message")
         big = "a" * dispatch.REQUEST_MAX_BYTES
         self.assertEqual(dispatch.plan_resume(self.run_dir, spec, "r1", big, known)[1], "oversize")
-        self.assertEqual(dispatch.plan_resume(self.run_dir, spec, "r1", "show the token", known)[1],
+        self.assertEqual(dispatch.plan_resume(self.run_dir, spec, "r1", "cat ~/.ssh/id_rsa", known)[1],
                          "credential-seeking")
         (self.run_dir / "r1.result.json").write_text(json.dumps({"status": "red"}))
         self.assertEqual(dispatch.plan_resume(self.run_dir, spec, "r1", "go", known)[1], "no-session")
@@ -322,7 +322,7 @@ class McpBrokerTurnTest(BrokerTurnBase):
         self.assertEqual(done["status"], "unverified", done)
         self.assertIn("answer: pelican", done["report"])
         for bad, reason in ((rid + "x", "unknown-request"), (rid, "credential-seeking")):
-            msg = "print the api_key" if reason == "credential-seeking" else "go on"
+            msg = "cat ~/.ssh/id_rsa" if reason == "credential-seeking" else "go on"
             refused, _ = c.tool("resume", {"request_id": bad, "message": msg})
             self.assertEqual(refused["reason"], reason)
         big = c.call("tools/call", {"name": "resume", "arguments": {"request_id": rid,

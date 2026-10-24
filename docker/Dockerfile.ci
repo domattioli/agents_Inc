@@ -1,0 +1,35 @@
+# Clean-install check for agents-inc on Linux.
+#
+# Stage 1 builds the wheel from the checkout. Stage 2 is a fresh image with no
+# checkout, no Claude or Codex CLI, and an empty HOME: it installs the wheel,
+# runs the installer, and checks that doctor, a dry-run dispatch, and the fake
+# governance demo all work from the installed package alone.
+#
+#   docker build -f docker/Dockerfile.ci -t agents-inc-ci .
+#   docker run --rm agents-inc-ci
+#
+# Stress run against the checkout (fake claude on PATH, no network), or a shell:
+#   docker run --rm --network none -v "$PWD:/src:ro" -v "$PWD/docker/stress_check.sh:/stress.sh:ro" agents-inc-ci bash /stress.sh
+#   docker run --rm -it -v "$PWD:/src:ro" agents-inc-ci bash
+#
+# The macOS sandbox paths (Seatbelt, nested sandbox-exec) do not exist here; this
+# image covers install drift and the Linux half only.
+
+ARG PYTHON_VERSION=3.11
+
+FROM python:${PYTHON_VERSION}-slim AS build
+WORKDIR /src
+COPY . .
+RUN python -m pip install --quiet build && python -m build --wheel --outdir /wheels
+
+FROM python:${PYTHON_VERSION}-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git jq && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home ci
+USER ci
+ENV HOME=/home/ci PATH=/home/ci/.local/bin:$PATH
+WORKDIR /home/ci
+COPY --from=build /wheels/*.whl /tmp/wheels/
+RUN python -m pip install --quiet --user /tmp/wheels/*.whl
+COPY --chown=ci docker/ci_check.sh /home/ci/ci_check.sh
+COPY --chown=ci skills/workerbee/tests/fixtures/example_slots.json /home/ci/example_slots.json
+CMD ["bash", "/home/ci/ci_check.sh"]

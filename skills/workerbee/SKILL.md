@@ -564,6 +564,9 @@ Fail over across the family. Never stall on one dead provider.
 - The same sandbox blocks `.git/index.lock`, so delegates **cannot
   commit**. Expect `Operation not permitted`. Have the delegate report
   `BLOCKED-SANDBOX` and land the commit yourself.
+- Do not commit while a delegate's snapshot is live: the commit moves HEAD
+  and the delegate's verify fails for a change it did not make. If a commit
+  is unavoidable, re-capture the snapshot and re-issue it to the delegate.
 - `--skip-git-repo-check` is required outside a git repo.
 - Read-only sandbox is the cheapest way to enforce a review-only scope. Do
   not rely on the model honoring "do not edit" when the sandbox can

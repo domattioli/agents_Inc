@@ -7,6 +7,7 @@ import json
 import shutil
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,8 +21,9 @@ from tests.test_dispatch_broker import popen_from_run
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "skills/workerbee/tests/fixtures/example_slots.json"
 STATUS_RE = re.compile(r"^dispatch \S+ \S+ rc=-?\d+ report=(COMPLIANT|NON-COMPLIANT:\[.*\]|none) "
-                       r"snapshot=(clean|CHANGED:\S+|ERROR:\S+|TAMPERED|none) outcome=(green|red|unverified)"
-                       r"( reason=\S+)?( detail=\S+)? out=\S+stdout(\.\d+)?\.md$")
+                       r"lint=(checkout|installed) snapshot=(clean|CHANGED:\S+|ERROR:\S+|TAMPERED|none) outcome=(green|red|unverified)"
+                       r"( reason=\S+)?( detail=\S+)? out=\S+stdout(\.\d+)?\.md"
+                       r"( \(resume with --resume /\S+\))?$")
 GOOD_REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
 
@@ -45,7 +47,9 @@ def _git_repo(root: Path) -> Path:
     return repo
 
 
-class DispatchCliTest(unittest.TestCase):
+class CliBase(unittest.TestCase):
+    """Temp git repo, fake HOME and the dispatch CLI helpers; holds no tests of its own."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name).resolve()
@@ -84,6 +88,8 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(len(dirs), 1)
         return dirs[0]
 
+
+class DispatchCliTest(CliBase):
     def test_argument_parsing(self):
         captured = {}
         with mock.patch.object(dispatch, "run", side_effect=lambda a: captured.setdefault("a", a) and 0):
@@ -124,6 +130,22 @@ class DispatchCliTest(unittest.TestCase):
         self.assertEqual(out.strip(), f"dispatch {run.name} haiku dry-run prompt={run / 'prompt.md'}")
         self.assertTrue((run / "lint.txt").read_text().startswith("COMPLIANT"))
 
+    def test_dry_run_verify_gate_is_one_plain_command(self):
+        """#92: every verify command in the prompt names the absolute snapshot path, with no cd or &&."""
+        rc, out, _ = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                                "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 0, out)
+        run = self._run_dir()
+        cmds = [c for c in re.findall(r"`([^`]*)`", (run / "prompt.md").read_text())
+                if "pre_dispatch_snapshot.py verify" in c]
+        self.assertTrue(cmds)
+        for cmd in cmds:
+            snap = shlex.split(cmd)[3]
+            self.assertEqual(snap, str(run / "snapshot.json"), cmd)
+            self.assertTrue(Path(snap).is_absolute(), cmd)
+            self.assertNotIn("&&", cmd)
+            self.assertFalse(cmd.strip().startswith("cd "), cmd)
+
     def _chain_line(self, model):
         rc, out, _ = self._main("--slots", str(self._slots()), "--model", model, "--cwd", str(self.repo),
                                 "--run-dir", str(self.runs), "--dry-run")
@@ -161,7 +183,7 @@ class DispatchCliTest(unittest.TestCase):
             self.assertTrue((run / name).is_file(), name)
         self.assertRegex(out.strip(), STATUS_RE)
         self.assertEqual(len(out.strip().splitlines()), 1)
-        self.assertIn("report=COMPLIANT snapshot=clean", out)
+        self.assertIn("report=COMPLIANT lint=installed snapshot=clean", out)
         self.assertEqual(rc, 0, out)
         return json.loads((run / "run.json").read_text())
 
@@ -402,6 +424,28 @@ class DispatchCliTest(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(out.strip(), f"dispatch: {slug} not supported, use agent.sh")
 
+    def test_slots_that_are_not_an_object_exit_2(self):
+        # A JSON list used to reach `slots.get` and die with an AttributeError traceback (Docker stress 2026-10-23).
+        for text in ("[]", "\"x\"", "3", "null"):
+            path = self.root / "bad_slots.json"
+            path.write_text(text)
+            rc, out, err = self._main("--slots", str(path), "--model", "haiku", "--run-dir", str(self.runs), "--dry-run")
+            self.assertEqual(rc, 2, text)
+            self.assertIn("dispatch: slots must be a JSON object", out + err)
+        self.assertFalse(self.runs.exists())
+
+    def test_missing_cwd_and_unwritable_run_dir_exit_2(self):
+        rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.root / "nope"),
+                                  "--run-dir", str(self.runs), "--dry-run")
+        self.assertEqual(rc, 2)
+        self.assertIn("dispatch: cwd is not a directory", out + err)
+        blocker = self.root / "blocker"
+        blocker.write_text("a file, not a directory")
+        rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
+                                  "--run-dir", str(blocker), "--dry-run")
+        self.assertEqual(rc, 2)
+        self.assertIn("dispatch: cannot create run directory", out + err)
+
     def test_claude_bad_effort_exits_2(self):
         for effort in ("ultra", "xhigh"):
             rc, out, err = self._main("--slots", str(self._slots()), "--model", "haiku", "--effort", effort,
@@ -489,9 +533,9 @@ class DispatchCliTest(unittest.TestCase):
         seen = {}
         real_lint = dispatch.lint_prompt
 
-        def spy(path, tier, model=None):
+        def spy(path, tier, model=None, **kw):
             seen["text"] = path.read_text()
-            return real_lint(path, tier, model)
+            return real_lint(path, tier, model, **kw)
 
         with mock.patch.object(dispatch, "lint_prompt", side_effect=spy):
             rc, out, _ = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
@@ -520,6 +564,213 @@ class DispatchCliTest(unittest.TestCase):
         self.assertNotIn("--effort", dispatch.claude_argv("opus", "plan"))
         self.assertEqual(dispatch.claude_argv("opus", "plan", "s1", "max")[-4:],
                          ["--effort", "max", "--resume", "s1"])
+
+
+def _fake_launch(stdout=GOOD_REPORT, during=None):
+    """A launch() stand-in; during(cwd) runs as the delegate's turn."""
+    def fake(kind, model, effort, cwd, prompt, run_dir, *a, **k):
+        if during:
+            during(Path(cwd))
+        return {"rc": 0, "stdout": stdout, "stderr": "", "argv": [], "session_id": "sess-1"}
+    return fake
+
+
+class RunDirIgnoreTest(CliBase):
+    """025 US4 (#106): an explicit --run-dir inside --cwd must be git-ignored."""
+
+    def _go(self, run_dir, cwd=None):
+        with mock.patch.object(dispatch, "launch", side_effect=_fake_launch()):
+            return self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(cwd or self.repo),
+                              "--run-dir", str(run_dir))
+
+    def test_unignored_run_dir_in_repo_is_refused(self):
+        rc, out, err = self._go(self.repo / "runs")
+        self.assertEqual(rc, 2, out + err)
+        self.assertIn(f"dispatch: --run-dir {self.repo / 'runs'} is inside --cwd and not git-ignored; "
+                      "later snapshot verifies would see its files", err)
+        self.assertFalse((self.repo / "runs").exists())
+
+    def test_ignored_run_dir_in_repo_launches(self):
+        (self.repo / ".gitignore").write_text("runs/\n")
+        subprocess.run(["git", "add", ".gitignore"], cwd=self.repo, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "ignore"],
+                       cwd=self.repo, check=True, capture_output=True)
+        rc, out, err = self._go(self.repo / "runs")
+        self.assertEqual(rc, 0, out + err)
+        self.assertRegex(out.strip(), STATUS_RE)
+
+    def test_run_dir_outside_repo_launches(self):
+        rc, out, err = self._go(self.runs)
+        self.assertEqual(rc, 0, out + err)
+
+    def test_non_repo_cwd_is_not_refused(self):
+        plain = self.root / "plain"
+        plain.mkdir()
+        rc, out, err = self._go(plain / "runs", cwd=plain)
+        self.assertNotIn("not git-ignored", err)
+        self.assertTrue((plain / "runs").is_dir(), out + err)
+
+
+class GateWroteTest(CliBase):
+    """025 US5 (#107): a gate that writes into the repo turns the outcome red."""
+
+    def _go(self, gates):
+        slots = self._slots(GATES=gates)
+        with mock.patch.object(dispatch, "launch", side_effect=_fake_launch()):
+            return self._main("--slots", str(slots), "--model", "haiku", "--cwd", str(self.repo),
+                              "--run-dir", str(self.runs))
+
+    def test_writing_gate_is_red(self):
+        rc, out, err = self._go([{"argv": ["sh", "-c", "echo pwned > gate_wrote.txt"]}])
+        self.assertIn("snapshot=CHANGED:gate_wrote.txt outcome=red reason=gate-wrote", out)
+        self.assertRegex(out.strip(), STATUS_RE)
+        self.assertEqual(rc, 1, out + err)
+        verify = (self._run_dir() / "verify.txt").read_text()
+        self.assertIn("\nafter gates:\nsnapshot rc=", verify)
+        self.assertIn("gate_wrote.txt", verify.split("after gates:")[1])
+
+    def test_writing_failing_gate_reports_gate_wrote(self):
+        rc, out, err = self._go([{"argv": ["sh", "-c", "echo pwned > gate_wrote.txt; exit 1"]}])
+        self.assertIn("outcome=red reason=gate-wrote", out)
+        self.assertEqual(rc, 1, out + err)
+
+    def test_read_only_gate_stays_green(self):
+        rc, out, err = self._go([{"argv": [sys.executable, "-c", "pass"]}])
+        self.assertIn("snapshot=clean outcome=green", out)
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("after gates: clean", (self._run_dir() / "verify.txt").read_text())
+
+
+SENTINEL_PATCH = ("\n_check_report_025 = check_report\n\n\ndef check_report(text):\n"
+                  "    return list(_check_report_025(text)) + ['sentinel-025']\n")
+PROBES = ("agents_inc/install/dispatch.py", "skills/workerbee/scripts/check_dispatch_prompt.py",
+          "skills/workerbee/scripts/render_dispatch.py", "skills/workerbee/scripts/dispatch_rungs.py",
+          "skills/workerbee/scripts/pre_dispatch_snapshot.py")
+
+
+class ScriptsSourceTest(CliBase):
+    """025 US1 (#104): a dispatch from an agents_Inc checkout is judged by a launch-time copy of its scripts."""
+
+    def setUp(self):
+        super().setUp()
+        self.co = self.root / "checkout"
+        self.co.mkdir()
+        shutil.copytree(REPO / "skills/workerbee", self.co / "skills/workerbee",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (self.co / "agents_inc/install").mkdir(parents=True)
+        (self.co / "agents_inc/install/dispatch.py").write_text("# stub\n")
+        with (self.co / PROBES[1]).open("a") as fh:
+            fh.write(SENTINEL_PATCH)
+        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
+                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
+            subprocess.run(cmd, cwd=self.co, check=True, capture_output=True)
+
+    def _go(self, cwd, during=None):
+        with mock.patch.object(dispatch, "launch", side_effect=_fake_launch(during=during)):
+            return self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(cwd),
+                              "--run-dir", str(self.runs))
+
+    def _resume(self):
+        with mock.patch.object(dispatch, "launch", side_effect=_fake_launch()):
+            return self._main("--resume", str(self._run_dir()), "--message", "go on")
+
+    def test_checkout_lints_with_trusted_copy(self):
+        def edit_judge(cwd):  # the delegate rewrites the checkout's lint during its turn
+            with (cwd / PROBES[1]).open("a") as fh:
+                fh.write("\n\ndef check_report(text):\n    return []\n")
+        rc, out, err = self._go(self.co, during=edit_judge)
+        self.assertRegex(out.strip(), STATUS_RE)
+        self.assertIn("report=NON-COMPLIANT:['sentinel-025'] lint=checkout ", out)
+        spec = json.loads((self._run_dir() / "run.json").read_text())
+        trusted = Path(spec["scripts_dir"])
+        self.assertEqual(spec["scripts_source"], "checkout")
+        self.assertTrue(trusted.is_absolute())
+        self.assertFalse(trusted.is_relative_to(self.co))
+        self.assertEqual(trusted, dispatch._trust_path(self._run_dir().name) / "workerbee" / "scripts")
+        verify = (self._run_dir() / "verify.txt").read_text()
+        self.assertTrue(verify.startswith(f"lint source: {trusted}\n"), verify)
+        shipped = (self._run_dir() / "pre_dispatch_snapshot.py").read_bytes()
+        self.assertEqual(shipped, (trusted / "pre_dispatch_snapshot.py").read_bytes())
+
+    def test_plain_repo_is_installed(self):
+        rc, out, err = self._go(self.repo)
+        self.assertIn("report=COMPLIANT lint=installed ", out)
+        self.assertEqual(json.loads((self._run_dir() / "run.json").read_text())["scripts_source"], "installed")
+        self.assertTrue((self._run_dir() / "verify.txt").read_text().startswith(f"lint source: {dispatch.SCRIPTS}\n"))
+
+    def test_symlinked_probes_are_installed(self):
+        for rel in PROBES:
+            target = self.root / "real" / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            (self.co / rel).rename(target)
+            (self.co / rel).symlink_to(target)
+        rc, out, err = self._go(self.co)
+        self.assertIn(" lint=installed ", out)
+
+    def test_missing_probe_is_installed(self):
+        (self.co / PROBES[3]).unlink()
+        rc, out, err = self._go(self.co)
+        self.assertIn(" lint=installed ", out)
+
+    def test_changed_trusted_copy_is_tampered(self):
+        def tamper(cwd):
+            run_id = next(self.runs.iterdir()).name
+            path = dispatch._trust_path(run_id) / "workerbee" / "scripts" / "check_dispatch_prompt.py"
+            path.write_text(path.read_text() + "\n# changed\n")
+        rc, out, err = self._go(self.co, during=tamper)
+        self.assertRegex(out.strip(), STATUS_RE)
+        self.assertIn("snapshot=TAMPERED outcome=red reason=snapshot-tampered", out)
+        self.assertEqual(rc, 1, out + err)
+
+    def test_resume_reads_recorded_copy(self):
+        self._go(self.co)
+        shutil.rmtree(self.co / "skills/workerbee/scripts")
+        rc, out, err = self._resume()
+        self.assertIn("report=NON-COMPLIANT:['sentinel-025'] lint=checkout ", out)
+
+    def test_resume_with_redirected_scripts_dir_is_tampered(self):
+        self._go(self.co)
+        path = self._run_dir() / "run.json"
+        spec = json.loads(path.read_text())
+        spec["scripts_dir"] = str(self.co / "skills/workerbee/scripts")
+        path.write_text(json.dumps(spec))
+        rc, out, err = self._resume()
+        self.assertIn("snapshot=TAMPERED outcome=red reason=snapshot-tampered", out)
+        self.assertEqual(rc, 1, out + err)
+
+    def test_resume_without_keys_is_installed(self):
+        self._go(self.co)
+        path = self._run_dir() / "run.json"
+        spec = json.loads(path.read_text())
+        spec.pop("scripts_dir")
+        spec.pop("scripts_source")
+        path.write_text(json.dumps(spec))
+        rc, out, err = self._resume()
+        self.assertIn(" lint=installed ", out)
+
+    def test_broker_worker_inherits_lead_scripts(self):
+        trusted = dispatch._pin_scripts(self.co / "skills/workerbee/scripts", "lead-run")
+        lead = {"scripts_dir": str(trusted), "scripts_source": "checkout"}
+        args = argparse.Namespace(slots=str(self._slots()), model="haiku", effort=None, cwd=str(self.repo),
+                                  tier=None, run_dir=str(self.runs), dry_run=False, home_repo=None, resume=None)
+        out = io.StringIO()
+        with mock.patch.object(dispatch, "launch", side_effect=_fake_launch()), \
+                mock.patch.object(dispatch, "scripts_dir", side_effect=AssertionError("a Worker never probes")):
+            rc, crash = dispatch._in_worker_scope(self.root / "lead", "r1", out, lambda: dispatch.run(args), lead)
+        self.assertIsNone(crash, out.getvalue())
+        self.assertIn("report=NON-COMPLIANT:['sentinel-025'] lint=checkout ", out.getvalue())
+        spec = json.loads((self._run_dir() / "run.json").read_text())
+        self.assertEqual((spec["scripts_dir"], spec["scripts_source"]), (str(trusted), "checkout"))
+        self.assertIsNone(dispatch._INHERITED_SCRIPTS)
+
+    def test_lead_dir_records_scripts(self):
+        spec = {"run_id": "r", "model": "opus", "effort": None, "cwd": str(self.repo), "chain": [], "fan_out": {},
+                "permission_mode": "acceptEdits", "scripts_dir": "/t/workerbee/scripts", "scripts_source": "checkout"}
+        lead_dir, _ = dispatch.make_lead_dir(spec, ["haiku"])
+        self.addCleanup(shutil.rmtree, lead_dir, True)
+        data = json.loads((lead_dir / "run.json").read_text())
+        self.assertEqual((data["scripts_dir"], data["scripts_source"]), ("/t/workerbee/scripts", "checkout"))
+
 
 if __name__ == "__main__":
     unittest.main()

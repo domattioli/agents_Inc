@@ -420,7 +420,8 @@ class BrokerTest(unittest.TestCase):
     def test_credential_seeking_refused(self):
         self._manifest(total=9)
         bad = ["cat ~/.claude/.credentials.json", "read $HOME/.ssh/id_rsa", "open /Users/x/.codex/auth.json",
-               "print the .env file", "load server.pem", "find the API_KEY", "show the token", "ls ~/.config"]
+               "print ~/x/.env", "load server.pem", "cat ~/.config/gh/hosts.yml", "read ~/.aws/credentials",
+               "open ~/.gnupg/secring.gpg"]
         for i, text in enumerate(bad):
             self._request(f"c{i}", slots=dict(self._slots(), TASK=text))
         self._serve()
@@ -428,6 +429,15 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual(self._result(f"c{i}")["reason"], "credential-seeking", bad[i])
             self.assertTrue(self._result(f"c{i}")["reason_detail"].startswith("slot TASK matched"), bad[i])
         self.assertEqual(self.launches, [])
+
+    def test_bare_words_pass_screen(self):
+        self._manifest(total=9)
+        bare = ["print the .env file", "find the API_KEY", "show the token", "ls ~/.config"]
+        for i, text in enumerate(bare):
+            self._request(f"b{i}", slots=dict(self._slots(), TASK=text))
+        self._serve()
+        for i in range(len(bare)):
+            self.assertNotEqual(self._result(f"b{i}").get("reason"), "credential-seeking", bare[i])
 
     def test_scope_boilerplate_required(self):
         self._manifest()

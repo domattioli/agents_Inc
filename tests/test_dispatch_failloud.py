@@ -146,8 +146,8 @@ class OutcomeOrderTest(DispatchBase):
     def test_verifier_error_is_snapshot_error(self):
         real = dispatch.snapshot
 
-        def snap(*args, cwd):
-            return (2, "git error: nope") if args[0] == "verify" else real(*args, cwd=cwd)
+        def snap(*args, cwd, **kw):
+            return (2, "git error: nope") if args[0] == "verify" else real(*args, cwd=cwd, **kw)
         with mock.patch.object(dispatch, "snapshot", side_effect=snap):
             rc, out, _ = self.dispatch(launch_result(GOOD_REPORT))
         self.assertEqual(rc, 1, out)
@@ -188,7 +188,7 @@ class LaunchFailTest(DispatchBase):
         self.assertIn(spec["run_id"], out)
         self.assertEqual((spec["outcome"], spec["reason"]), ("red", "launch-failed"))
         self.assertIn(name, spec["reason_detail"])
-        self.assertIn("rc=-1 report=none snapshot=none outcome=red reason=launch-failed detail=", out)
+        self.assertIn("rc=-1 report=none lint=installed snapshot=none outcome=red reason=launch-failed detail=", out)
 
     def test_file_not_found(self):
         rc, out, _ = self.dispatch(self._raiser(FileNotFoundError("claude")))

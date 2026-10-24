@@ -244,6 +244,60 @@ class HomeRepoTest(unittest.TestCase):
         self.assertIsNone(dispatch.resolve_home_repo(None, self.root))
 
 
+class ResumeSearchTest(unittest.TestCase):
+    """#93: a bare run id is searched in every candidate parent directory."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.env = mock.patch.dict(os.environ, {"TMPDIR": str(self.root / "tmpdir")})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        os.environ.pop("CLAUDE_SCRATCHPAD", None)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        _git(self.repo, "init", "-q")
+        (self.repo / ".gitignore").write_text(".scratch/\n")
+        (self.repo / ".scratch").mkdir()
+
+    def _resume(self, run_id, run_dir=None):
+        args = SimpleNamespace(resume=run_id, run_dir=run_dir, cwd=str(self.repo), message="go", home_repo=None)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = dispatch.resume(args)
+        return rc, err.getvalue()
+
+    def test_finds_run_under_tmpdir(self):
+        run = self.root / "tmpdir" / "agents-inc-runs" / "r1"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text(json.dumps({"run_id": "r1", "kind": "claude"}))
+        rc, err = self._resume("r1")
+        self.assertEqual(rc, dispatch.EXIT_USAGE)
+        self.assertIn("no session id recorded", err)
+        self.assertNotIn("no run.json", err)
+
+    def test_missing_run_lists_searched_paths_in_order(self):
+        rc, err = self._resume("nope")
+        self.assertEqual(rc, dispatch.EXIT_USAGE)
+        expected = [self.repo / ".scratch" / "agents-inc-runs" / "nope",
+                    self.root / "tmpdir" / "agents-inc-runs" / "nope",
+                    Path("/tmp/agents-inc-runs/nope")]
+        self.assertEqual(err.strip(), f"dispatch: no run.json for nope (searched: {', '.join(map(str, expected))})")
+
+    def test_run_dir_flag_searches_only_that_directory(self):
+        d = self.root / "elsewhere"
+        rc, err = self._resume("nope", run_dir=str(d))
+        self.assertEqual(rc, dispatch.EXIT_USAGE)
+        self.assertEqual(err.strip(), f"dispatch: no run.json for nope (searched: {d / 'nope'})")
+
+    def test_status_ends_with_resume_hint(self):
+        out = self.root / "runs" / "r9" / "stdout.md"
+        spec = {"run_id": "r9", "model": "sonnet", "rc": 0, "outcome": "green"}
+        line = dispatch._status(spec, "COMPLIANT", "clean", out)
+        self.assertTrue(line.endswith(f" (resume with --resume {out.parent.resolve()})"), line)
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -169,8 +169,10 @@ def parse_contract_line(line: str) -> tuple[str, str | None]:
 
 
 # A `[verified]` claim about an exit or gate result must carry the exit code it saw.
-VERIFIED_EXIT_RE = re.compile(r"\[verified\].*\b(?:exit(?:ed|s)?|rc)\b|\b(?:exit(?:ed|s)?|rc)\b.*\[verified\]", re.IGNORECASE)
-EXIT_CODE_RE = re.compile(r"\b(?:exit(?:ed|s)?(?:\s+code)?|rc)\s*[=:]?\s*-?\d+", re.IGNORECASE)
+# `exit code N/A` is the contract's no-gate form (#91).
+_EXIT_RESULT = r"\b(?:exits?\s*[=:]?\s*-?\d+|exited\b|exit\s+code\b|rc\s*[=:])"
+VERIFIED_EXIT_RE = re.compile(r"\[verified\].*" + _EXIT_RESULT + r"|" + _EXIT_RESULT + r".*\[verified\]", re.IGNORECASE)
+EXIT_CODE_RE = re.compile(r"\b(?:exit(?:ed|s)?(?:\s+code)?|rc)\s*[=:]?\s*-?\d+|\bexit\s+code\s*[=:]?\s*N/A\b", re.IGNORECASE)
 
 
 def check_report(text: str) -> list[str]:

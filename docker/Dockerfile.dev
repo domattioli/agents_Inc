@@ -1,0 +1,28 @@
+# Dev image: Linux, real Claude Code and Codex CLIs, agents-inc installed from the mounted checkout.
+# Local use only; never built in CI. Linux has no sandbox-exec, so broker Worker launches are refused
+# with no-sandbox-backend here; direct dispatch runs.
+#
+#   docker build -f docker/Dockerfile.dev -t agents-inc-dev .
+#   docker run --rm -it \
+#     -v "$PWD:/src:ro" \
+#     -v "$HOME/.codex/auth.json:/run/secrets/codex_auth.json:ro" \
+#     -v "$HOME/.config/agents-inc/docker.env:/run/secrets/claude.env:ro" \
+#     agents-inc-dev
+#
+# docker.env holds one line, CLAUDE_CODE_OAUTH_TOKEN=<token from `claude setup-token`>, mode 0600.
+# Both secrets are copied into the container's throwaway home at start; the host files are never written.
+
+FROM node:22-bookworm-slim
+ARG CLAUDE_CODE_VERSION=latest
+ARG CODEX_VERSION=latest
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip git jq ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}" \
+    && npm cache clean --force
+RUN useradd --create-home dev
+USER dev
+ENV HOME=/home/dev PATH=/home/dev/.local/bin:$PATH PYTHONDONTWRITEBYTECODE=1 AGENTS_INC_NO_UPDATE_CHECK=1
+WORKDIR /home/dev
+COPY --chown=dev docker/dev_entry.sh /home/dev/dev_entry.sh
+ENTRYPOINT ["bash", "/home/dev/dev_entry.sh"]
+CMD ["bash"]

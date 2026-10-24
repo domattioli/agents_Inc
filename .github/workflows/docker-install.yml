@@ -1,0 +1,21 @@
+name: docker-install
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  clean-install:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the clean-install image
+        run: docker build -f docker/Dockerfile.ci --build-arg PYTHON_VERSION=${{ matrix.python }} -t agents-inc-ci:${{ matrix.python }} .
+      - name: Install, doctor, dry-run dispatch, snapshot verify, uninstall
+        run: docker run --rm agents-inc-ci:${{ matrix.python }}

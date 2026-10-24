@@ -29,7 +29,7 @@ HTTP bridge or any daemon.
 
 ### Requirements
 
-- Python 3.10 or later. The test suite also runs on Python 3.14.
+- Python 3.11 or later. The test suite also runs on Python 3.14.
 - Bash 3.2 or later. The scripts support macOS system Bash.
 - Claude Code CLI, signed in through an Anthropic subscription.
 - `jq`, used by the hook scripts and the `@alias` router.

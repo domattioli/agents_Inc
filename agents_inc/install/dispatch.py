@@ -43,11 +43,92 @@ EXIT_OK, EXIT_RED, EXIT_USAGE, EXIT_REFUSED = 0, 1, 2, 3
 EXIT_BLOCKED, EXIT_QUOTA = 69, 75  # sysexits EX_UNAVAILABLE; the Codex usage-limit code of runtime.run_codex
 
 
-def _load(name: str):
-    spec = importlib.util.spec_from_file_location(f"_agents_inc_{name}", SCRIPTS / f"{name}.py")
+def _load(name: str, scripts: Path = SCRIPTS):
+    path = Path(scripts) / f"{name}.py"
+    if Path(scripts) != SCRIPTS:
+        _check_pinned(path)
+    spec = importlib.util.spec_from_file_location(f"_agents_inc_{name}", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+# 025 (#104): a dispatch from an agents_Inc checkout is judged by the checkout's workerbee scripts, pinned at launch.
+PINNED_SCRIPTS = ("check_dispatch_prompt.py", "render_dispatch.py", "dispatch_rungs.py", "pre_dispatch_snapshot.py")
+PINNED_TEMPLATES = ("header.md", "slots.md")  # render_dispatch.py reads these from the directory above its own
+
+
+class ScriptsTampered(RuntimeError):
+    """025 (#104): a trusted copy of a checkout script no longer matches the sha256 recorded at launch."""
+
+
+def scripts_dir(cwd: Path) -> tuple[Path, str]:
+    """(<cwd>/skills/workerbee/scripts, "checkout") when cwd holds agents_inc/install/dispatch.py and the four
+    workerbee scripts as regular files (a symlink counts as missing) and is not inside the installed bundle;
+    else (SCRIPTS, "installed")."""
+    scripts = Path(cwd) / "skills/workerbee/scripts"
+    probes = [Path(cwd) / "agents_inc/install/dispatch.py"] + [scripts / n for n in PINNED_SCRIPTS]
+    if (not Path(cwd).resolve().is_relative_to(REPO_ROOT.resolve())
+            and all(p.is_file() and not p.is_symlink() for p in probes)):
+        return scripts, "checkout"
+    return SCRIPTS, "installed"
+
+
+def _pin_scripts(src: Path, run_id: str) -> Path:
+    """Copy the checkout scripts (and the render templates) into the run's private trust folder, outside cwd, and
+    record each file's sha256 in its trust.json. Return the trusted scripts directory. Raises OSError."""
+    folder = _trust_path(run_id)
+    dest = folder / "workerbee" / "scripts"
+    dest.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(folder, 0o700)
+    hashes = {}
+    for name in PINNED_SCRIPTS + PINNED_TEMPLATES:
+        origin = (src if name in PINNED_SCRIPTS else src.parent) / name
+        if name in PINNED_TEMPLATES and not (origin.is_file() and not origin.is_symlink()):
+            origin = SCRIPTS.parent / name
+        data = origin.read_bytes()
+        (dest if name in PINNED_SCRIPTS else dest.parent).joinpath(name).write_bytes(data)
+        hashes[name] = _sha256_bytes(data)
+    (folder / "trust.json").write_text(json.dumps({"schema_version": 1, "scripts_sha256": hashes}, indent=1) + "\n",
+                                       encoding="utf-8")
+    return dest
+
+
+def _check_pinned(path: Path, folder: Path | None = None) -> None:
+    """Raise ScriptsTampered unless path's sha256 matches scripts_sha256 in <folder>/trust.json; folder defaults to
+    the trust folder of a script under <folder>/workerbee/scripts/."""
+    try:
+        record = json.loads(((folder or path.parent.parent.parent) / "trust.json").read_text(encoding="utf-8"))
+        ok = _sha256_bytes(path.read_bytes()) == record["scripts_sha256"][path.name]
+    except (OSError, ValueError, KeyError, TypeError):
+        ok = False
+    if not ok:
+        raise ScriptsTampered(f"{path.name} differs from its trusted record")
+
+
+def _scripts(spec: dict | None) -> Path:
+    """The directory a run loads workerbee scripts from: its trusted copy for a checkout run, else SCRIPTS."""
+    if spec and spec.get("scripts_source") == "checkout" and spec.get("scripts_dir"):
+        return Path(spec["scripts_dir"])
+    return SCRIPTS
+
+
+def _scripts_tampered(scripts: Path) -> str | None:
+    """Why a trusted copy fails its hash check, else None (always None for the installed bundle)."""
+    if Path(scripts) == SCRIPTS:
+        return None
+    try:
+        for name in PINNED_SCRIPTS:
+            _check_pinned(Path(scripts) / name)
+        for name in PINNED_TEMPLATES:
+            _check_pinned(Path(scripts).parent / name, Path(scripts).parent.parent)
+    except ScriptsTampered as exc:
+        return str(exc)
+    return None
+
+
+# Set by _in_worker_scope: (scripts_dir, scripts_source) of the Lead, which a broker Worker inherits and never probes.
+_INHERITED_SCRIPTS: tuple | None = None
 
 
 def default_parent(cwd: Path | None = None) -> Path:
@@ -60,6 +141,19 @@ def default_parent(cwd: Path | None = None) -> Path:
                 return Path(cwd) / ".scratch" / "agents-inc-runs"
     base = os.environ.get("CLAUDE_SCRATCHPAD") or os.environ.get("TMPDIR") or "/tmp"
     return Path(base) / "agents-inc-runs"
+
+
+def _run_dir_ignored(parent: Path, cwd: Path) -> bool:
+    """025 (#106): False only when parent sits inside cwd and git says it is not ignored. Outside cwd, no git,
+    or cwd not a repo: True (the snapshot capture reports a missing repo)."""
+    if not parent.is_relative_to(cwd):
+        return True
+    try:  # trailing slash: a not-yet-created directory still matches a `runs/` rule
+        res = subprocess.run(["git", "-C", str(cwd), "check-ignore", "-q", str(parent.relative_to(cwd)) + "/"],
+                             capture_output=True)
+    except OSError:
+        return True
+    return res.returncode != 1
 
 
 HOME_REPO_RE = re.compile(r"agents-inc home repo:\s*(\S+)", re.IGNORECASE)
@@ -84,9 +178,9 @@ def new_run_id(model: str) -> str:
     return f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{model}-{secrets.token_hex(3)}"
 
 
-def render(slots_path: Path, model: str | None = None) -> tuple[int, str, str]:
+def render(slots_path: Path, model: str | None = None, scripts: Path = SCRIPTS) -> tuple[int, str, str]:
     """Render via render_dispatch.main() in-process; return (rc, prompt, stderr)."""
-    module = _load("render_dispatch")
+    module = _load("render_dispatch", scripts)
     out, err = io.StringIO(), io.StringIO()
     saved = sys.argv
     sys.argv = ["render_dispatch.py", "--slots", str(slots_path)] + (["--model", model] if model else [])
@@ -108,10 +202,10 @@ def _handoff_lint(module, path: Path, profile: str | None) -> tuple[int, str]:
     return rc, err.getvalue()
 
 
-def lint_prompt(path: Path, tier: str | None, model: str | None = None) -> tuple[list, str]:
+def lint_prompt(path: Path, tier: str | None, model: str | None = None, scripts: Path = SCRIPTS) -> tuple[list, str]:
     """Return (missing contract elements, log). handoff-lint findings are advisory:
     they go to the log (lint.txt) and never add to `missing`, so they never refuse."""
-    module = _load("check_dispatch_prompt")
+    module = _load("check_dispatch_prompt", scripts)
     missing = module.check(path.read_text(encoding="utf-8"), tier, model=model)
     rc, log = _handoff_lint(module, path, None)
     if rc:
@@ -127,8 +221,8 @@ def inject_snapshot(prompt: str, snapshot_path: str) -> str:
     return prompt.rstrip("\n") + f"\nSNAPSHOT: {snapshot_path}\n"
 
 
-def lint_report(path: Path) -> tuple[list, str]:
-    module = _load("check_dispatch_prompt")
+def lint_report(path: Path, scripts: Path = SCRIPTS) -> tuple[list, str]:
+    module = _load("check_dispatch_prompt", scripts)
     missing = module.check_report(path.read_text(encoding="utf-8"))
     rc, log = _handoff_lint(module, path, "report")
     if rc:
@@ -136,8 +230,11 @@ def lint_report(path: Path) -> tuple[list, str]:
     return missing, log
 
 
-def snapshot(*args: str, cwd: Path) -> tuple[int, str]:
-    res = subprocess.run([sys.executable, str(SCRIPTS / "pre_dispatch_snapshot.py"), *args],
+def snapshot(*args: str, cwd: Path, scripts: Path = SCRIPTS) -> tuple[int, str]:
+    script = Path(scripts) / "pre_dispatch_snapshot.py"
+    if Path(scripts) != SCRIPTS:
+        _check_pinned(script)
+    res = subprocess.run([sys.executable, str(script), *args],
                          cwd=str(cwd), capture_output=True, text=True)
     return res.returncode, res.stdout + res.stderr
 
@@ -439,7 +536,7 @@ LEAD_RUNGS = ("astra", "sol", "terra", "fable", "opus", "sonnet")  # models that
 LEAD_TOOLS = tuple(f"mcp__agents_inc__{t}" for t in ("dispatch", "status", "wait", "resume", "answer"))
 
 
-def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
+def lead_roster(model: str, slots: dict, fan_out: dict | None, scripts: Path = SCRIPTS) -> list[str]:
     """#68 (D57, D60): a Codex or Claude delegate gets the broker on the same terms as a Claude delegate gets subagents: a FAN_OUT
     total above 0 (and, for Claude, depth above 0) and models named in SUB-DELEGATE MODEL ALLOWLIST. Keep only models the
     D46.3 rung rule allows: any lower rung, and a Workhorse only the Grunt rung. Empty list: no broker."""
@@ -447,7 +544,7 @@ def lead_roster(model: str, slots: dict, fan_out: dict | None) -> list[str]:
         return []
     if _kind(model) == "claude" and fan_out.get("depth", 0) <= 0:
         return []
-    rungs = _load("dispatch_rungs")
+    rungs = _load("dispatch_rungs", scripts)
     text = str(slots.get("ALLOWLIST", "")).lower()
     mine = rungs.LADDER.index(rungs.MODEL_RUNG[model])
     named = [m for m in (*CODEX_SLUGS, *CLAUDE_MODELS) if re.search(rf"\b{m}\b", text)]
@@ -492,7 +589,8 @@ def make_lead_dir(spec: dict, roster: list[str], parent: dict | None = None) -> 
         raise ValueError("lead-dir-inside-cwd: TMPDIR sits inside the delegate's cwd")
     data = {"schema_version": 1, "run_id": spec["run_id"], "model": spec["model"], "effort": spec["effort"],
             "cwd": spec["cwd"], "chain": spec["chain"], "worker_models": roster, "fan_out": spec["fan_out"],
-            "permission_mode": spec["permission_mode"]}
+            "permission_mode": spec["permission_mode"],
+            "scripts_dir": spec.get("scripts_dir") or str(SCRIPTS), "scripts_source": spec.get("scripts_source") or "installed"}
     token = None
     if parent is not None:
         from .runtime import MCP_BROKER, MCP_TOOL_TIMEOUT_SEC
@@ -740,6 +838,10 @@ def _record_trust(spec: dict, run_dir: Path, prompt: str) -> bool:
         trust.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(trust, 0o700)
         (trust / "snapshot.json").write_bytes(data)
+        with contextlib.suppress(OSError, ValueError, AttributeError):  # keep the 025 scripts_sha256 written at pin time
+            pinned = json.loads((trust / "trust.json").read_text(encoding="utf-8")).get("scripts_sha256")
+            if pinned:
+                record = json.dumps({**json.loads(record), "scripts_sha256": pinned}, indent=1) + "\n"
         (trust / "trust.json").write_text(record, encoding="utf-8")
         return True
     except OSError as exc:
@@ -765,8 +867,21 @@ def _trust_record(spec: dict, run_dir: Path) -> tuple[dict | None, Path | None]:
 
 
 def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt") -> tuple[str, str, int]:
-    missing, log = lint_report(out_path)
+    scripts = _scripts(spec)
+    bad = _scripts_tampered(scripts)
+    if bad:  # 025 (#104): a changed trusted copy judges nothing; the run is red snapshot-tampered
+        _wtext(run_dir / name, f"lint source: {scripts}\nreport: none\nscripts: {bad}\nsnapshot rc=1\n")
+        return "none", "TAMPERED", 1
+    missing, log = lint_report(out_path, scripts=scripts)
     report = "COMPLIANT" if not missing else f"NON-COMPLIANT:{missing}"
+    src, slog, snap = _snapshot_verify(spec, run_dir)
+    _wtext(run_dir / name, f"lint source: {scripts}\nreport: {report}\n{log}\nsnapshot rc={src}\n{slog}")
+    return report, snap, src
+
+
+def _snapshot_verify(spec: dict, run_dir: Path) -> tuple[int, str, str]:
+    """(rc, log, snap) of one scope-gate verify against the trusted snapshot: snap is clean, CHANGED:<paths>,
+    TAMPERED or ERROR:<why>. Shared by the verify after the turn and the one after the gates (025 #107)."""
     allow = list(spec["gates"]["allow"])
     cwd = Path(spec["cwd"])
     try:
@@ -789,14 +904,16 @@ def _verify(spec: dict, run_dir: Path, out_path: Path, name: str = "verify.txt")
     if verdict is not None:
         src, slog, snap = verdict
     else:
-        args = ["verify", snap_file]
+        args = ["verify", snap_file, "--repo", str(cwd)]  # #92: never depend on the subprocess cwd
         for a in allow:
             args += ["--allow", a]
-        src, slog = snapshot(*args, cwd=cwd)
-        changed = [ln[8:] for ln in slog.splitlines() if ln.startswith("CHANGED ")]
+        try:
+            src, slog = snapshot(*args, cwd=cwd, scripts=_scripts(spec))
+        except ScriptsTampered as exc:
+            return 1, f"{exc}\n", "TAMPERED"
+        changed =[ln[8:] for ln in slog.splitlines() if ln.startswith("CHANGED ")]
         snap = "clean" if src == 0 else ("CHANGED:" + ",".join(changed) if changed else f"ERROR:rc={src}")
-    _wtext(run_dir / name, f"report: {report}\n{log}\nsnapshot rc={src}\n{slog}")
-    return report, snap, src
+    return src, slog, snap
 
 
 WORKERS_SPAWNED_RE = re.compile(r"^\W*(?:\[(?:verified|inferred|assumed)\]\s*)?workers spawned:\s*(\d+)(?:\s+this turn\b.*)?\W*$", re.IGNORECASE | re.MULTILINE)
@@ -808,9 +925,9 @@ def parse_workers_spawned(text: str) -> int | None:
     return int(hits[-1]) if hits else None
 
 
-def parse_fan_out(prompt: str) -> dict | None:
+def parse_fan_out(prompt: str, scripts: Path = SCRIPTS) -> dict | None:
     """Return the D48 FAN_OUT budget from a rendered prompt as {width, total, depth}, else None."""
-    found = _load("check_dispatch_prompt").parse_fan_out(prompt)
+    found = _load("check_dispatch_prompt", scripts).parse_fan_out(prompt)
     return dict(zip(("width", "total", "depth"), found)) if found else None
 
 
@@ -836,7 +953,7 @@ def _fan_out_check(spec: dict, out_path: Path) -> str | None:
 def _run_gates(spec: dict) -> tuple[list, str | None]:
     """D58: run each structured gate with no shell after the delegate exits. Return (results, red reason):
     gate-missing when a gate could not run, else gate-failed when an exit code differs, else None."""
-    danger, results = _load("render_dispatch").DANGER_RE, []
+    danger, results = _load("render_dispatch", _scripts(spec)).DANGER_RE, []
     for g in spec["gate_commands"]:
         row = {"argv": g["argv"], "cwd": g["cwd"], "expect_rc": g["expect_rc"], "rc": None, "excerpt": ""}
         joined = " ".join(g["argv"])
@@ -893,6 +1010,8 @@ def _outcome(spec: dict, report: str, vrc: int, rc: int, fan_reason: str | None,
         return "red", "rc-nonzero"
     if fan_reason:
         return "red", fan_reason
+    if report == "none" and snap == "TAMPERED":  # 025 (#104): the trusted script copy changed, nothing was judged
+        return "red", "snapshot-tampered"
     if report != "COMPLIANT":
         return "red", "report-noncompliant"
     if snap == "TAMPERED":
@@ -919,8 +1038,10 @@ def _stderr_detail(stderr: str | None) -> str:
 def _status(spec: dict, report: str, snap: str, out_path: Path) -> str:
     reason = f" reason={spec['reason']}" if spec.get("reason") else ""
     detail = f" detail={spec['reason_detail']}" if spec.get("reason_detail") else ""
-    return (f"dispatch {spec['run_id']} {spec['model']} rc={spec['rc']} report={report} snapshot={snap} "
-            f"outcome={spec['outcome']}{reason}{detail} out={out_path}")
+    return (f"dispatch {spec['run_id']} {spec['model']} rc={spec['rc']} report={report} "
+            f"lint={spec.get('scripts_source') or 'installed'} snapshot={snap} "
+            f"outcome={spec['outcome']}{reason}{detail} out={out_path} "
+            f"(resume with --resume {out_path.parent.resolve()})")
 
 
 def _mirror(spec: dict, run_dir: Path, home_repo: str | None, prompt: str | None = None) -> str | None:
@@ -983,10 +1104,19 @@ def _finish(spec: dict, run_dir: Path, out_path: Path, result: dict, home_repo: 
     gated, skipped, gate_reason = bool(spec.get("gate_commands")), False, None
     if gated and _BROKER_SAFE_WRITES:
         gated, skipped, spec["gate_results"] = False, True, None  # a broker child never runs commands for its Lead
-    elif gated:  # after _verify, so gate side effects never count against the snapshot
+    elif gated and report == "none":  # tampered scripts: run no gate with them
+        spec["gate_results"], gate_reason = None, "gate-missing"
+    elif gated:  # after _verify; a second verify then catches a gate that writes into the repo (025 #107)
         spec["gate_results"], gate_reason = _run_gates(spec)
         if spec.get("resumes"):
             spec["resumes"][-1]["gate_results"] = spec["gate_results"]
+        src2, slog2, snap2 = _snapshot_verify(spec, run_dir)
+        with open(run_dir / verify_name, "a", encoding="utf-8") as fh:
+            fh.write("after gates: clean\n" if src2 == 0 else f"after gates:\nsnapshot rc={src2}\n{slog2}")
+        if snap == "clean" and snap2 != "clean":
+            snap = snap2  # TAMPERED and ERROR: keep their own reasons through _outcome
+            if snap2.startswith("CHANGED:"):
+                gate_reason = "gate-wrote"  # outranks gate-failed and gate-missing
     stdout, stderr = result.get("stdout") or "", result.get("stderr") or ""
     is_error = bool(result.get("is_error"))
     spec["is_error"] = is_error
@@ -1050,9 +1180,9 @@ def _record_ledger_node(spec: dict, slots: dict) -> None:
         spec["ledger_error"] = f"{type(exc).__name__}: {exc}"
 
 
-def _grants_from_slots(slots: dict, cwd: Path) -> tuple[list | None, list, tuple | None]:
+def _grants_from_slots(slots: dict, cwd: Path, scripts: Path = SCRIPTS) -> tuple[list | None, list, tuple | None]:
     """Parse GATES and BASH_ALLOW. Return (gates, bash_allow, None) or (None, [], (refused outcome, why))."""
-    rd = _load("render_dispatch")
+    rd = _load("render_dispatch", scripts)
     gates, why = rd.parse_gates(slots.get("GATES"))
     if why:
         return None, [], ("refused-gates", why)
@@ -1125,10 +1255,38 @@ def run(args) -> int:
     except (OSError, ValueError) as exc:
         print(f"dispatch: cannot read slots: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    if not isinstance(slots, dict):
+        print(f"dispatch: slots must be a JSON object, got {type(slots).__name__}: {slots_path}", file=sys.stderr)
+        return EXIT_USAGE
+    hit = credential_hit(slots)  # 025 (#105): the broker's request text screen, before anything is written
+    if hit:
+        print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
+        return EXIT_REFUSED
     cwd = Path(args.cwd or os.getcwd()).resolve()
+    if not cwd.is_dir():
+        print(f"dispatch: cwd is not a directory: {cwd}", file=sys.stderr)
+        return EXIT_USAGE
+    if args.run_dir and not _run_dir_ignored(Path(args.run_dir).resolve(), cwd):
+        print(f"dispatch: --run-dir {Path(args.run_dir).resolve()} is inside --cwd and not git-ignored; "
+              "later snapshot verifies would see its files", file=sys.stderr)
+        return EXIT_USAGE
     run_id = new_run_id(model)
     run_dir = Path(args.run_dir or default_parent(cwd)).resolve() / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        run_dir.mkdir(parents=True, exist_ok=False)
+    except OSError as exc:
+        print(f"dispatch: cannot create run directory {run_dir}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    if _BROKER_SAFE_WRITES:  # 025 (#104): a broker Worker loads its Lead's scripts and never probes its own cwd
+        sdir, ssrc = _INHERITED_SCRIPTS or (SCRIPTS, "installed")
+    else:
+        sdir, ssrc = scripts_dir(cwd)
+        if ssrc == "checkout":
+            try:
+                sdir = _pin_scripts(sdir, run_id)
+            except OSError as exc:
+                print(f"dispatch: cannot pin checkout scripts: {exc}", file=sys.stderr)
+                return EXIT_RED
     if _BROKER_SAFE_WRITES:
         _wtext(run_dir / "slots.json", slots_path.read_text(encoding="utf-8"))
     else:
@@ -1139,10 +1297,11 @@ def run(args) -> int:
             "permission_mode": slots.get("PERMISSION_MODE") or DEFAULT_PERMISSION_MODE,
             "codex_write": codex_write(slots),
             "codex_network": codex_network(slots),
+            "scripts_dir": str(sdir), "scripts_source": ssrc,
             "rc": None, "outcome": None, "session_id": None}
     lint = run_dir / "lint.txt"
     globs = scope_globs(str(slots.get("FILES_IN_SCOPE", "")))
-    gates, bash_allow, why = _grants_from_slots(slots, cwd)
+    gates, bash_allow, why = _grants_from_slots(slots, cwd, sdir)
     if globs:
         why = ("refused-scope", f"FILES_IN_SCOPE has glob patterns the scope gate cannot match: {' '.join(globs)}; list exact paths")
     if why:
@@ -1162,7 +1321,7 @@ def run(args) -> int:
             spec["outcome"] = "refused-grants"; _write_json(run_dir / "run.json", spec)
             print(f"dispatch {run_id} {model} refused refused-grants: {why} lint={lint}")
             return EXIT_REFUSED
-    rc, prompt, err = render(slots_path, model)
+    rc, prompt, err = render(slots_path, model, sdir)
     if rc != 0:
         _wtext(lint, f"render rc={rc}\n{err}")
         spec["outcome"] = "refused-render"; _write_json(run_dir / "run.json", spec)
@@ -1174,7 +1333,7 @@ def run(args) -> int:
         print(f"dispatch {run_id} {model} refused scope-boilerplate-missing lint={lint}")
         return EXIT_REFUSED
     # Capture first so the real snapshot path reaches the prompt; lint after injection.
-    src, slog = snapshot("capture", spec["snapshot"], cwd=cwd)
+    src, slog = snapshot("capture", spec["snapshot"], cwd=cwd, scripts=sdir)
     if src != 0:
         spec["outcome"] = "snapshot-failed"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} snapshot failed rc={src}: {slog.strip()}")
@@ -1182,22 +1341,22 @@ def run(args) -> int:
     prompt = inject_snapshot(prompt, spec["snapshot"])
     # #66: the installed scripts sit under ~/.local, which the Codex sandbox denies; ship a copy beside the snapshot
     verifier = run_dir / "pre_dispatch_snapshot.py"
-    _wtext(verifier, (SCRIPTS / "pre_dispatch_snapshot.py").read_text(encoding="utf-8"))
+    _wtext(verifier, (sdir / "pre_dispatch_snapshot.py").read_text(encoding="utf-8"))
     prompt = prompt.rstrip("\n") + f"\nSNAPSHOT VERIFIER: `python3 {verifier} verify {spec['snapshot']}` (use this copy)\n"
     if kind == "claude":
         prompt += grants_section(spec["allowed_tools"], spec["disallowed_tools"], bash_allow, spec["permission_mode"])
     if _BROKER_SAFE_WRITES and _WORKER_ASK:
         prompt += ASK_LEAD_NOTE
-    spec["fan_out"] = parse_fan_out(prompt)
+    spec["fan_out"] = parse_fan_out(prompt, sdir)
     prompt_path = run_dir / "prompt.md"
     _wtext(prompt_path, prompt)
-    missing, log = lint_prompt(prompt_path, args.tier, model)
+    missing, log = lint_prompt(prompt_path, args.tier, model, scripts=sdir)
     _wtext(lint, ("COMPLIANT\n" if not missing else f"NON-COMPLIANT missing: {missing}\n") + log)
     if missing:
         spec["outcome"] = "refused-lint"; _write_json(run_dir / "run.json", spec)
         print(f"dispatch {run_id} {model} refused NON-COMPLIANT:{missing} lint={lint}")
         return EXIT_REFUSED
-    roster = [] if _BROKER_SAFE_WRITES else lead_roster(model, slots, spec["fan_out"])
+    roster = [] if _BROKER_SAFE_WRITES else lead_roster(model, slots, spec["fan_out"], sdir)
     if kind == "claude" and model in LEAD_RUNGS and not _BROKER_SAFE_WRITES:
         skipped = lead_skip_reason(spec, roster)
         if skipped:
@@ -1254,11 +1413,38 @@ def run(args) -> int:
     return _finish(spec, run_dir, out_path, result, getattr(args, "home_repo", None), prompt=prompt)
 
 
+def _resume_candidates(cwd: Path, run_id: str, run_dir_arg) -> list[Path]:
+    """Run directories where a bare run id may live. An explicit --run-dir is the only candidate; else every parent
+    a dispatch could have used (default_parent, repo .scratch, session scratchpad, TMPDIR, /tmp), first form kept."""
+    if run_dir_arg:
+        return [Path(run_dir_arg).resolve() / run_id]
+    parents = [default_parent(cwd), Path(cwd) / ".scratch" / "agents-inc-runs"]
+    parents += [Path(base) / "agents-inc-runs" for base in (os.environ.get("CLAUDE_SCRATCHPAD"),
+                                                            os.environ.get("TMPDIR"), "/tmp") if base]
+    found, seen = [], set()
+    for parent in parents:
+        cand = parent / run_id
+        key = cand.resolve()
+        if key not in seen:
+            seen.add(key)
+            found.append(cand)
+    return found
+
+
 def resume(args) -> int:
     """Send one more turn to a finished delegate: Claude via its session id, Codex via its thread id (D54)."""
     cwd = Path(getattr(args, "cwd", None) or os.getcwd()).resolve()
     given = Path(args.resume)  # a run id under --run-dir, or a path to the run directory itself
-    run_dir = given.resolve() if (given.is_absolute() or len(given.parts) > 1) and (given / "run.json").is_file() else Path(args.run_dir or default_parent(cwd)).resolve() / args.resume
+    if (given.is_absolute() or len(given.parts) > 1) and (given / "run.json").is_file():
+        run_dir = given.resolve()
+    else:
+        candidates = _resume_candidates(cwd, args.resume, args.run_dir)
+        run_dir = next((c for c in candidates if (c / "run.json").is_file()), None)
+        if run_dir is None:
+            print(f"dispatch: no run.json for {args.resume} (searched: {', '.join(str(c) for c in candidates)})",
+                  file=sys.stderr)
+            return EXIT_USAGE
+        run_dir = run_dir.resolve()
     try:
         spec = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1271,6 +1457,10 @@ def resume(args) -> int:
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
+    hit = credential_hit({"MESSAGE": args.message})  # 025 (#105): same screen as the broker's resume message
+    if hit:
+        print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
+        return EXIT_REFUSED
     home = getattr(args, "home_repo", None)
     n = len(spec.get("resumes", [])) + 1
     # 022: the trusted snapshot is found from the run directory the caller selected (its name is the run id); run.json
@@ -1281,6 +1471,19 @@ def resume(args) -> int:
         return _red_before_run(spec, run_dir, "snapshot-tampered",
                                f"run.json run_id {spec.get('run_id')!r} differs from run directory {run_dir.name!r}",
                                home, f"stdout.{n}.md", "TAMPERED")
+    # 025 (#104): the trusted script copy is located by the run directory's name, never by run.json's scripts_dir.
+    if _BROKER_SAFE_WRITES:
+        sdir, ssrc = _INHERITED_SCRIPTS or (SCRIPTS, "installed")
+    elif spec.get("scripts_source") == "checkout":
+        sdir, ssrc = _trust_path(run_dir.name) / "workerbee" / "scripts", "checkout"
+        if spec.get("scripts_dir") != str(sdir):
+            spec.setdefault("resumes", []).append({"rc": -1, "out": str(run_dir / f"stdout.{n}.md")})
+            return _red_before_run(spec, run_dir, "snapshot-tampered",
+                                   f"run.json scripts_dir {spec.get('scripts_dir')!r} differs from the trusted copy {str(sdir)!r}",
+                                   home, f"stdout.{n}.md", "TAMPERED")
+    else:
+        sdir, ssrc = SCRIPTS, "installed"
+    spec["scripts_dir"], spec["scripts_source"] = str(sdir), ssrc
     # Trust mode comes from the context, not from run.json (delegate-writable): a private record always wins.
     claimed = spec.get("snapshot_trust")
     if not _BROKER_SAFE_WRITES and (_trust_path(run_dir.name) / "trust.json").is_file():
@@ -1352,9 +1555,19 @@ SCOPE_LINE = "SCOPE BOILERPLATE: repo-scoped writes only"
 # Request text that points the credential-bearing Worker at secrets is refused.
 # #95: ~/.claude/skills/ paths (workerbee scripts) pass unless a later .. climbs out.
 _HOME_CRED = r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude(?!/skills/(?!\S*\.\.))|codex|ssh|config|aws|gnupg|netrc|local|codex-bridge)\b"
-# #95: the word token, not tokens or tokenizer.
+# 025 (#85, #87): the slot text screen matches locations, never bare words such as credentials, token or api_key.
+# A home directory matches only with a further non-glob segment, so deny-list prose (`~/.claude/**`) passes;
+# ~/.local/bin/ and ~/.local/share/agents-inc/ are exempt like ~/.claude/skills/.
+_HOME_CRED_TEXT = (r"(~|\$HOME|\$\{HOME\}|/Users/[^/\s]+|/home/[^/\s]+|/root)/\.(claude(?!/skills/(?!\S*\.\.))|codex|ssh"
+                   r"|config|aws|gnupg|netrc|local(?!/(?:bin|share/agents-inc)/(?!\S*\.\.))|codex-bridge)\b"
+                   r"/(?![^\s/]*[*?\[])[^\s/'\"`,;)]+")
+_ENV_READ_VERBS = r"cat|read|print|open|source|dump|echo|show|less|head|tail"
 CREDENTIAL_RE = re.compile(
-    _HOME_CRED + r"|\.env\b|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials|(?<![a-z])token(?![a-z])|api[_-]?key", re.IGNORECASE)
+    _HOME_CRED_TEXT
+    + r"|(?<![^\s/='\"])(?:id_rsa|id_ed25519|[^\s/]*\.(?:pem|key))(?=$|[\s/'\".,;:)])"  # key files as path tokens
+    + r"|(?<=[/~])\.env(?:\.[\w.-]+)?\b"  # .env after a path separator or ~
+    + r"|`[^`\n]*?(?<![\w-])(?:" + _ENV_READ_VERBS + r")\s+\.env(?:\.[\w.-]+)?(?=[\s`])[^`\n]*`",  # `cat .env`
+    re.IGNORECASE)
 # Gate and BASH_ALLOW screen: names a credential path, not a word. test_token_refresh.py and check_credentials_schema.py pass.
 GATE_CREDENTIAL_RE = re.compile(
     _HOME_CRED + r"|(?:^|[\s/='\"])(?:\.env(?:\.[\w.-]+)?|id_rsa|id_ed25519|[^\s/]*\.(?:pem|key))(?=$|[\s/'\"])",
@@ -1521,7 +1734,7 @@ def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, st
         return None, "model-not-allowed"
     if req["effort"] not in _efforts_for(model):
         return None, "bad-effort"
-    rung = _load("dispatch_rungs").MODEL_RUNG.get(model)
+    rung = _load("dispatch_rungs", _scripts(spec)).MODEL_RUNG.get(model)
     if req["tier"] != rung:
         return None, "tier-model-mismatch"
     slots = req["slots"]
@@ -1737,10 +1950,12 @@ def _run_validated(run_dir: Path, rid: str, req: dict, spec: dict, home_repo: st
 def _in_worker_scope(run_dir: Path, rid: str, out, fn, spec: dict | None = None) -> tuple[int, str | None]:
     """Run fn (a D47 run or resume) with the broker's Worker confinement on; return (rc, crash reason). spec: the
     Lead run.json; a Claude Lead's (parent_run_id) grants become the Worker's ceiling (D60)."""
-    global _BROKER_SAFE_WRITES, _BROKER_DENY, _WORKER_ASK, _GRANT_CEILING
+    global _BROKER_SAFE_WRITES, _BROKER_DENY, _WORKER_ASK, _GRANT_CEILING, _INHERITED_SCRIPTS
     with contextlib.redirect_stdout(out):
         try:
             _BROKER_SAFE_WRITES, _WORKER_ASK = True, rid
+            if spec and spec.get("scripts_source") == "checkout":  # 025 (#104): the Worker inherits the Lead's scripts
+                _INHERITED_SCRIPTS = (_scripts(spec), "checkout")
             if spec and spec.get("parent_run_id"):
                 _GRANT_CEILING = (list(spec.get("parent_allowed_tools") or []), list(spec.get("parent_disallowed_tools") or []))
             codex_home = os.environ.get("CODEX_HOME")  # read, never logged
@@ -1750,7 +1965,7 @@ def _in_worker_scope(run_dir: Path, rid: str, out, fn, spec: dict | None = None)
             return REQ_RED, f"dispatch-exception:{type(exc).__name__}"
         finally:
             _BROKER_SAFE_WRITES, _WORKER_ASK = False, None
-            _BROKER_DENY, _GRANT_CEILING = (), None
+            _BROKER_DENY, _GRANT_CEILING, _INHERITED_SCRIPTS = (), None, None
 
 
 # ---------------------------------------------------------------------------

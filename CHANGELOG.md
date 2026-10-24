@@ -10,10 +10,28 @@ All notable changes to this project are recorded here. The format follows
 
 - Dispatch slot gaps from #100: a `GATES` entry may be a plain command string (shlex-split, no shell) as well as an `{argv, cwd, timeout_s, expect_rc}` object, and a blank `PRE_EXISTING_CHANGES` is filled by the renderer with the snapshot placeholder text and one `--allow` per path in `FILES_IN_SCOPE`. QUICKREF and `slots.md` show the GATES object shape.
 - Sandboxed sessions no longer learn about the #94 refusal at dispatch time: doctor warns `WB_SANDBOX_EXCLUDE_MISSING` when the Claude settings file lacks `"agents-inc *"` under `sandbox.excludedCommands`, and the session-start hook names that exact operator ask. `agents-inc install` and `repair` now add that entry on the Claude host (other entries untouched) and `unwire` removes only it. The hook also explains `INSTALL_STALE`.
+- The report lint accepts the contract's no-gate form `exit code N/A`, and the `[verified]` exit check no longer fires on `exit` used as a plain word (#91).
+- The snapshot verify gate is one plain command: capture records the repository, `verify` takes `--repo` or reads it from the snapshot, and the renderer refuses a verify gate written with `cd` or `&&` (#92).
+- `--resume <run id>` searches every parent directory a dispatch could have used and lists them when it finds no run; the status line names the absolute run directory to resume (#93).
+- `agents-inc install` after `pip install --user` or pipx no longer fails with `WB_CONFIG_CONFLICT`: the console script pip writes to `~/.local/bin/agents-inc` is recognised as this package's own launcher, kept in place, and left alone by `uninstall`. Found by the new clean-install container check.
+- `agents-inc uninstall` removes the `current` link and the release tree it owns, so `doctor` afterwards says `WB_NOT_INSTALLED` alone and a reinstall starts with no predecessor. Before, the leftover link made doctor add `WB_RELEASE_UNTRUSTED` and gave the next install a predecessor equal to itself, which `rollback` then "restored" with exit 0. `rollback` now refuses with `nothing to roll back` when the predecessor is the current release, and `doctor` with no receipt at all reports only `WB_NOT_INSTALLED`. Found by the Docker stress run (2026-10-23).
+- `agents-inc dispatch` exits 2 with one line instead of a traceback or a bare `[Errno N]` when the slots file holds a JSON list or scalar, when `--cwd` is not a directory, or when `--run-dir` cannot be created.
+- A dispatch from an agents_Inc checkout renders, lints and verifies with the checkout's workerbee scripts, copied at launch into the run's private trust folder with a sha256 record; a changed copy makes the run red `snapshot-tampered`, broker Workers and resumes use the same copy, and the status line says which copy judged (`lint=checkout` or `lint=installed`) (#104)
+- The request text screen matches credential locations, not bare words: `credentials`, `token`, `api_key` and a prose `.env` pass, and so does the rendered SCOPE boilerplate, while home credential paths, key files, a `.env` after a path separator and a backticked `cat .env` are still refused (#85, #87)
+- The direct path (`agents-inc dispatch --slots` and `--resume --message`) applies the broker's request text screen and exits 3 naming the slot and the matched text (#105)
+- `agents-inc dispatch` exits 2 when `--run-dir` sits inside `--cwd` and git does not ignore it, since later snapshot verifies would see the run's own files (#106)
+- A gate that writes into the repository makes the run red `gate-wrote`: the scope gate verifies again after the gates run and appends the result to `verify.txt` (#107)
+- The renderer parses the snapshot verify gate with `shlex` and checks each argument position (interpreter, verifier script, `verify`, snapshot path, then `--allow` or `--repo` pairs), so an invented verifier or a shell operator exits 2 (#108)
 
 ### Added
+- A local dev image (`docker/Dockerfile.dev`, `docker/dev_entry.sh`): Linux with the real Claude Code and Codex CLIs, agents-inc installed from the mounted checkout, credentials mounted read-only under `/run/secrets` and copied into the throwaway home. Never built in CI.
 
+- A clean-install check in Docker (`docker/Dockerfile.ci`, `docker/ci_check.sh`, workflow `docker-install`): builds the wheel, installs it as an unprivileged user with an empty HOME and no Claude or Codex CLI on Python 3.11 and 3.14, then runs `install`, `doctor`, a dry-run dispatch, a snapshot verify from outside the repository, and `uninstall`. It covers install drift and the Linux half; the macOS sandbox paths stay on the Mac. `docker/stress_check.sh` runs the same image against a mounted checkout with a fake `claude` on PATH and no network: malformed slots, gate refusals and outcomes, resume, the broker inbox, concurrent dispatches, uninstall and rollback.
 - The release workflow deposits each release on Zenodo itself (`tools/zenodo_deposit.py`): a new version of the newest record under concept DOI 10.5281/zenodo.22670100, with the built wheel and sdist and metadata from `.zenodo.json` at the tag. It needs the repository secret `ZENODO_TOKEN`. It is a no-op when the version is already archived and refuses when the version sits under another concept. 0.4.2 needed a hand deposit, and the hand deposit picked up a stale local `dist/`.
+
+### Removed
+
+- Python 3.10 support: the package now requires Python 3.11 or later. The 0.4 releases stay installable on 3.10 (#90).
 
 ## [0.4.2] — 2026-10-23
 

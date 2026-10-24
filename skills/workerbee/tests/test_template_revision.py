@@ -173,7 +173,7 @@ class SnapshotTest(unittest.TestCase):
     def test_round_trip(self):
         self.assertEqual(self.snapcmd("capture", self.snap).returncode, 0)
         data = json.loads(self.snap.read_text())
-        self.assertEqual(set(data), {"time", "head", "porcelain", "sha256", "ignored"})
+        self.assertEqual(set(data), {"time", "head", "repo", "porcelain", "sha256", "ignored"})
         self.assertEqual(sorted(data["sha256"]), ["a.txt", "u/deep.txt"])
         self.assertEqual(data["sha256"]["a.txt"], hashlib.sha256(b"a dirty\n").hexdigest())
         self.assertEqual(self.snapcmd("verify", self.snap).returncode, 0)
@@ -330,6 +330,74 @@ class Issue100Test(RenderTest):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         line = proc.stdout.split("PRE-EXISTING CHANGES")[1].split("\n")[1]
         self.assertTrue(line.endswith("verify <snapshot>`"), line)
+
+
+class Issue92Test(RenderTest):
+    """#92: the snapshot verify gate is one plain command, never `cd <repo> && ...`."""
+
+    def test_compound_verify_command_is_refused(self):
+        for cmd in ("cd /repo && python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json",
+                    "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json && echo ok"):
+            slots = self.example()
+            slots["PRE_EXISTING_CHANGES"] = f"snapshot /x/s.json; verify with `{cmd}`"
+            proc = self.render(slots)
+            self.assertEqual(proc.returncode, 2, proc.stdout)
+            self.assertIn("PRE_EXISTING_CHANGES invalid", proc.stderr)
+
+    def test_plain_verify_command_renders(self):
+        slots = self.example()
+        slots["PRE_EXISTING_CHANGES"] = ("snapshot /x/snapshot.json; verify with "
+                                         "`python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/snapshot.json`")
+        proc = self.render(slots)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+
+class VerifyGateParseTest(RenderTest):
+    """#108: the verify gate is parsed by argv position, not matched by substring."""
+
+    def _render_gate(self, cmd):
+        slots = self.example()
+        slots["PRE_EXISTING_CHANGES"] = f"snapshot <snapshot>; verify with `{cmd}`"
+        return self.render(slots)
+
+    def test_bad_gates_exit_2(self):
+        for cmd in ("cd /tmp && python3 pre_dispatch_snapshot.py verify <snapshot>",
+                    "python3 pre_dispatch_snapshot.py verify <snapshot>",
+                    "python3 x.py verify <snapshot>"):
+            with self.subTest(cmd=cmd):
+                proc = self._render_gate(cmd)
+                self.assertEqual(proc.returncode, 2, proc.stdout)
+                self.assertIn("PRE_EXISTING_CHANGES invalid: ", proc.stderr)
+                self.assertIn("; write the verify gate as one plain command", proc.stderr)
+
+    def test_default_text_renders(self):
+        slots = self.example()
+        slots["FILES_IN_SCOPE"] = "agents_inc/policy.py"
+        slots["PRE_EXISTING_CHANGES"] = render_dispatch.default_pre_existing(slots["FILES_IN_SCOPE"])
+        proc = self.render(slots)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_hand_written_absolute_form_renders(self):
+        proc = self._render_gate("/usr/bin/python3 /abs/skills/workerbee/scripts/pre_dispatch_snapshot.py verify "
+                                 "/abs/run/snapshot.json --repo /abs --allow a.py")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_verify_gate_ok_unit(self):
+        ok = render_dispatch.verify_gate_ok
+        self.assertIsNone(ok("python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot> --allow a.py"))
+        for span in ("python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot> | cat",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>; rm x",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify $(cat s)",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot> > out",
+                     "python3 skills/workerbee/scripts/../scripts/pre_dispatch_snapshot.py verify <snapshot>",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py capture <snapshot>",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify /x/s.json",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot> --allow",
+                     "python3 skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot> --force x",
+                     "bash skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>",
+                     "python3 'skills/workerbee/scripts/pre_dispatch_snapshot.py verify <snapshot>"):
+            with self.subTest(span=span):
+                self.assertIsInstance(ok(span), str)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,33 @@ class TestInstallReceiptRegressions(unittest.TestCase):
         doctor = self._cli("doctor")
         self.assertNotIn("WB_RELEASE_UNTRUSTED", doctor.stdout)
 
+    def test_uninstall_removes_current_link_and_release(self):
+        # Docker stress 2026-10-23: uninstall left `current` and the release tree, so doctor said
+        # WB_RELEASE_UNTRUSTED WB_NOT_INSTALLED and a reinstall inherited a predecessor equal to itself.
+        self.assertEqual(self._install().returncode, 0)
+        share = self.home / ".local/share/agents-inc"
+        self.assertTrue((share / "current").is_symlink())
+        r = self._cli("uninstall")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.receipt.exists())
+        self.assertFalse((share / "current").is_symlink() or (share / "current").exists())
+        self.assertFalse((share / "releases").exists(), list(share.rglob("*")) if share.exists() else [])
+        doctor = self._cli("doctor")
+        self.assertIn("WB_NOT_INSTALLED", doctor.stdout + doctor.stderr)
+        self.assertNotIn("WB_RELEASE_UNTRUSTED", doctor.stdout + doctor.stderr)
+        self.assertEqual(self._install().returncode, 0)
+        self.assertIsNone(json.loads(self.receipt.read_text())["prior_release"])
+
+    def test_rollback_refuses_when_predecessor_is_the_current_release(self):
+        self.assertEqual(self._install().returncode, 0)
+        self.assertEqual(self._install("repair").returncode, 0)  # same source, same hash
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual(Path(receipt["prior_release"]).name, receipt["release_hash"])
+        r = self._cli("rollback")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("nothing to roll back", r.stderr)
+        self.assertEqual(json.loads(self.receipt.read_text())["release_hash"], receipt["release_hash"])
+
     def test_rollback_restores_prior_receipt_verbatim(self):
         self.assertEqual(self._install().returncode, 0)
         first = self.receipt.read_bytes()

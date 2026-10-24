@@ -98,6 +98,7 @@ The REPORTING CHAIN line is rendered from the three optional slots and always ha
 
 D51 broker: a Lead sends these slots inline as `slots` in `<run-dir>/inbox/<id>.request.json`
 (write `.tmp`, then rename; keys schema_version, request_id, model, effort, tier, slots; never PERMISSION_MODE, BASH_ALLOW or credential paths; GATES, if sent, is a JSON string).
+The direct path (`agents-inc dispatch --slots`) and the broker apply one request text screen; a refusal names the slot and the matched text.
 It waits with `agents-inc dispatch --wait <run-dir> <id> [--timeout 600]` (1 s polls; exit 124 on timeout), reads `<run-dir>/<id>.report.md`; `inbox/lead.done` stops the broker.
 MCP transport (primary): `agents-inc run --model terra --lead <run-dir>` (astra, sol, terra only; CoS writes run.json first) gives the Lead tools `dispatch(model, effort, slots)`, `status()`, `wait(request_id, timeout)`, `resume(request_id, message)`, `answer(request_id, question_n, text)`: same slots rules, no inbox, no `tier`.
 The file inbox above is the fallback; it takes `{"kind": "resume", "request_id", "message"}` as `<id>-r<n>.request.json` and `{"kind": "answer", "request_id", "question_n", "text"}` (D54).

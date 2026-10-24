@@ -29,6 +29,20 @@ class CliTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "WB_CONFIG_CONFLICT"):
                 install_convenience_launcher(paths)
 
+    def test_install_keeps_pip_console_script_at_launcher_path(self):
+        # `pip install --user agents-inc` writes its console script to ~/.local/bin/agents-inc, the launcher path.
+        with tempfile.TemporaryDirectory() as raw:
+            paths = InstallPaths.for_home(Path(raw) / "home"); paths.launcher.parent.mkdir(parents=True)
+            paths.launcher.write_text("#!/usr/bin/python3\nimport sys\nfrom agents_inc.install.cli import main\n"
+                                      "sys.exit(main())\n")
+            owned = install_convenience_launcher(paths)
+            self.assertEqual(owned.kind, "external")
+            self.assertTrue(paths.launcher.is_file() and not paths.launcher.is_symlink())
+            receipt = InstallReceipt("a" * 64, Path("/usr/bin/python3"), None, (owned,))
+            receipt.save_atomic(paths.receipt)
+            uninstall(paths, receipt)
+            self.assertIn("agents_inc.install.cli", paths.launcher.read_text())
+
     def test_uninstall_preserves_replaced_launcher_and_receipt(self):
         with tempfile.TemporaryDirectory() as raw:
             paths = InstallPaths.for_home(Path(raw) / "home")
