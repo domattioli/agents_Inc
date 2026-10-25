@@ -324,7 +324,8 @@ NO_TOOL_FEATURES = ("shell_tool", "unified_exec", "code_mode_host", "apps", "bro
 NO_TOOL_ARGS = [a for f in NO_TOOL_FEATURES for a in ("-c", f"features.{f}=false")]
 # Codex keeps its JavaScript exec tool even with those features off, and its base instructions teach the model to use it:
 # luna then searched exec for the host's Bash, got "code-mode host is disabled", and answered that it could not run
-# anything (Docker stress run, 2026-10-24). A tool-free run replaces the base instructions with this text.
+# anything (Docker stress run, 2026-10-24). A host-tools run (--host-tools: the luna-brain mod, whose host runs the
+# tools luna names) replaces the base instructions with this text; other tool-free runs keep Codex's own.
 NO_TOOL_INSTRUCTIONS = (
     "You answer in text only: your final message is your whole output. Never call exec or any other Codex tool, and "
     "never look for one; the read-only sandbox note applies to those Codex tools alone. When the user message lists tools "
@@ -332,13 +333,47 @@ NO_TOOL_INSTRUCTIONS = (
     "asks for, and their results arrive in the next message. Never answer that you cannot run a tool the host lists.\n")
 
 
-def no_tool_args() -> list[str]:
-    """NO_TOOL_ARGS plus model_instructions_file pointing at NO_TOOL_INSTRUCTIONS, written once per content."""
-    path = Path(tempfile.gettempdir()) / "agents-inc" / "no-tools-instructions.md"
-    if not path.is_file() or path.read_text() != NO_TOOL_INSTRUCTIONS:
+# The instructions alone did not hold: gpt-6-luna's catalog entry says tool_mode "code_mode_only", so Codex serves it
+# exec whatever the features say, and luna still sent host tool requests to exec (Docker stress run, 2026-10-24).
+# A host-tools run gets a one-model catalog, copied from Codex's own model cache, with these fields replaced:
+# "direct" drops exec, shell_type "disabled" drops exec_command, multi_agent_version "none" drops collaboration.*, and
+# no apply_patch_tool_type drops apply_patch (probed on Codex 0.159.2; luna had called each of them).
+HOST_TOOLS_MODEL = {"tool_mode": "direct", "shell_type": "disabled", "experimental_supported_tools": [],
+                    "multi_agent_version": "none"}
+HOST_TOOLS_DROP = ("apply_patch_tool_type",)
+
+
+def _write_if_changed(path: Path, text: str) -> None:
+    if not path.is_file() or path.read_text() != text:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(NO_TOOL_INSTRUCTIONS)
-    return NO_TOOL_ARGS + ["-c", f"model_instructions_file={json.dumps(str(path))}"]
+        path.write_text(text)
+
+
+def host_tools_catalog(slug: str, codex_home: Path | None = None) -> Path | None:
+    """A model catalog holding only slug, with HOST_TOOLS_MODEL applied; None when Codex has no cached entry for slug
+    (a fresh CODEX_HOME before its first run), and the run keeps Codex's catalog."""
+    home = codex_home or Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        cache = json.loads((home / "models_cache.json").read_text())
+        entry = next(m for m in cache.get("models", []) if m.get("slug") == slug)
+    except (OSError, ValueError, StopIteration, AttributeError):
+        return None
+    path = Path(tempfile.gettempdir()) / "agents-inc" / f"host-tools-catalog-{slug}.json"
+    model = {k: v for k, v in {**entry, **HOST_TOOLS_MODEL}.items() if k not in HOST_TOOLS_DROP}
+    _write_if_changed(path, json.dumps({**cache, "models": [model]}))
+    return path
+
+
+def no_tool_args(host_tools: bool = False, slug: str | None = None) -> list[str]:
+    """NO_TOOL_ARGS; host_tools adds model_instructions_file pointing at NO_TOOL_INSTRUCTIONS and, when Codex has
+    slug cached, model_catalog_json pointing at its host_tools_catalog."""
+    if not host_tools:
+        return list(NO_TOOL_ARGS)
+    path = Path(tempfile.gettempdir()) / "agents-inc" / "no-tools-instructions.md"
+    _write_if_changed(path, NO_TOOL_INSTRUCTIONS)
+    args = NO_TOOL_ARGS + ["-c", f"model_instructions_file={json.dumps(str(path))}"]
+    catalog = host_tools_catalog(slug) if slug else None
+    return args + (["-c", f"model_catalog_json={json.dumps(str(catalog))}"] if catalog else [])
 
 
 def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, supported_efforts: dict[str, list[str]],
@@ -346,8 +381,8 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
                      write_dir: Path | None = None, lead_dir: Path | None = None,
                      extra_deny: tuple = (), lead_home: Path | None = None, home_repo: str | None = None,
                      json_out: Path | None = None, worker: tuple | None = None, extra_read: tuple = (),
-                     network: bool = False, tool_tmp: Path | None = None) -> list[str]:
-    """json_out adds `--json -o <json_out>` (D54 session capture); worker=(channel_dir, request_id) adds the
+                     network: bool = False, tool_tmp: Path | None = None, host_tools: bool = False) -> list[str]:
+    """host_tools (tool-free runs only): replace Codex's base instructions with NO_TOOL_INSTRUCTIONS. json_out adds `--json -o <json_out>` (D54 session capture); worker=(channel_dir, request_id) adds the
     ask_lead MCP server. network (#66) turns on outbound access for tool commands. tool_tmp (#66): a writable
     temp dir for tool commands, set as TMPDIR and as the zsh here-document prefix (TMPPREFIX)."""
     slug = (model_map if model_map is not None else load_model_map()).get(model, model if model in supported_efforts else None)
@@ -363,6 +398,8 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         raise ValueError("--write needs --tools (astra, sol, terra, or luna with --tools; without --no-tools)")
     if network and (not tools or lead_dir is not None):
         raise ValueError("--network needs tools on and no --lead")
+    if host_tools and tools:
+        raise ValueError("--host-tools needs tools off")
     common = ["--skip-git-repo-check", "-C", str(cwd), "-c", f"model_reasoning_effort={effort}",
               "-c", 'shell_environment_policy.inherit="none"', "-c", 'web_search="disabled"']
     if lead_dir is not None and (not tools or write_dir is not None):
@@ -374,9 +411,9 @@ def build_codex_argv(executable: Path, model: str, effort: str, cwd: Path, suppo
         # `-s` is dropped here only: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04);
         # the profile grants cwd read only and shell_tool stays off.
         argv = ([str(executable), "exec", "-m", slug] + common + permission_args(cwd, False, extra_deny=extra_deny)
-                + no_tool_args())
+                + no_tool_args(host_tools, slug))
     elif not tools:
-        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + no_tool_args()
+        argv = [str(executable), "exec", "-m", slug, "-s", "read-only"] + common + no_tool_args(host_tools, slug)
     else:
         # No -s with tools on: a sandbox_mode override silently replaces default_permissions (proved 2026-10-04).
         # The profile alone sets access: cwd "read", or "write" with --write; network stays off unless --network.
@@ -403,7 +440,7 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
                             tools: bool = False, write: bool = False, write_dir: Path | None = None,
                             extra_deny: tuple = (), json_out: Path | None = None,
                             worker: tuple | None = None, extra_read: tuple = (), network: bool = False,
-                            tool_tmp: Path | None = None) -> list[str]:
+                            tool_tmp: Path | None = None, host_tools: bool = False) -> list[str]:
     """D54: `codex exec resume <thread_id> ... <message>` with the same model, effort, -c and permission flags as
     the original run. `exec resume` takes no -C or -s: the caller runs it with cwd set, and `-s <mode>` becomes
     `-c sandbox_mode=<mode>`. The message is the PROMPT positional; a leading space keeps a message that starts
@@ -412,7 +449,7 @@ def build_codex_resume_argv(executable: Path, thread_id: str, message: str, mode
         raise ValueError(f"bad Codex thread id: {thread_id!r}")
     base = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
                             None, extra_deny, None, None, json_out, worker, extra_read=extra_read, network=network,
-                            tool_tmp=tool_tmp)
+                            tool_tmp=tool_tmp, host_tools=host_tools)
     rest, flags, i = base[2:-1], [], 0  # between [exe, "exec"] and the stdin marker "-"
     while i < len(rest):
         if rest[i] == "-C":
@@ -464,7 +501,7 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
               env: dict | None = None, lead_dir: Path | None = None, home_repo: str | None = None,
               extra_deny: tuple = (), isolate_home: bool = False, thread_out: dict | None = None,
               resume_thread: str | None = None, worker: tuple | None = None, extra_read: tuple = (),
-              network: bool = False, timeout_s: float | None = None, on_line=None) -> int:
+              network: bool = False, timeout_s: float | None = None, on_line=None, host_tools: bool = False) -> int:
     """timeout_s: kill the child's process group after that many seconds and return 124 (None: no deadline).
     on_line (spec 027): called with each JSONL stdout line while the child runs; json mode only.
     thread_out (D54): run with `--json -o`, store the thread id in thread_out["thread_id"], and write the last
@@ -497,6 +534,8 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         raise ValueError("--run-dir needs tools")
     if network and (not tools or lead_dir is not None):
         raise ValueError("--network needs tools on and no --lead")
+    if host_tools and tools:
+        raise ValueError("--host-tools needs tools off")
     if resume_thread is not None and lead_dir is not None:
         raise ValueError("--lead runs cannot be resumed")
     json_mode = thread_out is not None or resume_thread is not None
@@ -531,12 +570,13 @@ def run_codex(model: str, effort: str, cwd: Path, prompt_stream, receipt, suppor
         if resume_thread is not None:
             argv = build_codex_resume_argv(executable, resume_thread, prompt, model, effort, cwd, supported_efforts,
                                            model_map, tools, write, write_dir, deny, json_out, worker,
-                                           extra_read=extra_read, network=network, tool_tmp=tool_tmp)
+                                           extra_read=extra_read, network=network, tool_tmp=tool_tmp,
+                                           host_tools=host_tools)
             prompt, extra = "", {"cwd": str(cwd)}  # the message rides the PROMPT positional; resume has no -C
         else:
             argv = build_codex_argv(executable, model, effort, cwd, supported_efforts, model_map, tools, write, write_dir,
                                     lead_dir, deny, lead_home, home_repo, json_out, worker, extra_read=extra_read,
-                                    network=network, tool_tmp=tool_tmp)
+                                    network=network, tool_tmp=tool_tmp, host_tools=host_tools)
         line_cb = on_line if json_mode else None  # Lead runs (no --json) get lifecycle events only
         if timeout_s:
             result = _run_with_deadline(argv, prompt, env, timeout_s, extra, line_cb)

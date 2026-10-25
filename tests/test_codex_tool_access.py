@@ -68,6 +68,43 @@ class RungArgvTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--lead is allowed only for astra, sol, terra"):
             runtime.lead_args("luna", REPO)
 
+    def test_host_tools_replaces_base_instructions_only_when_asked(self):
+        # The instructions override is for luna-brain (--host-tools); a plain --no-tools run keeps Codex's own.
+        self.assertFalse(any("model_instructions_file" in a for a in _argv("luna")))
+        argv = build_codex_argv(EXE, "luna", "medium", Path("/w"), EFF, MAP, False, host_tools=True)
+        path = Path(json.loads(next(a for a in argv if a.startswith("model_instructions_file=")).split("=", 1)[1]))
+        self.assertEqual(path.read_text(), runtime.NO_TOOL_INSTRUCTIONS)
+        self.assertIn("features.shell_tool=false", argv)
+        resume = runtime.build_codex_resume_argv(EXE, "019a0000-0000-7000-8000-000000000000", "hi", "luna", "medium",
+                                                 Path("/w"), EFF, MAP, host_tools=True)
+        self.assertTrue(any(a.startswith("model_instructions_file=") for a in resume))
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+            bare = build_codex_argv(EXE, "luna", "medium", Path("/w"), EFF, MAP, False, host_tools=True)
+        self.assertFalse(any(a.startswith("model_catalog_json=") for a in bare))  # no model cache yet: Codex's catalog
+
+    def test_host_tools_catalog_drops_exec_for_the_cached_model(self):
+        with tempfile.TemporaryDirectory() as home:
+            cache = {"etag": "x", "models": [{"slug": "gpt-5.6-luna", "tool_mode": "code_mode_only", "shell_type": "unified_exec",
+                                              "experimental_supported_tools": ["clock"], "context_window": 1,
+                                              "multi_agent_version": "v2", "apply_patch_tool_type": "freeform"},
+                                             {"slug": "gpt-6-astra", "tool_mode": "code_mode_only"}]}
+            Path(home, "models_cache.json").write_text(json.dumps(cache))
+            with mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+                argv = build_codex_argv(EXE, "luna", "medium", Path("/w"), EFF, MAP, False, host_tools=True)
+                plain = _argv("luna")
+            path = Path(json.loads(next(a for a in argv if a.startswith("model_catalog_json=")).split("=", 1)[1]))
+            got = json.loads(path.read_text())
+            self.assertEqual(got["etag"], "x")
+            self.assertEqual(got["models"], [{"slug": "gpt-5.6-luna", "tool_mode": "direct", "shell_type": "disabled",
+                                              "experimental_supported_tools": [], "context_window": 1,
+                                              "multi_agent_version": "none"}])
+            self.assertFalse(any("model_catalog_json" in a for a in plain))
+            self.assertIsNone(runtime.host_tools_catalog("gpt-6-sol", Path(home)))
+
+    def test_host_tools_needs_tools_off(self):
+        with self.assertRaisesRegex(ValueError, "--host-tools needs tools off"):
+            build_codex_argv(EXE, "astra", "medium", Path("/w"), EFF, MAP, True, host_tools=True)
+
     def test_no_tools_forces_off(self):
         self.assertFalse(tools_for("astra", no_tools=True, tools=True))
         self.assertFalse(tools_for("luna", no_tools=True, tools=True))  # --no-tools wins before the luna check

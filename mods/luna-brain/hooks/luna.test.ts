@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { failureText, refuses, trimSkillList } from './luna'
+import { failureText, pickReply, render, skipsTools, taskText, trimSkillList } from './luna'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
@@ -31,12 +31,12 @@ const CUE = '<system-reminder>SubagentHandback: when your work is complete, call
 // Stands for the engine beneath the plugin: agent.register, agent.spawn, session messages, tools, prompt and the luna process.
 type Run = { out: string; err?: string[]; code?: number }
 
-async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: (string | Run)[]; calls?: Call[]; sections?: string[] }) {
+async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: (string | Run)[]; calls?: Call[]; sections?: string[]; task?: string }) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('agent.register', (_$, e) => ({ value: { agent: `luna-brain:${e.name}` } }))
   on('agent.spawn', () => ({ model: 'haiku', agentId: opts.agentId }))
   on('agent.list', () => ({ value: [] }))
-  on('session.messages', () => ({ value: opts.rows ?? [text('user', `${TASK}\n${CUE}`)] }))
+  on('session.messages', () => ({ value: opts.rows ?? [text('user', `${opts.task ?? TASK}\n${CUE}`)] }))
   on('tool.list', () => ({ value: TOOLS }))
   on('prompt.compose', () => ({ sections: (opts.sections ?? ['You are Claude Code.']).map((t, i) => ({ id: `s${i}`, text: t, scope: 'shared' })) }))
   on('fs.read', () => ({ value: TYPES }))
@@ -83,7 +83,7 @@ test('a Read call becomes tool chunks and stopReason tool_use', async ($, on) =>
   expect(result.stopReason).toBe('tool_use')
   expect(result.toolUses).toEqual([{ name: 'Read', input: { file_path: '/work/a.py' } }])
   expect(result.usage).toBeNull()
-  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--cwd', '/work', '--thread', '/work/.scratch/luna-brain/a1.thread'])
+  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--host-tools', '--cwd', '/work', '--thread', '/work/.scratch/luna-brain/a1.thread'])
   const stdin = calls[0].stdin ?? ''
   expect(stdin).toContain('You are Claude Code.')
   expect(stdin).toContain('- Read: Reads a file.')
@@ -317,16 +317,82 @@ test('a refusal before any tool ran gets one push, and the pushed reply is used'
   await setup($, on, { agentId: 'r1', replies: [no, yes], calls })
   const { result } = await step($, 'r1')
   expect(calls.length).toBe(2)
-  expect(calls[1].stdin).toContain('every catalog tool is real')
+  expect(calls[1].stdin).toContain('Every catalog tool is real')
   expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }])
 })
 
-test('refuses only fires before any tool result and only without tool calls', () => {
+test('a value given without running the tool the task names gets one push', async ($, on) => {
+  const calls: Call[] = []
+  const made = JSON.stringify({ say: 'A=0', tools: [] })
+  const yes = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l a.txt' } }] })
+  await setup($, on, { agentId: 'f1', replies: [made, yes], calls, task: 'Run wc -l a.txt with Bash; report A=<n>.' })
+  const { result } = await step($, 'f1')
+  expect(calls.length).toBe(2)
+  expect(calls[1].stdin).toContain('never from a snapshot or a guess')
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l a.txt' } }])
+})
+
+test('skipsTools reads catalog tool names in the task, not in harness reminders', () => {
+  const say = (t: string) => ({ say: t, tools: [] })
+  expect(skipsTools(say('A=0'), false, 'Run wc -l a.txt with Bash', ['Bash', 'Read'])).toBe(true)
+  expect(skipsTools(say('Lorem — ipsum'), false, 'Write one Latin sentence. Use no tools.', ['Bash', 'Read', 'Write'])).toBe(false)
+  expect(skipsTools(say('B=95'), false, 'Count lines, then Read b.txt', ['Read'])).toBe(true)
+  expect(skipsTools(say('done'), false, 'Use the Grep tool on src', ['Grep'])).toBe(true)
+  expect(skipsTools(say('A=0'), false, 'Run wc with Bash', ['SubagentHandback'])).toBe(false)
+  const msg = (text: string) => ({ role: 'user' as const, content: [{ type: 'text', text }] })
+  expect(taskText([msg('Write a poem.<system-reminder>Bash and Read are available</system-reminder>')])).toBe('Write a poem.')
+})
+
+test('a Read result drops the numbered empty line after the final newline', () => {
+  const msgs = [
+    { role: 'assistant' as const, content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'b.txt' } }] },
+    { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '1\t1\n2\t2\n3\t' }] },
+  ]
+  expect(render(msgs)).toBe('assistant tool call: Read {"file_path":"b.txt"}\ntool result: 1\t1\n2\t2')
+  const bare = [msgs[0], { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '1\t1\n2\t2\n3' }] }]
+  expect(render(bare)).toBe(render(msgs))
+  const digits = [msgs[0], { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '1\t1\n2\t22' }] }]
+  expect(render(digits).endsWith('2\t22')).toBe(true)
+  const reminded = [msgs[0], { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '1\t1\n2\t2\n3\n\n<system-reminder>\nx\n</system-reminder>\n' }] }]
+  expect(render(reminded)).toBe('assistant tool call: Read {"file_path":"b.txt"}\ntool result: 1\t1\n2\t2\n\n<system-reminder>\nx\n</system-reminder>\n')
+})
+
+test('an empty pushed reply keeps the first answer', async ($, on) => {
+  const calls: Call[] = []
+  const first = JSON.stringify({ say: 'Lorem ipsum — text', tools: [] })
+  await setup($, on, { agentId: 'e1', replies: [first, JSON.stringify({ say: '', tools: [] })], calls, task: 'Answer with Bash output.' })
+  const { result } = await step($, 'e1')
+  expect(calls.length).toBe(2)
+  expect(result.answer).toBe('Lorem ipsum — text')
+})
+
+test('skipsTools on a refusal fires before any tool result and only without tool calls', () => {
   const say = (t: string, tools: { name: string; input: unknown }[] = []) => ({ say: t, tools })
-  expect(refuses(say("I can't run Bash here."), false)).toBe(true)
-  expect(refuses(say('the host’s execution tool is disabled'), false)).toBe(true)
-  expect(refuses(say("I can't run Bash here."), true)).toBe(false)
-  expect(refuses(say("I can't run Bash here.", [{ name: 'Bash', input: {} }]), false)).toBe(false)
-  expect(refuses(say('A=173'), false)).toBe(false)
-  expect(refuses('no JSON object in the reply', false)).toBe(false)
+  expect(skipsTools(say("I can't run Bash here."), false)).toBe(true)
+  expect(skipsTools(say('the host’s execution tool is disabled'), false)).toBe(true)
+  expect(skipsTools(say("I can't run Bash here."), true)).toBe(false)
+  expect(skipsTools(say("I can't run Bash here.", [{ name: 'Bash', input: {} }]), false)).toBe(false)
+  expect(skipsTools(say('A=173'), false)).toBe(false)
+  expect(skipsTools('no JSON object in the reply', false)).toBe(false)
+})
+
+test('the first message that requests tools wins over a later guessed answer', () => {
+  const call = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l b.txt' } }] })
+  const guess = JSON.stringify({ say: 'B=1', tools: [] })
+  const allowed = new Set(['Bash'])
+  expect(pickReply([call, guess], guess, allowed)).toEqual({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l b.txt' } }] })
+  expect(pickReply([guess], guess, allowed)).toEqual({ say: 'B=1', tools: [] })
+  const unknown = JSON.stringify({ say: '', tools: [{ name: 'Nope', input: {} }] })
+  expect(pickReply([unknown, guess], guess, allowed)).toEqual({ say: 'B=1', tools: [] })
+})
+
+test('a step takes the tool request from the progress events when the last message guesses', async ($, on) => {
+  const call = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l a.txt' } }] })
+  const guess = JSON.stringify({ say: 'A=1', tools: [] })
+  const ev = (text: string) => `agents-inc run: event ${JSON.stringify({ kind: 'agent_message', text })}`
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'p1', replies: [{ out: guess, err: [ev(call), ev(guess)] }], calls })
+  const { result } = await step($, 'p1')
+  expect(calls.length).toBe(1)
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l a.txt' } }])
 })

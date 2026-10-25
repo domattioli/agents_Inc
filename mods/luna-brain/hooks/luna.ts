@@ -11,13 +11,29 @@ const MCP_DESC_CAP = 200
 const RUN_TIMEOUT_MS = 300_000
 const MODEL_LINE = /You are powered by the model|The exact model ID is/
 const DELTA_HEADER =
-  'New messages since your last reply. Same rules: reply with one JSON object {say, tools}; act on the latest messages; finish as the rules said.\n'
+  'New messages since your last reply. Same rules: reply with one JSON object {say, tools}; act on the latest messages; finish as the rules said. ' +
+  'Request catalog tools in "tools", never through exec or another Codex tool.\n'
 // luna sometimes reads Codex's read-only sandbox note as its own and answers that it cannot run a tool, calling none.
 const REFUSAL = /(can['’]?t|cannot|unable to|not able to)\s+(run|read|inspect|execute|access|use|report)|tools?\b[^.]*\b(disabled|unavailable|not available)/i
-const PUSH = 'You answered that you cannot run a tool, but every catalog tool is real and the host runs it for you. ' +
+const PUSH = 'You answered without running a tool the task needs. Every catalog tool is real and the host runs it for you; ' +
+  'a value you report must come from a tool result in this conversation, never from a snapshot or a guess. ' +
   'Request the tools the task needs in "tools" now. Reply with exactly one JSON object.\n'
-export function refuses(reply: Reply | string | null, ranTool: boolean): boolean {
-  return !ranTool && reply !== null && typeof reply !== 'string' && reply.tools.length === 0 && REFUSAL.test(reply.say)
+// A first reply that runs nothing is pushed once when it refuses a tool, or when the task names a catalog tool:
+// luna answered "A=0" for `wc -l a.txt` without running Bash (Docker stress run, 2026-10-24).
+export function skipsTools(reply: Reply | string | null, ranTool: boolean, task = '', names: readonly string[] = []): boolean {
+  if (ranTool || reply === null || typeof reply === 'string' || reply.tools.length > 0) return false
+  return REFUSAL.test(reply.say) || names.some(n => n !== HANDBACK && namesTool(task, n))
+}
+// A tool name counts only mid-sentence after a lowercase word ("with Bash", "then Read") or before "tool":
+// "Write one Latin sentence" names no tool.
+function namesTool(task: string, name: string): boolean {
+  const n = name.replace(/[^\w]/g, '\\$&')
+  return new RegExp(`(?<=[a-z,;:] )${n}\\b|\\b${n} tool\\b`).test(task)
+}
+// The task text: every user text block without harness reminders, which name tools the task never asked for.
+export function taskText(messages: readonly Msg[]): string {
+  return messages.filter(m => m.role === 'user').flatMap(m => m.content ?? []).filter(b => b.type === 'text')
+    .map(b => String(b.text ?? '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')).join('\n')
 }
 const CORRECTION = (why: string) => `Your previous reply was rejected: ${why}. Reply with exactly one JSON object, only tools from the Tools list.\n`
 const TOOL_TYPES_PATH = '.claude-plugin/types/claude-code-tools/index.d.ts'
@@ -32,6 +48,9 @@ const HEADER =
   'not yours in this loop: never call them, never search them for a catalog tool, and never pass your reply to one. ' +
   'Your reply is the JSON object itself, written as your final message text. Every tool in the catalog below is real and available: call it ' +
   'by naming it in "tools", and its result arrives in the next step. Never report a catalog tool as unavailable.\n' +
+  'Report only values you read in a tool result in this conversation; never guess one. The git status and other context ' +
+  'in the system prompt is a snapshot from session start and may be stale: when the task asks for a command, run it.\n' +
+  'A Read result starts each line with its line number and a tab: the last of those numbers is the line count.\n' +
   'Act on the latest messages; earlier ones are history.\n' +
   'Reply with exactly one JSON object and nothing else:\n' +
   '{"say": "<short text, may be empty>", "tools": [{"name": "<tool from the catalog>", "input": {...}}]}\n' +
@@ -130,11 +149,20 @@ function resultText(content: unknown): string {
 // Every message in order, every block kept: text as written, calls as name + JSON, results capped.
 export function render(messages: readonly Msg[]): string {
   const out: string[] = []
+  const toolNames = new Map<unknown, string>()
   for (const m of messages) {
     for (const b of m.content ?? []) {
       if (b.type === 'text') out.push(`${m.role}: ${trimSkillList(stripModelLines(String(b.text ?? '')))}`)
-      else if (b.type === 'tool_use') out.push(`assistant tool call: ${String(b.name)} ${JSON.stringify(b.input ?? {})}`)
-      else if (b.type === 'tool_result') out.push(`tool result${b.is_error ? ' (error)' : ''}: ${cap(resultText(b.content), RESULT_CAP)}`)
+      else if (b.type === 'tool_use') {
+        toolNames.set(b.id, String(b.name))
+        out.push(`assistant tool call: ${String(b.name)} ${JSON.stringify(b.input ?? {})}`)
+      } else if (b.type === 'tool_result') {
+        let text = resultText(b.content)
+        // Read numbers the empty line after a file's final newline: luna counted 96 lines in a 95-line file.
+        // The harness may append reminders after the file text, so the empty line is found before them.
+        if (toolNames.get(b.tool_use_id) === 'Read') text = text.replace(/\n[ \t]*\d+\t?[ \t]*(?=(\n*<system-reminder>[\s\S]*)?$)/, '')
+        out.push(`tool result${b.is_error ? ' (error)' : ''}: ${cap(text, RESULT_CAP)}`)
+      }
       else out.push(`${m.role}: [${b.type}]`)
     }
   }
@@ -146,6 +174,16 @@ export function buildPrompt(system: string, tools: string, messages: readonly Ms
 }
 
 // First balanced {...} in the text, parsed; a reason string when none parses or the shape is wrong.
+// luna may write a tool request as one message and, with no Codex tool to run it, go on to a final message that guesses
+// the results ("B=1" for `wc -l b.txt`; Docker stress run, 2026-10-25). The first message that requests tools ends the step.
+export function pickReply(messages: readonly string[], stdout: string, allowed?: ReadonlySet<string>): Reply | string {
+  for (const text of messages) {
+    const r = parseReply(text, allowed)
+    if (typeof r !== 'string' && r.tools.length > 0) return r
+  }
+  return parseReply(stdout, allowed)
+}
+
 export function parseReply(stdout: string, allowed?: ReadonlySet<string>): Reply | string {
   for (let start = stdout.indexOf('{'); start >= 0; start = stdout.indexOf('{', start + 1)) {
     let depth = 0
@@ -253,7 +291,7 @@ export const register: Register = on => {
         $.clock.sleep(RUN_TIMEOUT_MS, { signal: timer.signal }).then(() => STOP, () => new Promise<never>(() => {})),
       ])
       const stream = $.process.spawn({
-        argv: ['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--cwd', sessionCwd, '--thread', thread],
+        argv: ['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--host-tools', '--cwd', sessionCwd, '--thread', thread],
         cwd: sessionCwd || undefined,
         input: prompt,
       })
@@ -261,6 +299,7 @@ export const register: Register = on => {
       let stderr = ''
       let pending = ''
       const lines: string[] = []
+      const said: string[] = [] // agent_message texts, in order
       const take = (line: string) => {
         const m = /^agents-inc run: (event|usage|record) (.*)$/.exec(line)
         if (!m) return
@@ -286,7 +325,10 @@ export const register: Register = on => {
             cached_input_tokens: u.cached_input_tokens + Math.max(0, total.cached_input_tokens - before.cached_input_tokens),
             output_tokens: u.output_tokens + Math.max(0, total.output_tokens - before.output_tokens),
           }
-        } else if (m[1] === 'event' && typeof data.text === 'string') lines.push(data.text)
+        } else if (m[1] === 'event' && typeof data.text === 'string') {
+          lines.push(data.text)
+          if (data.kind === 'agent_message') said.push(data.text)
+        }
       }
       const feed = (text: string) => {
         pending += text
@@ -304,7 +346,7 @@ export const register: Register = on => {
           if (n.done) {
             if (pending) take(pending)
             for (const text of lines.splice(0)) yield { kind: 'thinking', index: 0, text }
-            if (n.value.code === 0) return { reply: parseReply(stdout, allowed), failed: false }
+            if (n.value.code === 0) return { reply: pickReply(said, stdout, allowed), failed: false }
             const why = `agents-inc run exited ${n.value.code ?? n.value.signal}, stdout ${stdout.length} chars: ${failureText(stderr)}`
             $.ui.log(`luna-brain: ${why}`, { to: 'debug' })
             return { reply: why, failed: true }
@@ -361,12 +403,13 @@ export const register: Register = on => {
       chars += prompt.length
       run = yield* ask(prompt, threadPath(id, st.n), allowed)
     }
-    if (!run.failed && refuses(run.reply, JSON.stringify(messages).includes('"tool_result"'))) {
-      // One push; a second refusal stands as luna's answer.
+    if (!run.failed && skipsTools(run.reply, JSON.stringify(messages).includes('"tool_result"'), taskText(messages), names)) {
+      // One push; a second reply without tools stands as luna's answer.
       prompt = PUSH
       chars += prompt.length
       const again = yield* ask(prompt, threadPath(id, st.n), allowed)
-      if (!again.failed && again.reply !== null && typeof again.reply !== 'string') run = again
+      // An empty pushed reply keeps the first one: luna once answered the push with {"say": "", "tools": []}.
+      if (!again.failed && again.reply !== null && typeof again.reply !== 'string' && (again.reply.tools.length > 0 || again.reply.say)) run = again
     }
     if (!run.failed) st.used = true
     const reply = run.reply
