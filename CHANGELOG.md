@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `agents-inc:luna`, a native Claude Code subagent type in the agents-inc mod: each step is answered by luna through Codex with no Codex-side tools, so the Claude Code permission rules are the only gate. A failed step ends loudly as `luna failed: ...` or `luna quota-paused: ...` and never falls back to the placeholder model. `agents-inc luna status|on|off` switches it, `agents-inc doctor` prints a `luna type:` line, and the mod writes a host-ledger row (`source` `native-luna`) and a working-tree snapshot check per agent. The pre-028 luna routes are unchanged (spec 028, D69)
+- luna steps recover from four failure kinds seen in the Docker stress runs: a refusal that survives the push gets one fresh thread, an early stop after a tool result gets one push to go on, a partial Read result says it is partial, and host tool requests luna sent as `request_user_input` calls are replayed from the Codex rollout (spec 028)
+
 ### Fixed
 
 - The test suite runs inside the Claude Code sandbox: tests that bind a local port skip with a stated reason when the bind is refused, and the Ollama adapter tests use temporary paths and a fresh doctor cache instead of fixed `/tmp` files and live CLI probes (#110)

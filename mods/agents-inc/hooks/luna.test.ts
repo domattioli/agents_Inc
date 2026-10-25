@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { failureText, pickReply, render, skipsTools, taskText, trimSkillList } from './luna'
+import { failureText, pickReply, render, skipsTools, stopsEarly, taskText, trimSkillList } from './luna'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
 type Dollar = Parameters<Parameters<typeof test>[1]>[0]
@@ -26,24 +26,55 @@ const TOOLS = [
   { name: 'mcp__x__y', description: 'An MCP tool.', mcp: true },
 ]
 const text = (role: 'user' | 'assistant', t: string) => ({ role, content: [{ type: 'text', text: t }] })
+const toolUse = (id: string, name: string, input: unknown) => ({ role: 'assistant' as const, content: [{ type: 'tool_use', id, name, input }] })
+const toolResult = (id: string, content: string) => ({ role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: id, content }] })
 const CUE = '<system-reminder>SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>})</system-reminder>'
 
 // Stands for the engine beneath the plugin: agent.register, agent.spawn, session messages, tools, prompt and the luna process.
-type Run = { out: string; err?: string[]; code?: number }
+type Run = { out: string; err?: string[]; code?: number; throws?: string }
 
-async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[]; replies: (string | Run)[]; calls?: Call[]; sections?: string[]; task?: string }) {
+const STATUS = { offered: true, reason: 'ready', slug: 'gpt-6-luna', codex: 'ready', catalog: 'ok', switch: 'on' }
+
+async function setup($: Dollar, on: On, opts: {
+  agentId: string; rows?: unknown[]; replies: (string | Run)[]; calls?: Call[]; sections?: string[]; task?: string
+  status?: object | 'fail'; luna?: Call[]; logs?: string[]; writes?: string[]; end?: object; agents?: unknown[] | 'throw'; spawnType?: string; registered?: unknown[]
+  session?: string; registerThrows?: boolean; beginGate?: Promise<void>; failVerbs?: string[]
+}) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('agent.register', (_$, e) => ({ value: { agent: `luna-brain:${e.name}` } }))
+  on('session.id', () => ({ value: opts.session ?? 's1' }))
+  on('agent.register', (_$, e) => {
+    if (opts.registerThrows && e.name === 'luna') throw new Error('register refused') // the relay agent registers first
+    opts.registered?.push(e)
+    return { value: { agent: `agents-inc:${e.name}` } }
+  })
+  on('agent.offer', () => ({ isOffered: true }))
+  on('tool.register', () => ({ value: {} })) // the relay module in the same mod registers its run tool
   on('agent.spawn', () => ({ model: 'haiku', agentId: opts.agentId }))
-  on('agent.list', () => ({ value: [] }))
+  on('agent.list', () => {
+    if (opts.agents === 'throw') throw new Error('list down')
+    return { value: opts.agents ?? [] }
+  })
+  on('fs.write', (_$, e) => { opts.writes?.push(e.path); return { value: undefined } })
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.messages', () => ({ value: opts.rows ?? [text('user', `${opts.task ?? TASK}\n${CUE}`)] }))
   on('tool.list', () => ({ value: TOOLS }))
   on('prompt.compose', () => ({ sections: (opts.sections ?? ['You are Claude Code.']).map((t, i) => ({ id: `s${i}`, text: t, scope: 'shared' })) }))
   on('fs.read', () => ({ value: TYPES }))
   on('process.spawn', async function* (_$, e) {
+    if (e.argv[1] === 'luna') {
+      // `agents-inc luna status|begin|end`: not a Codex run.
+      opts.luna?.push({ argv: e.argv })
+      const verb = e.argv[2]
+      if (verb === 'begin' && opts.beginGate) await opts.beginGate
+      const failed = (opts.status === 'fail' && verb === 'status') || (opts.failVerbs ?? []).includes(verb)
+      const out = failed ? '' : verb === 'status' ? JSON.stringify(opts.status ?? STATUS) : verb === 'begin' ? '{"snapshot":"captured"}' : JSON.stringify(opts.end ?? { snapshot: 'unchanged', changed: [] })
+      if (out) yield { stream: 'stdout' as const, text: out }
+      return { value: { code: failed ? 2 : 0, signal: null } } // a failed verb exits 2
+    }
     opts.calls?.push({ argv: e.argv, stdin: e.input })
     const next = opts.replies.shift() ?? ''
     const r = typeof next === 'string' ? { out: next } : next
+    if (r.throws) throw new Error(r.throws)
     // Progress lines first, split mid-line the way a pipe may deliver them.
     for (const line of r.err ?? []) {
       yield { stream: 'stderr' as const, text: line.slice(0, 7) }
@@ -56,10 +87,10 @@ async function setup($: Dollar, on: On, opts: { agentId: string; rows?: unknown[
     yield { kind: 'text', index: 0, text: 'from anthropic' }
     return { turnId: e.turnId, index: e.index, answer: 'from anthropic', toolUses: [], stopReason: 'end_turn', usage: null }
   })
-  on('ui.log', () => ({ value: undefined }))
+  on('ui.log', (_$, e) => { opts.logs?.push(e.text); return { value: undefined } })
   mock.clock(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
-  await $.agent.spawn({ prompt: TASK, subagentType: 'luna-brain:luna' })
+  await $.agent.spawn({ prompt: TASK, subagentType: opts.spawnType ?? 'agents-inc:luna' })
 }
 
 async function step($: Dollar, agentId: string | undefined, index = 0) {
@@ -83,7 +114,7 @@ test('a Read call becomes tool chunks and stopReason tool_use', async ($, on) =>
   expect(result.stopReason).toBe('tool_use')
   expect(result.toolUses).toEqual([{ name: 'Read', input: { file_path: '/work/a.py' } }])
   expect(result.usage).toBeNull()
-  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--host-tools', '--cwd', '/work', '--thread', '/work/.scratch/luna-brain/a1.thread'])
+  expect(calls[0].argv).toEqual(['agents-inc', 'run', '--model', 'luna', '--effort', 'low', '--no-tools', '--host-tools', '--cwd', '/work', '--thread', '/work/.scratch/agents-inc-luna/s1/a1.thread'])
   const stdin = calls[0].stdin ?? ''
   expect(stdin).toContain('You are Claude Code.')
   expect(stdin).toContain('- Read: Reads a file.')
@@ -184,8 +215,8 @@ test('the second step sends only the new messages on the same thread', async ($,
   await step($, 'h1', 1)
   expect(calls.length).toBe(2)
   const [one, two] = calls
-  expect(one.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/luna-brain/h1.thread'])
-  expect(two.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/luna-brain/h1.thread'])
+  expect(one.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/agents-inc-luna/s1/h1.thread'])
+  expect(two.argv.slice(-2)).toEqual(['--thread', '/work/.scratch/agents-inc-luna/s1/h1.thread'])
   const delta = two.stdin ?? ''
   expect(delta).toContain('New messages since your last reply.')
   expect(delta).toContain('tool result: 12 lines')
@@ -254,24 +285,146 @@ test('a failed resume retries fresh with the full prompt and a new thread path',
   await step($, 'm1')
   const { result } = await step($, 'm1', 1)
   expect(calls.length).toBe(3)
-  expect(calls[1].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1.thread'])
-  expect(calls[2].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1-2.thread'])
+  expect(calls[1].argv.slice(-1)).toEqual(['/work/.scratch/agents-inc-luna/s1/m1.thread'])
+  expect(calls[2].argv.slice(-1)).toEqual(['/work/.scratch/agents-inc-luna/s1/m1-2.thread'])
   expect(calls[2].stdin).toContain('System prompt:')
   expect(calls[2].stdin).toContain(`user: ${TASK}`)
   expect(result.answer).toBe('ok')
   await step($, 'm1', 2) // the new thread is used from here on
-  expect(calls[3].argv.slice(-1)).toEqual(['/work/.scratch/luna-brain/m1-2.thread'])
+  expect(calls[3].argv.slice(-1)).toEqual(['/work/.scratch/agents-inc-luna/s1/m1-2.thread'])
   expect(calls[3].stdin).toContain('New messages since')
 })
 
-test('an unparsable reply twice yields luna reply unparsable', async ($, on) => {
+test('an unparsable reply twice ends the step with luna failed: unparsable reply, handed back', async ($, on) => {
   const calls: Call[] = []
   await setup($, on, { agentId: 'a4', replies: ['not json', 'still not json'], calls })
   const { chunks, result } = await step($, 'a4')
   expect(calls.length).toBe(2)
   expect(calls[1].stdin).toContain('Your previous reply was rejected')
-  expect(chunks).toMatchObject([{ kind: 'thinking' }, { kind: 'text', text: 'luna reply unparsable' }, { kind: 'stop', stopReason: 'end_turn' }])
-  expect(result.stopReason).toBe('end_turn')
+  expect(chunks[1]).toMatchObject({ kind: 'text', text: 'luna failed: unparsable reply' })
+  expect(result.toolUses).toEqual([{ name: 'SubagentHandback', input: { message: 'luna failed: unparsable reply' } }])
+})
+
+// T006: the native type, its slug and its offer.
+test('session.start registers agents-inc:luna only when status says offered', async ($, on) => {
+  const luna: Call[] = []
+  const registered: unknown[] = []
+  await setup($, on, { agentId: 'o1', replies: [], luna, registered })
+  expect(luna[0].argv).toEqual(['agents-inc', 'luna', 'status', '--json'])
+  const luna_ = registered.filter(r => (r as { name: string }).name === 'luna') // the relay agent registers beside it
+  expect(luna_).toMatchObject([{ name: 'luna', model: 'haiku' }])
+  expect(luna_[0]).not.toHaveProperty('tools')
+  expect(luna_[0]).not.toHaveProperty('permissionMode')
+})
+
+test('a status that says not offered registers nothing and hides the type', async ($, on) => {
+  const logs: string[] = []
+  const registered: unknown[] = []
+  await setup($, on, { agentId: 'o2', replies: [], status: { ...STATUS, offered: false, reason: 'switched off (agents-inc luna on)' }, logs, registered })
+  expect(registered.filter(r => (r as { name: string }).name === 'luna')).toEqual([])
+  expect(logs.some(l => l.startsWith('agents-inc luna: not registered: switched off'))).toBe(true)
+  expect(await $.agent.offer({ agent: 'agents-inc:luna' })).toMatchObject({ isOffered: false })
+})
+
+test('a failing status call registers nothing and says why', async ($, on) => {
+  const logs: string[] = []
+  await setup($, on, { agentId: 'o3', replies: [], status: 'fail', logs })
+  expect(logs.some(l => l.includes('not registered: agents-inc luna status gave no usable answer'))).toBe(true)
+})
+
+test('the prompt names the slug from status, not a fixed model', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'o4', replies: [JSON.stringify({ say: 'x', tools: [] })], calls, status: { ...STATUS, slug: 'gpt-7-luna' } })
+  await step($, 'o4')
+  expect(calls[0].stdin).toContain('model gpt-7-luna, run through Codex')
+  expect(calls[0].stdin).not.toContain('model gpt-6-luna')
+})
+
+test('luna-brain:luna and the bare luna type are not recorded as native luna agents', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'o5', replies: [], calls, spawnType: 'luna-brain:luna' })
+  const { chunks } = await step($, 'o5')
+  expect(calls.length).toBe(0)
+  expect(chunks.map(c => c.kind)).toEqual(['text'])
+})
+
+// T010: identify luna without the spawn event.
+test('an agent the spawn hook never saw is found through agent.list', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'q1', replies: [JSON.stringify({ say: 'ok', tools: [] })], calls, spawnType: 'Explore', agents: [{ id: 'q9', type: 'agents-inc:luna' }] })
+  const { result } = await step($, 'q9')
+  expect(calls.length).toBe(1)
+  expect(result.toolUses).toEqual([{ name: 'SubagentHandback', input: { message: 'ok' } }])
+})
+
+test('when agent.list throws, the step fails closed and never reaches the placeholder model', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'q2', replies: [], calls, spawnType: 'Explore', agents: 'throw' })
+  const { chunks, result } = await step($, 'q8')
+  expect(calls.length).toBe(0)
+  expect(chunks[0]).toMatchObject({ kind: 'text' })
+  expect(String(chunks[0].text)).toContain('cannot identify agent q8; step not sent to the placeholder model')
+  expect(result.answer).not.toBe('from anthropic')
+})
+
+// T023: failure texts.
+const lunaFail = async ($: Dollar, on: On, id: string, run: Run, extra: { replies?: (string | Run)[] } = {}) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: id, replies: [run, ...(extra.replies ?? [])], calls })
+  const r = await step($, id)
+  return { calls, text: String((r.result.toolUses[0]?.input as { message?: string })?.message ?? r.result.answer) }
+}
+
+test('quota exit 75 ends the step as quota-paused with no retry', async ($, on) => {
+  const { calls, text } = await lunaFail($, on, 'f10', { out: '', code: 75, err: ['x'] }, { replies: ['{"say":"no","tools":[]}'] })
+  expect(calls.length).toBe(1)
+  expect(text.startsWith('luna quota-paused:')).toBe(true)
+})
+
+test('exit 3 reports the missing catalog and does not retry on a fresh thread', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'f11', replies: [{ out: '', code: 3, err: ['WB_LUNA_CATALOG_MISSING: no models_cache.json entry for gpt-6-luna'] }, '{"say":"no","tools":[]}'], calls })
+  const r = await step($, 'f11')
+  expect(calls.length).toBe(1)
+  expect(JSON.stringify(r.result.toolUses)).toContain('luna failed: catalog missing (WB_LUNA_CATALOG_MISSING)')
+})
+
+test('a missing Codex is named, a plain failure retries once and then reports the exit code', async ($, on) => {
+  const missing = await lunaFail($, on, 'f12', { out: '', code: 1, err: ['WB_CODEX_AUTH_MISSING: no auth.json'] })
+  expect(missing.text).toBe('luna failed: Codex missing (WB_CODEX_AUTH_MISSING)')
+  expect(missing.calls.length).toBe(1)
+})
+
+test('a plain failed run retries once on a fresh thread then reports run exited', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'f13', replies: [{ out: '', code: 1 }, { out: '', code: 1 }], calls })
+  const r = await step($, 'f13')
+  expect(calls.length).toBe(2)
+  expect(JSON.stringify(r.result.toolUses)).toContain('luna failed: run exited 1:')
+})
+
+// T021 / T043: tools line in the debug line; the begin and end verbs.
+test('the step debug line carries the codex tool counts and the thread is per session', async ($, on) => {
+  const logs: string[] = []
+  const writes: string[] = []
+  await setup($, on, { agentId: 'g10', replies: [{ out: JSON.stringify({ say: 'x', tools: [] }), err: ['agents-inc run: tools {"request_user_input":2}'] }], logs, writes })
+  await step($, 'g10')
+  expect(logs.find(l => l.startsWith('agents-inc luna: step 0 of g10'))).toContain('codex_tools {"request_user_input":2}')
+  expect(writes).toEqual([]) // .prompt.txt only with AGENTS_INC_LUNA_DEBUG=1
+})
+
+test('begin runs once per agent before the first step and end adds a changed-tree line', async ($, on) => {
+  const luna: Call[] = []
+  const ok = JSON.stringify({ say: 'x', tools: [] })
+  await setup($, on, { agentId: 'g11', replies: [ok, ok], luna, end: { snapshot: 'changed:1', changed: ['a.txt'] } })
+  await step($, 'g11')
+  await step($, 'g11', 1)
+  expect(luna.filter(c => c.argv[2] === 'begin').length).toBe(1)
+  expect(luna.find(c => c.argv[2] === 'begin')?.argv).toEqual(expect.arrayContaining(['--session', 's1', '--agent', 'g11']))
+  const done = await $.turn.complete({ turnId: 't1', agentId: 'g11', answer: 'report', durationMs: 5, isAborted: false, reason: 'answer' })
+  const end = luna.find(c => c.argv[2] === 'end')
+  expect(end?.argv).toEqual(expect.arrayContaining(['--outcome', 'done']))
+  expect(done.text).toContain('The working tree changed while this agent ran (changed:1): a.txt')
 })
 
 test('the skill listing keeps only skill names, colons in plugin names included', async () => {
@@ -321,6 +474,61 @@ test('a refusal before any tool ran gets one push, and the pushed reply is used'
   expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l /work/a.py' } }])
 })
 
+test('a refusal that survives the push gets one fresh thread', async ($, on) => {
+  const calls: Call[] = []
+  const no = JSON.stringify({ say: 'I can’t run Bash from this interface; no count is available.', tools: [] })
+  const yes = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l c.txt' } }] })
+  await setup($, on, { agentId: 'r2', replies: [no, no, yes], calls, task: 'Run wc -l c.txt with Bash; report C=<n>.' })
+  const { result } = await step($, 'r2')
+  expect(calls.length).toBe(3)
+  expect(calls[2].argv.at(-1)).toMatch(/r2-2\.thread$/)
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l c.txt' } }])
+})
+
+test('an early stop after a tool result gets one push to go on', async ($, on) => {
+  const calls: Call[] = []
+  const stop = JSON.stringify({ say: 'A=173. I haven’t run the other four commands yet.', tools: [] })
+  const yes = JSON.stringify({ say: '', tools: [{ name: 'Bash', input: { command: 'wc -l b.txt' } }] })
+  const rows = [text('user', TASK), toolUse('t1', 'Bash', { command: 'wc -l a.txt' }), toolResult('t1', '173 a.txt')]
+  await setup($, on, { agentId: 'e1', rows, replies: [stop, yes], calls })
+  const { result } = await step($, 'e1')
+  expect(calls.length).toBe(2)
+  expect(calls[1].stdin).toContain('steps of the task remain')
+  expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l b.txt' } }])
+})
+
+test('stopsEarly reads an unfinished report, not a finished one', () => {
+  const say = (t: string) => ({ say: t, tools: [] })
+  expect(stopsEarly(say('A=173. I haven’t run the other four commands yet.'))).toBe(true)
+  expect(stopsEarly(say('A=173; the remaining four steps are next.'))).toBe(true)
+  expect(stopsEarly(say('A=173. I ran only the first command; the other four remain unrun.'))).toBe(true)
+  expect(stopsEarly(say('A=173. I requested four Bash calls, but their results have not arrived in this conversation.'))).toBe(true)
+  expect(stopsEarly(say('A=173 B=95 C=41 D=7. E’s result hasn’t arrived yet.'))).toBe(true)
+  expect(stopsEarly(say('A=173 B=95 C=41 D=7 E=12'))).toBe(false)
+  expect(stopsEarly({ say: 'not yet run', tools: [{ name: 'Bash', input: {} }] })).toBe(false)
+})
+
+test('a partial Read result says it is partial', () => {
+  const msgs = [
+    { role: 'assistant' as const, content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'b.txt', offset: 50, limit: 1 } }] },
+    { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '50\t50\n' }] },
+    { role: 'assistant' as const, content: [{ type: 'tool_use', id: 't2', name: 'Read', input: { file_path: 'b.txt' } }] },
+    { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't2', content: '1\t1\n2\t2\n' }] },
+  ]
+  const out = render(msgs)
+  expect(out).toContain('partial Read (offset 50, limit 1)')
+  expect(out.match(/partial Read/g)?.length).toBe(1)
+})
+
+test('a refusal on the fresh thread too stands as the answer', async ($, on) => {
+  const calls: Call[] = []
+  const no = JSON.stringify({ say: 'I cannot run Bash here.', tools: [] })
+  await setup($, on, { agentId: 'r3', replies: [no, no, no], calls })
+  const { result } = await step($, 'r3')
+  expect(calls.length).toBe(3)
+  expect(result.answer).toContain('I cannot run Bash here.')
+})
+
 test('a value given without running the tool the task names gets one push', async ($, on) => {
   const calls: Call[] = []
   const made = JSON.stringify({ say: 'A=0', tools: [] })
@@ -335,6 +543,7 @@ test('a value given without running the tool the task names gets one push', asyn
 test('skipsTools reads catalog tool names in the task, not in harness reminders', () => {
   const say = (t: string) => ({ say: t, tools: [] })
   expect(skipsTools(say('A=0'), false, 'Run wc -l a.txt with Bash', ['Bash', 'Read'])).toBe(true)
+  expect(skipsTools(say('I can’t make separate Bash calls from this turn’s available tools.'), false, 'Count lines', ['Bash'])).toBe(true)
   expect(skipsTools(say('Lorem — ipsum'), false, 'Write one Latin sentence. Use no tools.', ['Bash', 'Read', 'Write'])).toBe(false)
   expect(skipsTools(say('B=95'), false, 'Count lines, then Read b.txt', ['Read'])).toBe(true)
   expect(skipsTools(say('done'), false, 'Use the Grep tool on src', ['Grep'])).toBe(true)
@@ -395,4 +604,82 @@ test('a step takes the tool request from the progress events when the last messa
   const { result } = await step($, 'p1')
   expect(calls.length).toBe(1)
   expect(result.toolUses).toEqual([{ name: 'Bash', input: { command: 'wc -l a.txt' } }])
+})
+
+// Gap cases for T006, T008, T021, T023, T024, T029, T034, T043.
+test('the bare luna type is not a native luna agent either', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'n1', replies: [], calls, spawnType: 'luna' })
+  const { chunks } = await step($, 'n1')
+  expect(calls.length).toBe(0)
+  expect(chunks.map(c => c.kind)).toEqual(['text'])
+})
+
+test('two sessions with the same agent id get different thread paths', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'same', replies: [JSON.stringify({ say: 'x', tools: [] })], calls, session: 's-two' })
+  await step($, 'same')
+  expect(calls[0].argv.at(-1)).toBe('/work/.scratch/agents-inc-luna/s-two/same.thread')
+  expect(calls[0].argv.at(-1)).not.toContain('/s1/')
+})
+
+test('a denied tool result reaches luna as an error block', () => {
+  const msgs = [
+    { role: 'assistant' as const, content: [{ type: 'tool_use', id: 'd1', name: 'Bash', input: { command: 'rm a.txt' } }] },
+    { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 'd1', is_error: true, content: 'Permission to use Bash has been denied.' }] },
+  ]
+  expect(render(msgs)).toBe('assistant tool call: Bash {"command":"rm a.txt"}\ntool result (error): Permission to use Bash has been denied.')
+})
+
+test('a spawn that throws ends the step with could not run agents-inc, handed back', async ($, on) => {
+  const { calls, text } = await lunaFail($, on, 'th1', { out: '', throws: 'spawn agents-inc ENOENT' }, { replies: [{ out: '', throws: 'spawn agents-inc ENOENT' }] })
+  expect(text).toContain('luna failed: could not run agents-inc:') // the engine words the cause when a hook throws
+  expect(calls.length).toBeLessThanOrEqual(2)
+})
+
+test('agent.list naming another type passes the step to next', async ($, on) => {
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'z1', replies: [], calls, spawnType: 'Explore', agents: [{ id: 'z9', type: 'Explore' }] })
+  const { chunks, result } = await step($, 'z9')
+  expect(calls.length).toBe(0)
+  expect(chunks).toMatchObject([{ kind: 'text', text: 'from anthropic' }])
+  expect(result.answer).toBe('from anthropic')
+})
+
+test('a failing agent.register leaves the type unregistered and unoffered, and says why', async ($, on) => {
+  const logs: string[] = []
+  await setup($, on, { agentId: 'rg1', replies: [], registerThrows: true, logs })
+  expect(logs.some(l => l.includes('not registered: $.agent.register failed'))).toBe(true)
+  expect(await $.agent.offer({ agent: 'agents-inc:luna' })).toMatchObject({ isOffered: false })
+})
+
+test('a registered type is offered', async ($, on) => {
+  await setup($, on, { agentId: 'of1', replies: [] })
+  expect(await $.agent.offer({ agent: 'agents-inc:luna', description: 'luna' })).toMatchObject({ isOffered: true })
+})
+
+test('a begin that resolves late holds the first step, and Codex starts after it', async ($, on) => {
+  const calls: Call[] = []
+  let release!: () => void
+  const beginGate = new Promise<void>(r => { release = r })
+  await setup($, on, { agentId: 'lb1', replies: [JSON.stringify({ say: 'x', tools: [] })], calls, beginGate })
+  const pending = step($, 'lb1')
+  for (let i = 0; i < 30; i++) await Promise.resolve()
+  expect(calls.length).toBe(0)
+  release()
+  const { result } = await pending
+  expect(calls.length).toBe(1)
+  expect(result.answer).toBe('x')
+})
+
+test('a failing begin or end does not fail the step', async ($, on) => {
+  const logs: string[] = []
+  const calls: Call[] = []
+  await setup($, on, { agentId: 'fv1', replies: [JSON.stringify({ say: 'ok', tools: [] })], calls, logs, failVerbs: ['begin', 'end'] })
+  const { result } = await step($, 'fv1')
+  expect(result.toolUses).toEqual([{ name: 'SubagentHandback', input: { message: 'ok' } }])
+  const done = await $.turn.complete({ turnId: 't1', agentId: 'fv1', answer: 'report', durationMs: 5, isAborted: false, reason: 'answer' })
+  expect(done.text).toBe('report')
+  expect(logs.some(l => l.includes('begin exited 2'))).toBe(true)
+  expect(logs.some(l => l.includes('end exited 2'))).toBe(true)
 })
