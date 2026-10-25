@@ -389,7 +389,7 @@ def require_host_tools_catalog(slug: str, codex_home: Path | None = None) -> Pat
     if path is None:
         home = codex_home or real_codex_home()
         raise HostToolsCatalogMissing(
-            f"WB_LUNA_CATALOG_MISSING: no models_cache.json entry for {slug} under {home}; Codex writes it on a model run. "
+            f"WB_LUNA_CATALOG_MISSING: no models_cache.json entry for {slug} under {home}; `codex debug models` writes it with no model call. "
             f"Run once, then retry: {CATALOG_WARM_COMMAND.format(slug=slug)}")
     return path
 

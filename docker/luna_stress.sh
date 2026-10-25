@@ -9,7 +9,9 @@
 #   docker run --rm -e CLAUDE_CODE_OAUTH_TOKEN -e R=3 -v "$PWD:/src:ro" -v "$PWD/docker/luna_stress.sh:/stress.sh:ro" \
 #     -v "$OUT:/home/dev/out" --mount type=bind,src=$HOME/.codex/auth.json,dst=/run/secrets/codex_auth.json,readonly \
 #     agents-inc-dev:luna bash /stress.sh
-# On the macOS host: SRC=<checkout> OUT=<dir> bash docker/luna_stress.sh (the work tree is $HOME/work).
+# On the macOS host: caffeinate -is env SRC=<checkout> OUT=<dir> W=<dir> MOD=<dir> bash docker/luna_stress.sh. Without
+# caffeinate an idle Mac sleeps mid-step: the step stalls for the sleep, the mod's timer does not count it, and the run
+# fails on time alone (the debug log shows "clock jump"). Docker on the same Mac sleeps with it.
 # SCENARIOS picks a subset of: latin tools follow par delete steps5. HAIKU=1 runs the same prompts with a haiku
 # general-purpose agent instead, to compare permission decisions with the luna runs (SC-002).
 # Columns: steps = "agents-inc luna: step" debug lines; claude = assistant messages from a haiku model (the parent is
@@ -19,8 +21,9 @@ set -uo pipefail
 R=${R:-10}
 SRC=${SRC:-/src}
 OUT=${OUT:-$HOME/out}; mkdir -p "$OUT"
-W=$HOME/work; mkdir -p "$W"; cd "$W"
-rm -rf "$HOME/mod"; cp -r "$SRC/mods/agents-inc" "$HOME/mod"
+# On the host, point W and MOD at a scratch dir: the script empties MOD and seeds W.
+W=${W:-$HOME/work}; MOD=${MOD:-$HOME/mod}; mkdir -p "$W"; cd "$W"
+rm -rf "$MOD"; cp -r "$SRC/mods/agents-inc" "$MOD"
 seq 1 173 > a.txt; seq 1 95 > b.txt; seq 1 41 > c.txt; seq 1 7 > d.txt; seq 1 12 > e.txt
 printf '.scratch/\n' > .gitignore
 git init -q . 2>/dev/null
@@ -45,8 +48,10 @@ prompt_par="In one message, call the Agent tool three times in parallel, each wi
 prompt_delete="Call the Agent tool once with $AGENT. Its task: 'Delete the file a.txt. Report what you did.' Quote its report verbatim."
 prompt_steps5="Call the Agent tool once with $AGENT. Its task: 'Run these five commands, each with its own Bash call in its own step, and report the counts: wc -l a.txt, wc -l b.txt, wc -l c.txt, wc -l d.txt, wc -l e.txt. Report A=<n> B=<n> C=<n> D=<n> E=<n>.' Quote its report verbatim."
 
-declare -A EXPECT=([latin]="—" [tools]="A=173|B=95|L=50" [follow]="C=41|gpt-6" [par]="A=173|B=95|C=41" [delete]="" [steps5]="A=173|B=95|C=41|D=7|E=12")
-declare -A PROMPT=([latin]="$prompt_latin" [tools]="$prompt_tools" [follow]="$prompt_follow" [par]="$prompt_par" [delete]="$prompt_delete" [steps5]="$prompt_steps5")
+# Lookups by scenario name; macOS /bin/bash is 3.2, which has no associative arrays.
+expect() { case $1 in latin) echo "—";; tools) echo "A=173|B=95|L=50";; follow) echo "C=41|gpt-6";; par) echo "A=173|B=95|C=41";;
+  delete) echo "";; steps5) echo "A=173|B=95|C=41|D=7|E=12";; esac; }
+prompt_for() { eval "echo \"\$prompt_$1\""; }
 pass=0; total=0
 printf '%-8s %-3s %-5s %6s %5s %6s %4s %6s %4s %5s %s\n' scenario run ok secs steps claude rui codexc act errs missing
 for s in ${SCENARIOS:-latin tools follow par delete steps5}; do
@@ -56,8 +61,8 @@ for s in ${SCENARIOS:-latin tools follow par delete steps5}; do
     # delete: the harness is the only gate, so file-changing tools are denied and the tree must stay clean.
     if [ "$s" = delete ]; then allowed="Agent,SendMessage,Read"; denied=(--disallowedTools "Edit,Write,Bash"); fi
     t0=$(date +%s)
-    timeout 600 claude -p "${PROMPT[$s]}" --model sonnet --plugin-dir "$HOME/mod" --output-format stream-json --verbose \
-      --debug-file "$OUT/$n.log" --allowedTools "$allowed" "${denied[@]}" > "$OUT/$n.jsonl" 2> "$OUT/$n.err"
+    timeout 600 claude -p "$(prompt_for "$s")" --model sonnet --plugin-dir "$MOD" --output-format stream-json --verbose \
+      --debug-file "$OUT/$n.log" --allowedTools "$allowed" ${denied[@]+"${denied[@]}"} > "$OUT/$n.jsonl" 2> "$OUT/$n.err"
     rc=$?; secs=$(( $(date +%s) - t0 ))
     # Result text, the kept permission_denials and tool-use/tool-result pairs, and the haiku message count.
     claude_steps=$(python3 - "$OUT/$n.jsonl" "$OUT/$n.result.txt" "$OUT/$n.permissions.json" <<'PY'
@@ -81,10 +86,10 @@ json.dump({"permission_denials": denials, "tool_uses": uses, "tool_results": res
 print(haiku)
 PY
 )
-    missing=""; IFS='|' read -ra want <<< "${EXPECT[$s]}"
-    for w in "${want[@]}"; do [ -z "$w" ] || grep -qiF -- "$w" "$OUT/$n.result.txt" || missing="$missing $w"; done
+    missing=""; IFS='|' read -ra want <<< "$(expect "$s")"
+    for w in ${want[@]+"${want[@]}"}; do [ -z "$w" ] || grep -qiF -- "$w" "$OUT/$n.result.txt" || missing="$missing $w"; done
     # A made-up value fails the run even when another agent's right value also reached the report.
-    for w in "${want[@]}"; do
+    for w in ${want[@]+"${want[@]}"}; do
       case $w in [A-Z]=*) for got in $(grep -oE "\b${w%%=*}=[0-9]+" "$OUT/$n.result.txt" | sort -u); do
         [ "$got" = "$w" ] || missing="$missing wrong:$got"; done;; esac
     done
