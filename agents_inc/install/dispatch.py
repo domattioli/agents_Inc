@@ -5,6 +5,7 @@ Only the status line goes to stdout. Everything else lands in the run directory.
 from __future__ import annotations
 import base64
 import contextlib
+import fcntl
 import hashlib
 import hmac
 import importlib.util
@@ -17,6 +18,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import stat
 import sys
 import tempfile
 import threading
@@ -26,7 +28,18 @@ from pathlib import Path
 
 from agents_inc.datafiles import repo_file, repo_root
 
+from . import live_events
+from .live_events import EventSink, _stream_run
 from .runtime import QUOTA_PATTERN, kill_and_reap
+
+_LIVE_SINK: EventSink | None = None  # spec 027: events.jsonl writer of the dispatch run in progress
+EXIT_CANCELLED = 130  # spec 027 FR-011: the shell's code for a run ended by SIGINT
+CANCEL_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+CANCEL_GRACE_S = 5.0  # `--cancel`: seconds between SIGTERM and SIGKILL
+
+
+class Cancelled(BaseException):
+    """A termination signal reached the dispatch run. BaseException: the launch-failed handler must not swallow it."""
 
 REPO_ROOT = repo_root()
 SCRIPTS = repo_file("skills/workerbee/scripts")
@@ -259,7 +272,7 @@ def claude_argv(model: str, permission_mode: str, resume: str | None = None, eff
                 allowed: list | None = None, disallowed: list | None = None) -> list[str]:
     exe = shutil.which("claude") or "claude"
     argv = [exe, "-p", "--model", CLAUDE_MODELS[model], "--permission-mode", permission_mode,
-            "--output-format", "json"]
+            "--output-format", "stream-json", "--verbose"]
     if effort:
         argv += ["--effort", effort]
     if resume:
@@ -430,6 +443,13 @@ def claude_scratch_dir() -> str:
 CLAUDE_CWD_FILE_RE = r"^/private/tmp/claude-[0-9a-f]+-cwd$"
 
 
+def _ancestors_between(root: Path, leaf: Path) -> list[Path]:
+    """Folders from `root` down to, not including, `leaf`. Empty when `leaf` is not strictly inside `root`."""
+    if root == leaf or root not in leaf.parents:
+        return []
+    return [root] + [p for p in reversed(leaf.parents) if root in p.parents and p != leaf]
+
+
 def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple = (), write_ok: tuple = (),
                            read_ok: tuple = ()) -> str:
     """sandbox-exec profile: writes only to cwd, the child tmpdir, claude_scratch_dir(), /dev, the login keychain,
@@ -454,9 +474,19 @@ def claude_sandbox_profile(cwd: Path, home: Path, tmpdir: str, deny_paths: tuple
         f'(deny file-read* file-write* (require-all (subpath "{_sb(d)}"){holes}))\n'
         for d in deny_paths)
     claude_write_denies = " ".join(f'(subpath "{h}/.claude/{n}")' for n in CLAUDE_HOME_READ)
+    # #103: a path walk (git's realpath) stats every folder above a hole; metadata only, no names or contents.
+    holes_at = [Path(_sb(p)) for p in (tmpdir,) + tuple(write_ok) + tuple(read_ok)]
+    meta = []
+    for d in deny_paths:
+        for hole in holes_at:
+            for a in _ancestors_between(Path(_sb(d)), hole):
+                if str(a) not in meta:
+                    meta.append(str(a))
+    meta_allow = "".join(f'(allow file-read-metadata (literal "{a}"))\n' for a in meta)
+    read_ok_write_deny = "".join(f'(deny file-write* (literal "{_sb(p)}"))\n' for p in read_ok)  # D4: holes lift write denies
     return ("(version 1)\n(allow default)\n"
             f"(deny file-write* (require-all {keep}))\n"
-            + broker_deny +
+            + broker_deny + meta_allow + read_ok_write_deny +
             f"(deny file-read* file-write* {deny})\n"
             f'(deny file-read* file-write* (regex #"^{re.escape(h)}/\\.claude\\.json"))\n'
             f'(deny file-read* file-write* (require-all (subpath "{h}/.claude") {claude_keep}))\n'
@@ -681,36 +711,19 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
             profile = Path(run_dir) / ("sandbox.sb" if not resume else f"sandbox.{secrets.token_hex(3)}.sb")
             _wtext(profile, claude_sandbox_profile(
                 Path(cwd), Path(env.get("HOME") or Path.home()), env["TMPDIR"], _BROKER_DENY,
-                (channel["ask"],) if channel else (), (channel["script"], channel["config"]) if channel else ()))
+                (channel["ask"],) if channel else (),
+                (Path(run_dir) / "pre_dispatch_snapshot.py", Path(run_dir) / "snapshot.json")  # FR-011
+                + ((channel["script"], channel["config"]) if channel else ())))
             argv += ["--settings", WORKER_SETTINGS]
             argv = [SANDBOX_EXEC, "-f", str(profile)] + argv
         limit = _turn_timeout()
         proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 cwd=str(cwd), text=True, start_new_session=True, **extra)
-        try:
-            stdout, stderr = proc.communicate(input=prompt, timeout=limit)
-            rc = proc.returncode
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            try:
-                stdout, stderr = proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:  # a grandchild holds the pipes open: give up on the output
-                for pipe in (proc.stdin, proc.stdout, proc.stderr):
-                    with contextlib.suppress(Exception):
-                        pipe.close()
-                stdout, stderr = "", ""
-            rc, stderr = 124, f"{stderr or ''}{TIMEOUT_MARK} {limit:g} s"
-        except BaseException:  # cancellation (KeyboardInterrupt included): no detached delegate survives the supervisor
-            kill_and_reap(proc)
-            raise
-        text, session, is_error, usage = stdout, None, False, None
-        try:
-            data = json.loads(stdout)
-            text, session, is_error = str(data.get("result", "")), data.get("session_id"), bool(data.get("is_error"))
-            usage = claude_usage(data)
-        except (ValueError, AttributeError):
-            pass
+        sink = _LIVE_SINK  # spec 027: the run path installs it; None outside a dispatch run
+        # kills the group at the deadline (rc 124, TIMEOUT_MARK) and on cancellation (KeyboardInterrupt included)
+        rc, stdout, stderr = _stream_run(proc, prompt, limit, (lambda ln: sink.line("claude", ln)) if sink else None,
+                                         mark=TIMEOUT_MARK)
+        text, session, is_error, usage = parse_claude_output(stdout)
         return {"rc": rc, "stdout": text, "stderr": stderr, "argv": argv, "session_id": session,
                 "is_error": is_error, "usage": usage}
     from .cli import _efforts, _paths
@@ -731,6 +744,8 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
                        thread_out=None if lead_dir else thread, resume_thread=resume, worker=worker,
                        tools=codex_write or lead_dir is not None, write=codex_write, lead_dir=lead_dir,
                        network=codex_write and codex_network and lead_dir is None, timeout_s=_turn_timeout(),
+                       # json mode only (run_codex ignores it for Lead runs, which get lifecycle events only)
+                       on_line=(lambda ln: _LIVE_SINK.line("codex", ln)) if _LIVE_SINK is not None else None,
                        # the prompt names snapshot.json; a run dir outside cwd (TMPDIR) is otherwise unreadable
                        # the verifier copy too, so the delegate can run its own FAILURE GATE check (#66)
                        extra_read=(Path(run_dir) / "pre_dispatch_snapshot.py",) + (
@@ -738,6 +753,36 @@ def launch(kind: str, model: str, effort: str | None, cwd: Path, prompt: str, ru
     return {"rc": rc, "stdout": out.getvalue(), "stderr": err.getvalue(),
             "argv": ["run_codex", model, effort, str(cwd)] + (["resume", resume] if resume else []),
             "session_id": thread.get("thread_id") or resume, "is_error": False}
+
+
+def parse_claude_output(stdout: str) -> tuple:
+    """(text, session_id, is_error, usage) from Claude stdout (spec 027 R1).
+
+    The last `type: "result"` line of a stream-json run wins; else the whole stdout as one legacy json payload
+    (it must carry `result`); else the raw stdout. Never raises."""
+    payload = None
+    for line in reversed((stdout or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("type") == "result":
+            payload = data
+            break
+    if payload is None:
+        try:
+            data = json.loads(stdout)
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, dict) and "result" in data:
+            payload = data
+    if payload is None:
+        return stdout, None, False, None
+    return (str(payload.get("result", "")), payload.get("session_id"), bool(payload.get("is_error")),
+            claude_usage(payload))
 
 
 def claude_usage(data) -> dict | None:
@@ -1262,6 +1307,10 @@ def run(args) -> int:
     if hit:
         print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
         return EXIT_REFUSED
+    control = control_char_hit(slots)  # 026 (#109): C0, DEL and bidi controls, before anything is written
+    if control:
+        print(f"dispatch: refused-control-char (slot {control[0]} {control[1]})", file=sys.stderr)
+        return EXIT_REFUSED
     cwd = Path(args.cwd or os.getcwd()).resolve()
     if not cwd.is_dir():
         print(f"dispatch: cwd is not a directory: {cwd}", file=sys.stderr)
@@ -1277,6 +1326,134 @@ def run(args) -> int:
     except OSError as exc:
         print(f"dispatch: cannot create run directory {run_dir}: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    print(f"agents-inc dispatch: run {run_id} dir {run_dir}", file=sys.stderr)  # 027 FR-007
+    global _LIVE_SINK
+    sink = _LIVE_SINK = EventSink(run_dir, safe_writes=_BROKER_SAFE_WRITES)
+    sink.emit("agents-inc", {"type": "run.start", "run_id": run_id, "model": model, "kind": kind})
+    code, outcome = EXIT_RED, "red"
+    saved_handlers = _install_cancel_handlers()
+    try:
+        code = _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, run_dir)
+        outcome = _run_end_outcome(run_dir, code)
+        return code
+    except Cancelled:  # launch() already killed and reaped the delegate's group
+        outcome, code = "cancelled", EXIT_CANCELLED
+        _mark_cancelled(run_dir, run_id, model)
+        return code
+    except BaseException:
+        outcome = "cancelled"  # KeyboardInterrupt and anything else that escapes: launch() reaped the child
+        raise
+    finally:
+        _restore_handlers(saved_handlers)
+        live_events.CHILD_START = None
+        _LIVE_SINK = None
+        spec_rc = _read_run_json(run_dir).get("rc")
+        sink.emit("agents-inc", {"type": "run.end", "outcome": outcome, "rc": spec_rc if isinstance(spec_rc, int) else code})
+        sink.close()
+        if sink.error:  # 027 FR-009: a viewer problem never changes the verdict; run.json records it
+            spec = _read_run_json(run_dir)
+            if spec:
+                spec["events_error"] = sink.error
+                with contextlib.suppress(OSError):
+                    _write_json(run_dir / "run.json", spec)
+
+
+def _on_cancel_signal(signum, frame) -> None:
+    for s in CANCEL_SIGNALS:  # one cancellation: a second signal during cleanup changes nothing
+        signal.signal(s, signal.SIG_IGN)
+    raise Cancelled(signal.Signals(signum).name)
+
+
+def _install_cancel_handlers() -> dict:
+    """Make SIGTERM, SIGHUP and SIGINT raise Cancelled (FR-011). Only the main thread may install handlers."""
+    if threading.current_thread() is not threading.main_thread():
+        return {}
+    return {s: signal.signal(s, _on_cancel_signal) for s in CANCEL_SIGNALS}
+
+
+def _restore_handlers(saved: dict) -> None:
+    for s, handler in saved.items():
+        signal.signal(s, handler if handler is not None else signal.SIG_DFL)
+
+
+def _process_start(pid: int) -> str | None:
+    """`ps` start time of a process: tells a recorded group leader from an unrelated process that took its pid."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))], capture_output=True, text=True,
+                             timeout=5).stdout.strip()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return out or None
+
+
+def _record_child(spec: dict, run_dir: Path, pid: int) -> None:
+    """FR-012: the delegate leads its own process group (start_new_session): note the group and the leader's start
+    time in run.json while the run is live, so `dispatch --cancel` can find it."""
+    spec["delegate_pgid"], spec["delegate_start"] = pid, _process_start(pid)
+    with contextlib.suppress(OSError):
+        _write_json(run_dir / "run.json", spec)
+
+
+def _mark_cancelled(run_dir: Path, run_id: str, model: str) -> None:
+    spec = _read_run_json(run_dir) or {"run_id": run_id, "model": model}
+    spec.update(outcome="cancelled", reason="cancelled", rc=EXIT_CANCELLED)
+    with contextlib.suppress(OSError):
+        _write_json(run_dir / "run.json", spec)
+    print(f"dispatch {run_id} {model} cancelled")
+
+
+def cancel_run(run_dir) -> int:
+    """`dispatch --cancel RUN_DIR` (FR-012): stop the recorded delegate group of a run that has no final outcome and
+    whose group leader still has the recorded start time. SIGTERM, then SIGKILL after CANCEL_GRACE_S. Else do nothing."""
+    spec = _read_run_json(Path(run_dir))
+    pgid, started = spec.get("delegate_pgid"), spec.get("delegate_start")
+    if spec.get("outcome") or not isinstance(pgid, int) or pgid <= 1 or not started \
+            or _process_start(pgid) != started:
+        print("nothing to cancel")
+        return EXIT_OK
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + CANCEL_GRACE_S
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            print(f"cancelled group {pgid}")
+            return EXIT_OK
+        time.sleep(0.05)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGKILL)
+    print(f"cancelled group {pgid} (killed)")
+    return EXIT_OK
+
+
+def _read_run_json(run_dir: Path) -> dict:
+    try:
+        data = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _run_end_outcome(run_dir: Path, code: int) -> str:
+    """The FR-002 `run.end` outcome for a finished run, read back from the run.json the run path wrote."""
+    spec = _read_run_json(run_dir)
+    outcome, reason = spec.get("outcome"), spec.get("reason")
+    if outcome == "dry-run":
+        return "dry-run"
+    if isinstance(outcome, str) and outcome.startswith("refused"):
+        return "refused"
+    if outcome == "red" and reason == "launch-failed":
+        return "launch-failed"
+    if outcome == "red" and reason == "timeout":
+        return "timeout"
+    if outcome in ("green", "unverified"):
+        return "done"
+    return "red"
+
+
+def _run_dir_phase(args, model, kind, effort, slots, slots_path, cwd, run_id, run_dir) -> int:
+    """Everything after the run directory exists (split from run() for the spec 027 event bracket)."""
     if _BROKER_SAFE_WRITES:  # 025 (#104): a broker Worker loads its Lead's scripts and never probes its own cwd
         sdir, ssrc = _INHERITED_SCRIPTS or (SCRIPTS, "installed")
     else:
@@ -1389,6 +1566,7 @@ def run(args) -> int:
         _write_json(run_dir / "run.json", spec)  # before launch: the broker reads the parent run.json
     global _LAUNCHES
     _LAUNCHES += 1
+    live_events.CHILD_START = lambda pid: _record_child(spec, run_dir, pid)
     try:
         result = launch(kind, model, effort, cwd, prompt, run_dir, spec["permission_mode"],
                         **({"codex_write": True} if spec["codex_write"] else {}),
@@ -1457,6 +1635,10 @@ def resume(args) -> int:
     if not args.message:
         print("dispatch: --resume needs --message", file=sys.stderr)
         return EXIT_USAGE
+    control = control_char_hit({"MESSAGE": args.message})
+    if control:
+        print(f"dispatch: refused-control-char (slot {control[0]} {control[1]})", file=sys.stderr)
+        return EXIT_REFUSED
     hit = credential_hit({"MESSAGE": args.message})  # 025 (#105): same screen as the broker's resume message
     if hit:
         print(f"dispatch: refused credential-seeking ({hit})", file=sys.stderr)
@@ -1605,6 +1787,7 @@ def names_credential(tokens) -> bool:
 
 
 BROKER_OK, BROKER_FATAL, BROKER_USAGE = 0, 1, 2
+BROKER_LOCK = "broker.lock"  # flock target in the run directory; never unlinked, never in a sandbox grant
 REQ_GREEN, REQ_RED, REQ_USAGE, REQ_REFUSED = 0, 1, 2, 3
 REQ_STATUS = {REQ_GREEN: "green", REQ_RED: "red", REQ_USAGE: "usage-error", REQ_REFUSED: "refused"}
 
@@ -1747,11 +1930,39 @@ def _validate_fields(req, spec: dict, expected_id: str) -> tuple[dict | None, st
             return None, "broker-owned-slot"
     if "FAN_OUT" in slots and parse_fan_out("FAN_OUT: " + slots["FAN_OUT"]) != {"width": 0, "total": 0, "depth": 0}:
         return None, "worker-cannot-lead"  # D60: a broker Worker never leads (#73); send 'width 0, total 0, depth 0' or omit it
+    if control_char_hit(slots):
+        return None, "refused-control-char"
     if _reject_credential_seeking(slots):
         return None, "credential-seeking"
     if _kind(model) == "claude" and not sandbox_available():
         return None, "no-sandbox-backend"
     return req, None
+
+
+# 026 US4 (#109): same pattern as skills/workerbee/scripts/render_dispatch.py (a pinned checkout copy of that
+# script may predate it, so it is not loaded from there); tests pin the two equal.
+CONTROL_CHAR_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f؜‎‏‪-‮⁦-⁩]")
+
+
+def _nested_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _nested_strings(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _nested_strings(item)
+
+
+def control_char_hit(slots) -> tuple[str, str, int] | None:
+    """(top-level slot key, `U+XXXX`, code-point offset) of the first refused character, else None."""
+    for key, value in (slots.items() if isinstance(slots, dict) else ()):
+        for text in _nested_strings(value):
+            match = CONTROL_CHAR_RE.search(text)
+            if match:
+                return key, f"U+{ord(match.group(0)):04X}", match.start()
+    return None
 
 
 def credential_hit(slots) -> str | None:
@@ -1912,6 +2123,10 @@ def _handle_one(run_dir: Path, name: str, spec: dict, seen: set, home_repo: str 
             detail = credential_hit(raw.get("slots"))
             if detail:
                 extra = dict(extra, reason_detail=detail)
+        elif reason == "refused-control-char":  # 026: name the slot and the code point
+            hit = control_char_hit(raw.get("slots"))
+            if hit:
+                extra = dict(extra, reason_detail=f"slot {hit[0]} {hit[1]}")
     if rid:
         seen.add(rid)
     if req is None:
@@ -2146,6 +2361,8 @@ def plan_resume(run_dir: Path, spec: dict, rid, message, known) -> tuple[dict | 
         return None, "bad-message"
     if len(json.dumps({"request_id": rid, "message": message}).encode("utf-8")) > REQUEST_MAX_BYTES:
         return None, "oversize"
+    if control_char_hit({"MESSAGE": message}):
+        return None, "refused-control-char"
     if _reject_credential_seeking({"MESSAGE": message}):
         return None, "credential-seeking"
     if not known(rid):
@@ -2244,6 +2461,42 @@ def serve(run_dir: str | Path, poll_interval: float = 1.0, idle_timeout: float =
     if inbox.is_symlink() or not inbox.is_dir():
         print(f"dispatch --serve: {inbox} must be a real directory (the Lead's only write grant)", file=sys.stderr)
         return BROKER_USAGE
+    lock_fd, refusal = _take_broker_lock(root)
+    if lock_fd is None:
+        print(f"dispatch --serve: {refusal}", file=sys.stderr)
+        return BROKER_USAGE
+    try:
+        return _serve_locked(root, inbox, poll_interval, idle_timeout, home_repo, sleep, clock)
+    finally:
+        os.close(lock_fd)  # the flock goes with the descriptor; the file stays
+
+
+def _take_broker_lock(root: Path) -> tuple[int | None, str]:
+    """Take the exclusive flock on <run-dir>/broker.lock. Return (fd, "") or (None, refusal text)."""
+    path = root / BROKER_LOCK
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        return None, f"{path} must be a regular file ({exc.strerror})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raw = os.pread(fd, 32, 0).decode("ascii", "replace").strip()
+            os.close(fd)
+            return None, f"another broker holds {path} (pid {raw if raw.isdigit() else 'unknown'})"
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, str(os.getpid()).encode(), 0)
+    except OSError:
+        os.close(fd)
+        return None, f"{path} must be a regular file"
+    return fd, ""
+
+
+def _serve_locked(root: Path, inbox: Path, poll_interval: float, idle_timeout: float, home_repo: str | None,
+                  sleep, clock) -> int:
     try:
         spec = _load_run_manifest(root)
     except (OSError, ValueError) as exc:

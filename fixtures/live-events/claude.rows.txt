@@ -1,0 +1,13 @@
+[00:00] haiku start: run fixture-run
+[00:01] haiku note: claude system
+[00:02] haiku think: Check the tree first, then edit the launcher.
+[00:03] haiku say: Checking the tree. Key [redacted] and [redacted] are fake.
+[00:04] haiku tool: git status --short
+[00:05] haiku note: claude user
+[00:06] haiku file: agents_inc/install/dispatch.py
+[00:07] haiku tool: curl -s -H "Authorization: Bearer [redacted]" https://example.invalid/ping
+[00:08] haiku note: claude mystery_event
+[00:09] haiku note: claude raw: stream warmup (not json)
+[00:10] haiku tool: Read (file_path)
+[00:11] haiku usage: in=1500 out=420
+[00:12] haiku end: done rc=0

@@ -54,6 +54,15 @@ def _git_repo(root: Path) -> Path:
     return repo
 
 
+def _held_lock(path: Path, text: str) -> int:
+    """Open `path` on its own file description, take the exclusive flock and write `text` (a stand-in broker)."""
+    import fcntl
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    os.write(fd, text.encode())
+    return fd
+
+
 class BrokerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -899,6 +908,164 @@ class BrokerTest(unittest.TestCase):
             cli.main(["run", "--model", "terra", "--cwd", str(self.repo), "--lead", str(self.run_dir),
                       "--home-repo", "/home/repo"])
         self.assertEqual(rc_mock.call_args.kwargs["home_repo"], "/home/repo")
+
+
+class WorkerGitTest(unittest.TestCase):
+    """US2 / FR-009, FR-011, FR-012: metadata reads on the folders above sandbox holes (#103)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name).resolve()
+        self.cwd = self.root / "cwd"
+        self.b = self.root / "broker"
+        self.child = self.b / "workers" / "w1"
+        self.wtmp = self.child / "tmp"
+        self.wtmp.mkdir(parents=True)
+        self.cwd.mkdir()
+        self.home = self.root / "home"
+        self.home.mkdir()
+        (self.b / "secret.txt").write_text("broker secret")
+        (self.child / "snapshot.json").write_text("{}")
+        (self.child / "pre_dispatch_snapshot.py").write_text("# snap")
+        self.read_ok = (self.child / "pre_dispatch_snapshot.py", self.child / "snapshot.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _profile(self, cwd=None):
+        return dispatch.claude_sandbox_profile(cwd or self.cwd, self.home, str(self.wtmp), (self.b,),
+                                               read_ok=self.read_ok)
+
+    def test_profile_text_metadata_allows_for_ancestors_only(self):
+        prof = self._profile()
+        for p in (self.b, self.b / "workers", self.child):
+            self.assertIn(f'(allow file-read-metadata (literal "{p}"))', prof)
+        self.assertNotIn(f'(allow file-read-metadata (literal "{self.wtmp}"))', prof)  # the hole itself
+        self.assertNotIn("file-read-data", prof)
+        self.assertNotIn("XDG_CONFIG_HOME", prof)
+        self.assertNotIn("allow file-read-metadata (subpath", prof)
+
+    def test_profile_text_nothing_for_hole_outside_deny_roots(self):
+        outside = self.root / "elsewhere" / "tmp"
+        outside.mkdir(parents=True)
+        prof = dispatch.claude_sandbox_profile(self.cwd, self.home, str(outside), (self.b,))
+        self.assertNotIn(f'literal "{self.root / "elsewhere"}"', prof)
+        self.assertNotIn(f'(allow file-read-metadata (literal "{outside}"))', prof)
+
+    def test_profile_text_denies_writes_to_read_ok_paths(self):
+        prof = self._profile()
+        for p in self.read_ok:
+            self.assertIn(f'(deny file-write* (literal "{p}"))', prof)
+
+    @unittest.skipUnless(os.access(dispatch.SANDBOX_EXEC, os.X_OK), "sandbox-exec unavailable")
+    def test_git_works_under_broker_profile_and_secrets_stay_denied(self):
+        for cwd in (self.cwd, self.b):  # second case: run dir under the granted cwd (R2-2)
+            prof = self.root / "p.sb"
+            prof.write_text(self._profile(cwd))
+            sb = [dispatch.SANDBOX_EXEC, "-f", str(prof)]
+            env = {"HOME": str(self.home), "TMPDIR": str(self.wtmp), "PATH": dispatch.WORKER_PATH,
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+            def run(*cmd):
+                return subprocess.run(sb + list(cmd), capture_output=True, text=True, env=env)
+            probe = run("/bin/ls", str(self.wtmp))
+            if "sandbox_apply" in probe.stderr:
+                self.skipTest("nested sandbox: " + probe.stderr.strip())
+            repo = self.wtmp / f"repo-{cwd.name}"
+            for cmd in (["git", "init", str(repo)], ["git", "-C", str(repo), "add", "-A"],
+                        ["git", "-C", str(repo), "commit", "--allow-empty", "-m", "t"]):
+                got = run("/usr/bin/env", *cmd)
+                self.assertEqual(got.returncode, 0, got.stderr)
+            self.assertNotEqual(run("/bin/cat", str(self.b / "secret.txt")).returncode, 0)
+            self.assertNotEqual(run("/bin/ls", str(self.b)).returncode, 0)
+            self.assertNotEqual(run("/bin/ls", str(self.b / "workers")).returncode, 0)
+            self.assertEqual(run("/bin/cat", str(self.child / "snapshot.json")).returncode, 0)
+            self.assertNotEqual(run("/usr/bin/touch", str(self.child / "snapshot.json")).returncode, 0)
+
+
+class BrokerLockTest(unittest.TestCase):
+    """US3 / FR-013..016: one broker per run directory, enforced by an flock on <run>/broker.lock."""
+    setUp = BrokerTest.setUp
+    tearDown = BrokerTest.tearDown
+    _manifest = BrokerTest._manifest
+    _slots = BrokerTest._slots
+    _request = BrokerTest._request
+    _fake_launch = BrokerTest._fake_launch
+    _serve = BrokerTest._serve
+    _result = BrokerTest._result
+
+    def _hold(self, text):
+        fd = _held_lock(self.run_dir / "broker.lock", text)
+        self.addCleanup(os.close, fd)
+
+    def test_second_broker_refused_with_holder_pid(self):
+        self._manifest()
+        self._hold("4242")
+        before = (self.run_dir / "run.json").read_bytes()
+        req = self._request("r1")
+        rc, err = self._serve(done=False)
+        self.assertEqual(rc, 2, err)
+        self.assertIn(f"dispatch --serve: another broker holds {self.run_dir / 'broker.lock'} (pid 4242)", err)
+        self.assertEqual((self.run_dir / "run.json").read_bytes(), before)
+        self.assertTrue(req.exists())  # request not set aside
+        self.assertEqual(self.launches, [])
+
+    def test_garbage_pid_reported_unknown(self):
+        self._manifest()
+        self._hold("not-a-pid")
+        rc, err = self._serve(done=False)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("(pid unknown)", err)
+
+    def test_two_real_serves_then_lock_released(self):
+        import threading
+        self._manifest()
+        started, release = threading.Event(), threading.Event()
+
+        def sleeper(_):
+            started.set()
+            release.wait(10)
+        out = {}
+
+        def first():
+            with mock.patch.object(dispatch, "launch", side_effect=self._fake_launch()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                out["rc"] = dispatch.serve(self.run_dir, poll_interval=0.01, idle_timeout=30, sleep=sleeper)
+        t = threading.Thread(target=first)
+        t.start()
+        try:
+            self.assertTrue(started.wait(10))
+            rc, err = self._serve(done=False)
+            self.assertEqual(rc, 2, err)
+            self.assertIn("another broker holds", err)
+        finally:
+            (self.inbox / "lead.done").write_text("")
+            release.set()
+            t.join(10)
+        self.assertEqual(out.get("rc"), 0)
+        rc, err = self._serve(done=True)  # lock freed when the first broker exited
+        self.assertEqual(rc, 0, err)
+
+    def test_symlinked_lock_refused_target_untouched(self):
+        self._manifest()
+        target = self.root / "elsewhere"
+        target.write_text("keep")
+        os.symlink(target, self.run_dir / "broker.lock")
+        rc, err = self._serve(done=False)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("must be a regular file", err)
+        self.assertEqual(target.read_text(), "keep")
+
+    def test_lock_file_never_unlinked_and_holds_pid(self):
+        self._manifest()
+        rc, err = self._serve()
+        self.assertEqual(rc, 0, err)
+        self.assertTrue((self.run_dir / "broker.lock").is_file())
+
+    def test_claude_profile_has_no_broker_lock_hole(self):
+        prof = dispatch.claude_sandbox_profile(self.repo, self.root / "home", str(self.root / "t"), (self.run_dir.resolve(),))
+        self.assertNotIn("broker.lock", prof)
 
 
 if __name__ == "__main__":

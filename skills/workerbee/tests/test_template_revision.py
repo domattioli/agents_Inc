@@ -140,6 +140,11 @@ class ReportProfileTest(unittest.TestCase):
                          ["caveman", "grill", "provenance-tags", "out-of-scope-incomplete", "gate-exit-codes",
                           "workers-spawned"])
 
+    def test_unreadable_caveman_declaration_accepted(self):
+        text = ("caveman: unreadable -> by hand\nGRILL: none\n[verified] suite ok, exit code 0\n"
+                "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+        self.assertNotIn("caveman", cdp.check_report(text))
+
     def test_full_report(self):
         text = ("caveman ultra confirmed\nGRILL: none\n[verified] suite ok, exit code 0\n"
                 "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")

@@ -6,8 +6,22 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-26
+
+### Added
+
+- `agents-inc:luna`, a native Claude Code subagent type in the agents-inc mod: each step is answered by luna through Codex with no Codex-side tools, so the Claude Code permission rules are the only gate. A failed step ends loudly as `luna failed: ...` or `luna quota-paused: ...` and never falls back to the placeholder model. `agents-inc luna status|on|off` switches it, `agents-inc doctor` prints a `luna type:` line, and the mod writes a host-ledger row (`source` `native-luna`) and a working-tree snapshot check per agent. The pre-028 luna routes are unchanged (spec 028, D69)
+- luna steps recover from four failure kinds seen in the Docker stress runs: a refusal that survives the push gets one fresh thread, an early stop after a tool result gets one push to go on, a partial Read result says it is partial, and host tool requests luna sent as `request_user_input` calls are replayed from the Codex rollout (spec 028)
+
 ### Fixed
 
+- Native luna host-tool runs drop four Codex context notes and clarify that the host decides tool permissions. The macOS follow-up scored 14 of 15; enabling empty answers to `request_user_input` fell to 11 of 15, so that setting was rejected (spec 028, D69).
+- The test suite runs inside the Claude Code sandbox: tests that bind a local port skip with a stated reason when the bind is refused, and the Ollama adapter tests use temporary paths and a fresh doctor cache instead of fixed `/tmp` files and live CLI probes (#110)
+- A broker Claude Worker can run `git init`, `git add` and `git commit` in its TMPDIR: the profile grants metadata-only reads on the folders above each hole in the broker deny, and read-only holes (including the Worker's own `snapshot.json` and `pre_dispatch_snapshot.py`) get an explicit write deny (#103)
+- `dispatch --serve` takes an exclusive lock on `<run-dir>/broker.lock`; a second broker on the same run directory exits 2 naming the holder's pid and leaves `run.json` and the inbox alone (#109)
+- Control and bidi characters in a slot value or resume message are refused as `refused-control-char` by `dispatch` and the renderer, which names the slot and code point (#109)
+- `agents-inc run --run-dir` works for read-only runs: it needs tools, not `--write` (#88)
+- The prompt contract treats an unreadable caveman skill file as `caveman unreadable -> checked by hand`, not as a block (#88)
 - Dispatch slot gaps from #100: a `GATES` entry may be a plain command string (shlex-split, no shell) as well as an `{argv, cwd, timeout_s, expect_rc}` object, and a blank `PRE_EXISTING_CHANGES` is filled by the renderer with the snapshot placeholder text and one `--allow` per path in `FILES_IN_SCOPE`. QUICKREF and `slots.md` show the GATES object shape.
 - Sandboxed sessions no longer learn about the #94 refusal at dispatch time: doctor warns `WB_SANDBOX_EXCLUDE_MISSING` when the Claude settings file lacks `"agents-inc *"` under `sandbox.excludedCommands`, and the session-start hook names that exact operator ask. `agents-inc install` and `repair` now add that entry on the Claude host (other entries untouched) and `unwire` removes only it. The hook also explains `INSTALL_STALE`.
 - The report lint accepts the contract's no-gate form `exit code N/A`, and the `[verified]` exit check no longer fires on `exit` used as a plain word (#91).
@@ -24,6 +38,8 @@ All notable changes to this project are recorded here. The format follows
 - The renderer parses the snapshot verify gate with `shlex` and checks each argument position (interpreter, verifier script, `verify`, snapshot path, then `--allow` or `--repo` pairs), so an invented verifier or a shell operator exits 2 (#108)
 
 ### Added
+- Live delegate view (spec 027). A dispatch run writes `events.jsonl` in its run directory while the delegate works. `agents-inc events follow <run dir>` prints readable rows from it (`[MM:SS] <model> <kind>: <summary>`, secrets redacted), and `agents-inc events redact` redacts stdin. The new Claude Code mod `mods/agents-inc` adds a `relay` subagent and a `run` tool that show those rows in the subagent transcript while the dispatch runs. `install` and `repair` register the mod through the `claude plugin` CLI (`--no-mod` skips it, a failure only warns); `uninstall` removes it; `doctor` warns `MOD_NOT_INSTALLED` and still reports `READY`.
+- Cancelling a run: SIGTERM, SIGHUP and SIGINT end a dispatch `cancelled` (exit 130), kill the delegate's process group and write `run.end`. `agents-inc dispatch --cancel <run dir>` stops a run from outside, only while the run has no final outcome and the recorded group leader is still the process dispatch started.
 - A local dev image (`docker/Dockerfile.dev`, `docker/dev_entry.sh`): Linux with the real Claude Code and Codex CLIs, agents-inc installed from the mounted checkout, credentials mounted read-only under `/run/secrets` and copied into the throwaway home. Never built in CI.
 
 - A clean-install check in Docker (`docker/Dockerfile.ci`, `docker/ci_check.sh`, workflow `docker-install`): builds the wheel, installs it as an unprivileged user with an empty HOME and no Claude or Codex CLI on Python 3.11 and 3.14, then runs `install`, `doctor`, a dry-run dispatch, a snapshot verify from outside the repository, and `uninstall`. It covers install drift and the Linux half; the macOS sandbox paths stay on the Mac. `docker/stress_check.sh` runs the same image against a mounted checkout with a fake `claude` on PATH and no network: malformed slots, gate refusals and outcomes, resume, the broker inbox, concurrent dispatches, uninstall and rollback.

@@ -1,0 +1,18 @@
+{
+ "input_tokens": 1500,
+ "output_tokens": 420,
+ "cache_read": 300,
+ "cache_write": 100,
+ "cost_usd_list": 0.0123,
+ "num_turns": 3,
+ "duration_ms": 4200,
+ "models": {
+  "claude-haiku-5-5": {
+   "input_tokens": 1500,
+   "output_tokens": 420,
+   "cache_read": 300,
+   "cache_write": 100,
+   "cost_usd": 0.0123
+  }
+ }
+}

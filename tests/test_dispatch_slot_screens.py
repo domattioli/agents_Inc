@@ -235,5 +235,72 @@ class DirectPathScreenTest(DispatchBase):
         self.assertEqual((self.run_dir() / "run.json").read_bytes(), before)
 
 
+class ControlCharTest(DispatchBase):
+    """026 US4 (#109 item 2): C0 (except tab, LF, CR), DEL and bidi controls never reach a prompt."""
+
+    CASES = (("\x00", "U+0000"), ("‮", "U+202E"), ("⁦", "U+2066"), ("\x7f", "U+007F"))
+
+    def _boom(self, *a, **k):
+        raise AssertionError("launch must not run")
+
+    def _request(self, slots: dict) -> dict:
+        return {"schema_version": 1, "request_id": "r1", "model": "haiku", "effort": "low", "tier": "grunt",
+                "slots": slots}
+
+    def test_direct_path_refuses_before_a_run_dir_exists(self):
+        for ch, code in self.CASES:
+            with self.subTest(code=code):
+                rc, out, err = self.dispatch(self._boom, slots=self.slots(TASK=f"do a{ch}b"))
+                self.assertEqual(rc, 3, out + err)
+                self.assertEqual(err.strip(), f"dispatch: refused-control-char (slot TASK {code})")
+                self.assertFalse(self.runs.exists() and any(self.runs.iterdir()))
+
+    def test_validate_fields_refuses_with_reason(self):
+        for ch, code in self.CASES:
+            with self.subTest(code=code), mock.patch.object(dispatch, "sandbox_available", return_value=True):
+                self.assertEqual(
+                    dispatch._validate_fields(self._request({"TASK": f"a{ch}b"}), {"worker_models": ["haiku"]}, "r1"),
+                    (None, "refused-control-char"))
+
+    def test_plan_resume_refuses_message(self):
+        for ch, _ in self.CASES:
+            with self.subTest(ch=ch):
+                self.assertEqual(dispatch.plan_resume(Path("/x"), {}, "r1", f"go{ch}on", lambda rid: True),
+                                 (None, "refused-control-char"))
+
+    def test_resume_message_refused_and_run_json_untouched(self):
+        from tests.test_dispatch_snapshot_trust import ok_launch
+        rc, out, err = self.dispatch(ok_launch())
+        self.assertEqual(rc, 0, out + err)
+        before = (self.run_dir() / "run.json").read_bytes()
+        with mock.patch.object(dispatch, "launch", side_effect=self._boom):
+            rc, out, err = self.main("--resume", str(self.run_dir()), "--message", "go‮on")
+        self.assertEqual(rc, 3, out + err)
+        self.assertEqual(err.strip(), "dispatch: refused-control-char (slot MESSAGE U+202E)")
+        self.assertEqual((self.run_dir() / "run.json").read_bytes(), before)
+
+    def test_hit_reports_key_code_point_and_offset(self):
+        self.assertEqual(dispatch.control_char_hit({"TASK": "ab‮cd"}), ("TASK", "U+202E", 2))
+        self.assertEqual(dispatch.control_char_hit({"A": "ok", "GATES": [{"argv": ["x", "y\x00"]}]}),
+                         ("GATES", "U+0000", 1))  # D5: nested strings, top-level key
+        self.assertIsNone(dispatch.control_char_hit({"TASK": "x"}))
+
+    def test_whitespace_and_non_ascii_are_accepted(self):
+        for text in ("a\tb", "a\nb", "a\r\nb", "café", "日本", "ok \U0001f642"):
+            with self.subTest(text=text):
+                self.assertIsNone(dispatch.control_char_hit({"TASK": text}))
+        rc, out, err = self.dispatch(self._boom, slots=self.slots(TASK="tab\there, café, 日本, \U0001f642"),
+                                     extra=("--dry-run",))
+        self.assertNotIn("refused-control-char", out + err)
+
+    def test_pattern_matches_render_dispatch(self):
+        import importlib.util
+        path = Path(__file__).resolve().parents[1] / "skills/workerbee/scripts/render_dispatch.py"
+        spec = importlib.util.spec_from_file_location("render_dispatch_pin", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(dispatch.CONTROL_CHAR_RE.pattern, module.CONTROL_CHAR_RE.pattern)
+
+
 if __name__ == "__main__":
     unittest.main()

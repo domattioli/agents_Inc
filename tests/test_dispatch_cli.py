@@ -113,6 +113,15 @@ class DispatchCliTest(CliBase):
         self.assertIn("refused", out)
         self.assertIn("OUT_OF_SCOPE", (self._run_dir() / "lint.txt").read_text())
 
+    def test_render_refuses_control_character_with_offset(self):
+        """026 US4 FR-019: render_dispatch.py exits 2, names slot and offset, prints nothing on stdout."""
+        task = "abcde‮fgh"  # offset 5
+        proc = subprocess.run([sys.executable, str(REPO / "skills/workerbee/scripts/render_dispatch.py"),
+                               "--slots", str(self._slots(TASK=task))], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertEqual(proc.stderr.strip(), "render: slot TASK has control character U+202E at offset 5")
+        self.assertEqual(proc.stdout, "")
+
     def test_lint_refusal_prints_missing(self):
         with mock.patch.object(dispatch, "lint_prompt", return_value=([12], "")):
             rc, out, _ = self._main("--slots", str(self._slots()), "--model", "haiku", "--cwd", str(self.repo),
@@ -234,7 +243,7 @@ class DispatchCliTest(CliBase):
         self.assertIsNone(calls["effort"])
         argv = spec["argv"]
         self.assertEqual(argv[1:], ["-p", "--model", "claude-sonnet-5-5", "--permission-mode", "acceptEdits",
-                                    "--output-format", "json"])
+                                    "--output-format", "stream-json", "--verbose"])
         self.assertIsNone(spec["effort"])
         self.assertNotIn("--effort", argv)
         self.assertEqual(spec["session_id"], "sess-1")
@@ -413,7 +422,7 @@ class DispatchCliTest(CliBase):
             res = dispatch.launch("claude", "opus", "high", self.repo, "PROMPT", self.root, "plan")
         argv = run.call_args.args[0]
         self.assertEqual(argv[1:], ["-p", "--model", dispatch.CLAUDE_MODELS["opus"], "--permission-mode", "plan",
-                                    "--output-format", "json", "--effort", "high"])
+                                    "--output-format", "stream-json", "--verbose", "--effort", "high"])
         self.assertEqual(run.call_args.kwargs["input"], "PROMPT")
         self.assertEqual(run.call_args.kwargs["cwd"], str(self.repo))
         self.assertEqual((res["stdout"], res["session_id"]), ("hi", "s9"))

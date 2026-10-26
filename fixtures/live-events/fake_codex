@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Fake `codex exec` for spec 027 tests. Prints codex.jsonl line by line, writes the report to the -o file.
+
+FAKE_PACE seconds between lines (default 0.5); FAKE_SLEEP=1 sleeps forever after the first line (cancel tests);
+FAKE_RC exit code (default 0); FAKE_FIXTURE overrides the fixture path (default: codex.jsonl beside this file)."""
+import os
+import sys
+import time
+from pathlib import Path
+
+REPORT = ("caveman ultra confirmed. GRILL: none. [verified] gate rc=0 exit code 0.\n"
+          "OUT OF SCOPE / INCOMPLETE: none\nWORKERS SPAWNED: 0\n")
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    for flag in ("-o", "--output-last-message"):
+        if flag in argv and argv.index(flag) + 1 < len(argv):
+            Path(argv[argv.index(flag) + 1]).write_text(REPORT, encoding="utf-8")
+    sys.stdin.read()
+    fixture = Path(os.environ.get("FAKE_FIXTURE") or Path(__file__).with_name("codex.jsonl"))
+    pace = float(os.environ.get("FAKE_PACE", "0.5"))
+    for i, line in enumerate(fixture.read_text(encoding="utf-8").splitlines()):
+        if i and pace:
+            time.sleep(pace)
+        print(line, flush=True)
+        if os.environ.get("FAKE_SLEEP") and i == 0:
+            while True:
+                time.sleep(3600)
+    return int(os.environ.get("FAKE_RC", "0"))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

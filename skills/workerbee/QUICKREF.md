@@ -43,7 +43,7 @@ Grunt prompts also carry `FILES IN SCOPE:` and a numeric `STOP RULE:`. Every pro
 MUST lines that are easy to drop:
 
 - State out loud which Step 0 exception you are using, when you use one.
-- Caveman absent: the prompt says `caveman NOT installed -> checked by hand`.
+- Caveman absent or unreadable: the prompt says `caveman NOT installed -> checked by hand`; an unreadable skill file gets `caveman unreadable -> checked by hand` and is not a block.
 - Sub-delegation follows D46 ruling 3. A Lead on the Executive or Orchestrator rung may sub-delegate to any lower rung, only via `agents-inc dispatch`; never the Agent tool (D59). A Workhorse delegate sub-delegates only to the Grunt rung, with an enumerated allowlist. A Grunt never sub-delegates. The delegate echoes `SUB-DELEGATE MODEL: <slug> -- allowlist match: yes` before any nested call.
 - `LESSON-CANDIDATE` relays one rung up, never skipping. A scout check for duplicates and contradictions runs before it reaches the Executive. Only the Executive presents it to the operator.
 - Dispatch work that touches an agents_Inc issue: fetch SKILL.md Step 11 first.

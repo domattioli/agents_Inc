@@ -12,6 +12,7 @@ import http.server
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -49,8 +50,72 @@ def _fake_subprocess_run(thread_id: str | None, returncode: int, stderr: str = "
     return run
 
 
+_BIND_REFUSED = (
+    "local port binding refused (sandbox); run outside the sandbox or set sandbox.network.allowLocalBinding"
+)
+_BIND_UNSET = object()
+_bind_cache = _BIND_UNSET
+
+
+def _bind_probe() -> str | None:
+    """Return the skip reason when a loopback bind is refused, else None. Cached per module.
+
+    Only PermissionError maps to a reason; any other bind error propagates and fails the test.
+    """
+    global _bind_cache
+    if _bind_cache is _BIND_UNSET:
+        sock = socket.socket()
+        try:
+            sock.bind(("127.0.0.1", 0))
+            _bind_cache = None
+        except PermissionError:
+            _bind_cache = _BIND_REFUSED
+        finally:
+            sock.close()
+    return _bind_cache
+
+
+def _skip_if_bind_refused() -> None:
+    reason = _bind_probe()
+    if reason:
+        raise unittest.SkipTest(reason)
+
+
+class BindProbeTest(unittest.TestCase):
+    """The loopback-bind probe maps a sandbox refusal to a skip reason and nothing else."""
+
+    def setUp(self) -> None:
+        saved = globals()["_bind_cache"]
+        self.addCleanup(globals().__setitem__, "_bind_cache", saved)
+        globals()["_bind_cache"] = _BIND_UNSET
+
+    def test_permission_error_returns_reason(self) -> None:
+        with mock.patch.object(socket.socket, "bind", side_effect=PermissionError(1, "Operation not permitted")):
+            self.assertEqual(
+                _bind_probe(),
+                "local port binding refused (sandbox); run outside the sandbox or set sandbox.network.allowLocalBinding",
+            )
+
+    def test_other_oserror_propagates(self) -> None:
+        with mock.patch.object(socket.socket, "bind", side_effect=OSError(98, "in use")):
+            with self.assertRaises(OSError) as cm:
+                _bind_probe()
+        self.assertNotIsInstance(cm.exception, PermissionError)
+
+    def test_probe_is_cached(self) -> None:
+        with mock.patch.object(socket.socket, "bind", side_effect=PermissionError(1, "no")) as bind:
+            first = _bind_probe()
+            second = _bind_probe()
+        self.assertEqual(first, second)
+        self.assertEqual(bind.call_count, 1)
+
+
 class BridgeThreadIdTest(unittest.TestCase):
     TOKEN = "test-token"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _skip_if_bind_refused()
 
     def setUp(self) -> None:
         token_env = mock.patch.dict(os.environ, {"CODEX_BRIDGE_TOKEN": self.TOKEN})
@@ -198,6 +263,10 @@ class AskShBodyShapeTest(unittest.TestCase):
 
         def log_message(self, format, *args):  # noqa: A002 (stdlib signature)
             pass
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _skip_if_bind_refused()
 
     def setUp(self) -> None:
         self.__class__._RecordingHandler.captured_body = None

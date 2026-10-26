@@ -1,0 +1,15 @@
+[00:00] sol start: run fixture-run
+[00:01] sol note: codex thread.started
+[00:02] sol note: codex turn.started
+[00:03] sol think: Plan: read the launcher, grep for launch, then patch the stream reader.
+[00:04] sol tool: rg -n "launch" agents_inc
+[00:05] sol tool: rg -n "launch" agents_inc (exit 0)
+[00:06] sol file: agents_inc/install/dispatch.py
+[00:07] sol tool: ledger.record (id, note)
+[00:08] sol tool: curl -s -H "X-Key: [redacted]" https://example.invalid/ping (exit 0)
+[00:09] sol say: Done. Used [redacted] and [redacted] for the test.
+[00:10] sol note: codex mystery.event
+[00:11] sol note: codex raw: codex: warming up (not json)
+[00:12] sol error: transient: retrying
+[00:13] sol usage: in=1200 out=340
+[00:14] sol end: done rc=0
