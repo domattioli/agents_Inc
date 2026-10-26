@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The Zenodo deposit script runs without `PYTHONPATH`.
+
 ## [0.5.0] — 2026-10-26
 
 ### Added
