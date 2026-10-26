@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-26
+
 ### Added
 
 - `agents-inc:luna`, a native Claude Code subagent type in the agents-inc mod: each step is answered by luna through Codex with no Codex-side tools, so the Claude Code permission rules are the only gate. A failed step ends loudly as `luna failed: ...` or `luna quota-paused: ...` and never falls back to the placeholder model. `agents-inc luna status|on|off` switches it, `agents-inc doctor` prints a `luna type:` line, and the mod writes a host-ledger row (`source` `native-luna`) and a working-tree snapshot check per agent. The pre-028 luna routes are unchanged (spec 028, D69)
