@@ -146,14 +146,17 @@ class RuiReplayTest(unittest.TestCase):
         tools = json.dumps({"say": "", "tools": [{"name": "Bash", "input": {"command": "wc -l b.txt"}}]})
         self.rollout.write_text(self.call(json.dumps({"questions": []})) + self.call(tools) + self.call("not json")
                                 + self.call(json.dumps({"say": "x", "tools": []})))
-        self.assertEqual([json.loads(t) for t in runtime.rui_replies(self.rollout)], [json.loads(tools)])
+        calls = runtime.rui_calls(self.rollout)
+        self.assertEqual(len(calls), 4)  # every call counts, the unparsable one too
+        self.assertEqual([json.loads(t) for t in runtime.rui_replies(calls)], [json.loads(tools)])
 
     def test_offset_skips_earlier_runs(self):
         old = self.call(json.dumps({"say": "", "tools": [{"name": "Bash", "input": {"command": "wc -l a.txt"}}]}))
         new = self.call(json.dumps({"say": "", "tools": [{"name": "Bash", "input": {"command": "wc -l c.txt"}}]}))
         self.rollout.write_text(old + new)
-        self.assertEqual(len(runtime.rui_replies(self.rollout, len(old.encode()))), 1)
-        self.assertIn("c.txt", runtime.rui_replies(self.rollout, len(old.encode()))[0])
+        replies = runtime.rui_replies(runtime.rui_calls(self.rollout, len(old.encode())))
+        self.assertEqual(len(replies), 1)
+        self.assertIn("c.txt", replies[0])
 
     def test_thread_rollout_finds_the_file_by_thread_id(self):
         self.rollout.write_text("")
@@ -166,7 +169,7 @@ class RuiReplayTest(unittest.TestCase):
 
         def fake_run(*args, thread_out=None, **kwargs):
             with self.rollout.open("a") as f:
-                f.write(self.call(tools))
+                f.write(self.call(tools) + self.call(json.dumps({"questions": []})))
             if thread_out is not None:
                 thread_out["thread_id"] = "tid-9"
             return 0
@@ -175,7 +178,9 @@ class RuiReplayTest(unittest.TestCase):
         with mock.patch.object(runtime, "real_codex_home", return_value=self.home / ".codex"), \
                 mock.patch.object(runtime, "run_codex", side_effect=fake_run), contextlib.redirect_stderr(err):
             run_codex_thread(thread, "luna", "medium", self.home, io.StringIO("go"), None, {}, host_tools=host_tools)
-        return [json.loads(l.split(" ", 3)[3]) for l in err.getvalue().splitlines() if l.startswith("agents-inc run: event ")]
+        lines = err.getvalue().splitlines()
+        self.tools_lines = [json.loads(l.split(" ", 3)[3]) for l in lines if l.startswith("agents-inc run: tools ")]
+        return [json.loads(l.split(" ", 3)[3]) for l in lines if l.startswith("agents-inc run: event ")]
 
     def test_host_tools_run_replays_only_this_runs_calls(self):
         thread = self.home / "a.thread"
@@ -185,9 +190,11 @@ class RuiReplayTest(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["kind"], "agent_message")
         self.assertIn("wc -l b.txt", events[0]["text"])
+        self.assertEqual(self.tools_lines, [{"request_user_input": 2}])  # this run's two calls, not the earlier one
 
     def test_other_runs_replay_nothing(self):
         self.assertEqual(self.run_thread(self.home / "b.thread", host_tools=False), [])
+        self.assertEqual(self.tools_lines, [])
 
 
 class RunThreadCliTest(unittest.TestCase):

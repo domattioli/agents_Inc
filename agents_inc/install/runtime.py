@@ -328,12 +328,16 @@ NO_TOOL_ARGS = [a for f in NO_TOOL_FEATURES for a in ("-c", f"features.{f}=false
 # tools luna names) replaces the base instructions with this text; other tool-free runs keep Codex's own.
 NO_TOOL_INSTRUCTIONS = (
     "You answer in text only: your final message is your whole output. Codex's own tools (exec, apply_patch, "
-    "request_user_input) are off: never call one and never look for one; the read-only sandbox note applies to them alone. "
+    "request_user_input) are off: never call one and never look for one. "
     "When the user message lists tools that a host runs for you, those are host tools, not Codex tools, Bash and Read "
     "among them. They are real and work: request them in your reply, in the format the user message asks for, and their "
-    "results arrive in the next message. Never answer that you cannot run a tool the host lists.\n")
+    "results arrive in the next message. Never answer that you cannot run a tool the host lists. Host tools need no "
+    "permission from you: the host decides every call. Never ask whether to run a tool, whether to go on, or how to "
+    "report: act, then answer.\n")
 # luna read "never call any other Codex tool" as a ban on the host's Bash and refused (spec 028 Docker run, 2026-10-25),
-# so the text names the Codex tools and says the host's are not among them.
+# so the text names the Codex tools and says the host's are not among them. luna also asked "May I run wc?" or "Should
+# I report?" through request_user_input, dozens of times a step, until Codex exited 1 (macOS host stress run,
+# 2026-10-25): the text says host tools need no permission, and HOST_TOOLS_ARGS drops the sandbox note behind it.
 
 
 # The instructions alone did not hold: gpt-6-luna's catalog entry says tool_mode "code_mode_only", so Codex serves it
@@ -344,6 +348,14 @@ NO_TOOL_INSTRUCTIONS = (
 HOST_TOOLS_MODEL = {"tool_mode": "direct", "shell_type": "disabled", "experimental_supported_tools": [],
                     "multi_agent_version": "none"}
 HOST_TOOLS_DROP = ("apply_patch_tool_type",)
+# Codex also adds context a host-tools run must not carry, each dropped by one setting (`codex debug prompt-input`,
+# Codex 0.159.2, 2026-10-25): the read-only sandbox note, which luna read as a reason to ask "May I run wc?" through
+# request_user_input dozens of times a step until Codex exited 1 (macOS host stress run); the Default-mode text, which
+# offers request_user_input; the operator's skills list (13.8k chars), which luna has no tool to read; and the cwd's
+# AGENTS.md, which the host already puts in the conversation. The sandbox itself stays: only the notes go.
+# luna still calls request_user_input (426 calls in 15 macOS stress runs, 14/15 pass).
+HOST_TOOLS_ARGS = ["-c", "include_permissions_instructions=false", "-c", "include_collaboration_mode_instructions=false",
+                   "-c", "skills.include_instructions=false", "-c", "project_doc_max_bytes=0"]
 
 
 def _write_if_changed(path: Path, text: str) -> None:
@@ -405,7 +417,7 @@ def no_tool_args(host_tools: bool = False, slug: str | None = None, catalog: Pat
         catalog = require_host_tools_catalog(slug)
     path = Path(tempfile.gettempdir()) / "agents-inc" / "no-tools-instructions.md"
     _write_if_changed(path, NO_TOOL_INSTRUCTIONS)
-    return NO_TOOL_ARGS + ["-c", f"model_instructions_file={json.dumps(str(path))}",
+    return NO_TOOL_ARGS + HOST_TOOLS_ARGS + ["-c", f"model_instructions_file={json.dumps(str(path))}",
                            "-c", f"model_catalog_json={json.dumps(str(catalog))}"]
 
 
@@ -761,11 +773,11 @@ def thread_rollout(tid: str, sessions: Path | None = None) -> Path | None:
     return found[-1] if found else None
 
 
-def rui_replies(rollout: Path, offset: int = 0) -> list[str]:
-    """Host tool requests luna sent as request_user_input calls in the rollout from byte offset on: each call whose
-    arguments parse as a JSON object with a "tools" list, as that JSON text. Codex refuses the call, so the request
-    never reaches the host unless the run replays it."""
-    out: list[str] = []
+def rui_calls(rollout: Path, offset: int = 0) -> list:
+    """The parsed arguments of every request_user_input call in the rollout from byte offset on (None when they do not
+    parse). Codex refuses each call in Default mode and its --json stream never shows one, so the rollout is the only
+    place they can be counted (spec 028 FR-014)."""
+    out: list = []
     try:
         with rollout.open("rb") as f:
             f.seek(offset)
@@ -776,12 +788,20 @@ def rui_replies(rollout: Path, offset: int = 0) -> list[str]:
         try:
             payload = json.loads(line).get("payload") or {}
             if payload.get("type") != "function_call" or payload.get("name") != "request_user_input": continue
-            args = json.loads(payload.get("arguments") or "")
         except (ValueError, AttributeError):
             continue
-        if isinstance(args, dict) and isinstance(args.get("tools"), list) and args["tools"]:
-            out.append(json.dumps(args))
+        try:
+            out.append(json.loads(payload.get("arguments") or ""))
+        except ValueError:
+            out.append(None)
     return out
+
+
+def rui_replies(calls: list) -> list[str]:
+    """Host tool requests luna sent as request_user_input calls: each call whose arguments are a JSON object with a
+    "tools" list, as that JSON text. Codex refuses the call, so the request never reaches the host unless the run
+    replays it."""
+    return [json.dumps(a) for a in calls if isinstance(a, dict) and isinstance(a.get("tools"), list) and a["tools"]]
 
 
 def run_codex_thread(thread_file: Path, *args, **kwargs) -> int:
@@ -807,15 +827,16 @@ def run_codex_thread(thread_file: Path, *args, **kwargs) -> int:
 
     rc = run_codex(*args, thread_out=None if known else thread_out, resume_thread=known or None,
                    on_line=on_line, **kwargs)
-    if tool_counts:
-        sys.stderr.write("agents-inc run: tools " + json.dumps(tool_counts) + "\n")
-        sys.stderr.flush()
     tid = known or thread_out.get("thread_id")
     rollout = thread_rollout(tid) if host_tools and tid else None
-    if rollout:
-        for text in rui_replies(rollout, offset if rollout == before else 0):
-            sys.stderr.write("agents-inc run: event " + json.dumps({"kind": "agent_message", "text": text}) + "\n")
-        sys.stderr.flush()
+    calls = rui_calls(rollout, offset if rollout == before else 0) if rollout else []
+    if calls:
+        tool_counts["request_user_input"] = tool_counts.get("request_user_input", 0) + len(calls)
+    if tool_counts:
+        sys.stderr.write("agents-inc run: tools " + json.dumps(tool_counts) + "\n")
+    for text in rui_replies(calls):
+        sys.stderr.write("agents-inc run: event " + json.dumps({"kind": "agent_message", "text": text}) + "\n")
+    sys.stderr.flush()
     if tid:
         thread_file.parent.mkdir(parents=True, exist_ok=True)
         thread_file.write_text(tid + "\n", encoding="utf-8")

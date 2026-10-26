@@ -114,6 +114,19 @@ class RungArgvTest(unittest.TestCase):
         self.assertIn('web_search="disabled"', argv)
         self.assertNotIn("features.shell_tool=true", argv)
 
+    def test_host_tools_argv_drops_codex_context_notes(self):
+        # luna read the read-only sandbox note as a reason to ask permission through request_user_input (macOS stress
+        # run, 2026-10-25): host-tools runs, fresh and resumed, drop it with the mode text, skills and AGENTS.md.
+        self._fake_home()
+        argv = build_codex_argv(EXE, "luna", "medium", Path("/w"), EFF, MAP, False, host_tools=True)
+        resume = runtime.build_codex_resume_argv(EXE, "019a0000-0000-7000-8000-000000000000", "hi", "luna", "medium",
+                                                 Path("/w"), EFF, MAP, host_tools=True)
+        for setting in ("include_permissions_instructions=false", "include_collaboration_mode_instructions=false",
+                        "skills.include_instructions=false", "project_doc_max_bytes=0"):
+            self.assertIn(setting, argv)
+            self.assertIn(setting, resume)
+            self.assertNotIn(setting, _argv("luna"))
+
     def test_host_tools_catalog_ignores_the_env_codex_home(self):
         # plan D3 item 2: the catalog comes from HOME/.codex, the directory auth.json is linked from.
         self._fake_home()

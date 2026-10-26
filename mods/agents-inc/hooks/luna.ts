@@ -9,6 +9,8 @@ const HANDBACK_CUE = 'call SubagentHandback('
 const RESULT_CAP = 20_000
 const DESC_CAP = 500
 const MCP_DESC_CAP = 200
+// The step timer runs on $.clock.sleep, which is monotonic: time the host spends asleep does not count, so a Mac that
+// sleeps mid-step does not fail the step on time alone (macOS stress run, 2026-10-25).
 const RUN_TIMEOUT_MS = 300_000
 const MODEL_LINE = /You are powered by the model|The exact model ID is/
 const DELTA_HEADER =

@@ -13,6 +13,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- Native luna host-tool runs drop four Codex context notes and clarify that the host decides tool permissions. The macOS follow-up scored 14 of 15; enabling empty answers to `request_user_input` fell to 11 of 15, so that setting was rejected (spec 028, D69).
 - The test suite runs inside the Claude Code sandbox: tests that bind a local port skip with a stated reason when the bind is refused, and the Ollama adapter tests use temporary paths and a fresh doctor cache instead of fixed `/tmp` files and live CLI probes (#110)
 - A broker Claude Worker can run `git init`, `git add` and `git commit` in its TMPDIR: the profile grants metadata-only reads on the folders above each hole in the broker deny, and read-only holes (including the Worker's own `snapshot.json` and `pre_dispatch_snapshot.py`) get an explicit write deny (#103)
 - `dispatch --serve` takes an exclusive lock on `<run-dir>/broker.lock`; a second broker on the same run directory exits 2 naming the holder's pid and leaves `run.json` and the inbox alone (#109)
